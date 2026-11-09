@@ -4,7 +4,7 @@
 
 //  Arquivo: content.js
 
-//  Versão: 3.5.2 (atualizada em 09/11/2026)
+//  Versão: 3.5.3 (atualizada em 09/11/2026)
 
 // ============================================================
 
@@ -509,7 +509,7 @@
     return false;
   }
 
-  /* [MÓDULO INTIMAÇÕES - v3.5.2] Detecção da tela de Intimação Eletrônica */
+  /* [MÓDULO INTIMAÇÕES - v3.5.3] Detecção da tela de Intimação Eletrônica */
   function ehTelaDeIntimacao() {
     const params = new URLSearchParams(location.search);
     const acao = (params.get('acao') || '').toLowerCase();
@@ -1395,7 +1395,7 @@
 
   
   /* ========================================================================== */
-  /* [MÓDULO INTIMAÇÕES - v3.5.2] PARSER DA PLANILHA OFICIAL DE INTIMAÇÕES        */
+  /* [MÓDULO INTIMAÇÕES - v3.5.3] PARSER DA PLANILHA OFICIAL DE INTIMAÇÕES        */
   /* ========================================================================== */
   function converterTabelaParaItensIntimacoes(tabela) {
     if (!tabela || tabela.length === 0) return [];
@@ -11760,7 +11760,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.2</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.3</span></span>
 
         </div>
 
@@ -15240,41 +15240,89 @@
           addLog(`⚠️ Evento "${item.evento || item.codigoEvento}" não encontrado na combo selEventoJudicial!`, 'warn');
         }
       }
-      await sleep(250);
 
-      // 8. Modo de Prazos e Preenchimento dos Prazos [v3.5.2: Ativação com checkPorPolo/checkTipoDeParte e handlers eproc]
+      // [v3.5.3] Sincronização rigorosa pós-seleção do Evento: aguarda os spin/ajax do eproc
+      await esperarCond(() => {
+        const sp1 = document.getElementById('aguardandoCarregandoEventosDoc');
+        const sp2 = document.getElementById('imgLoadingEventoEncadeadoCitacaoIntimacao');
+        const sp3 = document.getElementById('divLoadingEventoJudicialPrazo');
+        const ok1 = !sp1 || sp1.style.display === 'none' || !sp1.offsetParent;
+        const ok2 = !sp2 || sp2.style.display === 'none' || !sp2.offsetParent;
+        const ok3 = !sp3 || sp3.style.visibility === 'hidden' || sp3.style.display === 'none' || !sp3.offsetParent;
+        return ok1 && ok2 && ok3;
+      }, 8000);
+
+      // Aguarda os elementos das Opções Avançadas de Prazo estarem presentes no DOM
+      await esperarCond(() => {
+        return document.getElementById('porPolo') ||
+               document.getElementById('lblPorPolo') ||
+               document.getElementById('porTipoDeParte') ||
+               document.querySelector('input[type="radio"][value="porPolo"]');
+      }, 10000);
+      await sleep(400); // Pausa para garantir que qualquer inicializarIntimacao() do eproc tenha concluído
+
+      // 8. Modo de Prazos e Preenchimento dos Prazos [v3.5.3: Acionamento multi-camada e garantia ativa de Por Pólo]
       const modoPolo = item.normModoPrazos.includes('polo');
       const modoTipoParte = item.normModoPrazos.includes('tipo') || item.normModoPrazos.includes('parte');
 
       if (modoPolo) {
-        // Ativação robusta do rádio "Por Pólo" no eproc
-        if (typeof window.checkPorPolo === 'function') {
-          try { window.checkPorPolo(true); } catch (e) { console.warn('Erro ao chamar checkPorPolo:', e); }
+        const ativarModoPoloNativo = () => {
+          // 1. Link / Âncora nativa
+          const lblPolo = document.getElementById('lblPorPolo') || document.querySelector('a[onclick*="checkPorPolo"]');
+          if (lblPolo) { try { lblPolo.click(); } catch (e) {} }
+
+          // 2. Função interna do eproc
+          if (typeof window.checkPorPolo === 'function') {
+            try { window.checkPorPolo(true); } catch (e) {}
+          }
+
+          // 3. jQuery nativo da página
+          if (window.jQuery) {
+            try {
+              window.jQuery('#porTipoDeParte').prop('checked', false);
+              window.jQuery('#porPolo').prop('checked', true).trigger('click').trigger('change');
+              window.jQuery('.tipoParte').css('display', 'none');
+              window.jQuery('.porPolo').css('display', 'block');
+            } catch (e) {}
+          }
+
+          // 4. Elemento DOM direto
+          const rdPolo = document.getElementById('porPolo') || document.querySelector('input[type="radio"][value="porPolo"]');
+          const rdTipo = document.getElementById('porTipoDeParte') || document.querySelector('input[type="radio"][value="porTipoDeParte"]');
+          if (rdTipo) rdTipo.checked = false;
+          if (rdPolo) {
+            rdPolo.checked = true;
+            try { rdPolo.click(); } catch (e) {}
+            dispararEventos(rdPolo, ['change', 'click']);
+          }
+
+          if (typeof window.alterarCoresPartes === 'function') try { window.alterarCoresPartes(false); } catch (e) {}
+          if (typeof window.alterarCoresPolo === 'function') try { window.alterarCoresPolo(true); } catch (e) {}
+        };
+
+        // Aciona ativação inicial
+        ativarModoPoloNativo();
+        await sleep(350);
+
+        // Laço de confirmação ativa: garante que Por Pólo permaneceu selecionado
+        for (let retry = 0; retry < 5; retry++) {
+          const rdCheck = document.getElementById('porPolo') || document.querySelector('input[type="radio"][value="porPolo"]');
+          if (rdCheck && rdCheck.checked) break;
+          ativarModoPoloNativo();
+          await sleep(250);
         }
-        if (window.jQuery) {
-          try {
-            window.jQuery('#porTipoDeParte').prop('checked', false);
-            window.jQuery('#porPolo').prop('checked', true).trigger('click').trigger('change');
-            window.jQuery('.tipoParte').css('display', 'none');
-            window.jQuery('.porPolo').css('display', 'block');
-          } catch (e) {}
+
+        const rdPoloFinal = document.getElementById('porPolo') || document.querySelector('input[type="radio"][value="porPolo"]');
+        if (rdPoloFinal) {
+          destacarCampoAtivo(rdPoloFinal, 'Modo de Prazos', 'Por Pólo');
         }
-        const rdPolo = document.getElementById('porPolo');
-        const rdTipoParte = document.getElementById('porTipoDeParte');
-        if (rdTipoParte) rdTipoParte.checked = false;
-        if (rdPolo) {
-          destacarCampoAtivo(rdPolo, 'Modo de Prazos', 'Por Pólo');
-          rdPolo.checked = true;
-          try { rdPolo.click(); } catch (e) {}
-          dispararEventos(rdPolo, ['change', 'click']);
-        }
-        if (typeof window.alterarCoresPartes === 'function') {
-          try { window.alterarCoresPartes(false); } catch (e) {}
-        }
-        if (typeof window.alterarCoresPolo === 'function') {
-          try { window.alterarCoresPolo(true); } catch (e) {}
-        }
-        await sleep(250);
+
+        // Aguarda os inputs do container .porPolo estarem montados e visíveis
+        await esperarCond(() => {
+          const el = document.getElementById('txtPrazoMPF');
+          return el && (el.offsetParent !== null || window.getComputedStyle(el).display !== 'none');
+        }, 5000);
+        await sleep(200);
 
         // Preenchimento de Prazo MP (Custos Legis / Custos Iuris)
         if (item.prazoMP && item.prazoMP !== '-') {
@@ -15282,9 +15330,10 @@
           const chkMP = document.getElementById('chkSelMPF');
           if (txtMP) {
             destacarCampoAtivo(txtMP, 'Prazo MP', item.prazoMP);
+            txtMP.disabled = false;
             txtMP.value = item.prazoMP;
             if (window.jQuery) {
-              window.jQuery(txtMP).val(item.prazoMP).trigger('input').trigger('change').trigger('keyup');
+              window.jQuery(txtMP).val(item.prazoMP).trigger('input').trigger('change').trigger('keyup').trigger('blur');
             } else {
               dispararEventos(txtMP, ['input', 'change', 'keyup', 'blur']);
             }
@@ -15297,7 +15346,10 @@
           }
           if (chkMP) {
             destacarCampoAtivo(chkMP, 'Marcar MP', 'true');
+            chkMP.disabled = false;
             chkMP.checked = true;
+            try { chkMP.click(); } catch (e) {}
+            if (!chkMP.checked) chkMP.checked = true;
             if (window.jQuery) {
               window.jQuery(chkMP).prop('checked', true).trigger('change').trigger('click');
             } else {
@@ -15307,6 +15359,7 @@
               try { window.onChangeChkSelMPF(); } catch (e) {}
             }
           }
+          addLog(`✓ Intimação MP configurada: Prazo de ${item.prazoMP} dias com caixa de seleção marcada.`, 'info');
         }
 
         // Preenchimento de Prazo Polo Ativo / Autores
@@ -15315,6 +15368,7 @@
           const chkAutores = document.getElementById('chkSelPrazoAutores');
           if (txtAutores) {
             destacarCampoAtivo(txtAutores, 'Prazo Autores', item.prazoAutores);
+            txtAutores.disabled = false;
             txtAutores.value = item.prazoAutores;
             if (window.jQuery) {
               window.jQuery(txtAutores).val(item.prazoAutores).trigger('input').trigger('change').trigger('keyup');
@@ -15330,7 +15384,10 @@
           }
           if (chkAutores) {
             destacarCampoAtivo(chkAutores, 'Marcar Autores', 'true');
+            chkAutores.disabled = false;
             chkAutores.checked = true;
+            try { chkAutores.click(); } catch (e) {}
+            if (!chkAutores.checked) chkAutores.checked = true;
             if (window.jQuery) {
               window.jQuery(chkAutores).prop('checked', true).trigger('change').trigger('click');
             } else {
@@ -15348,6 +15405,7 @@
           const chkReus = document.getElementById('chkSelPrazoReus');
           if (txtReus) {
             destacarCampoAtivo(txtReus, 'Prazo Réus', item.prazoReus);
+            txtReus.disabled = false;
             txtReus.value = item.prazoReus;
             if (window.jQuery) {
               window.jQuery(txtReus).val(item.prazoReus).trigger('input').trigger('change').trigger('keyup');
@@ -15363,7 +15421,10 @@
           }
           if (chkReus) {
             destacarCampoAtivo(chkReus, 'Marcar Réus', 'true');
+            chkReus.disabled = false;
             chkReus.checked = true;
+            try { chkReus.click(); } catch (e) {}
+            if (!chkReus.checked) chkReus.checked = true;
             if (window.jQuery) {
               window.jQuery(chkReus).prop('checked', true).trigger('change').trigger('click');
             } else {
@@ -15381,6 +15442,7 @@
           const chkInter = document.getElementById('chkSelPrazoInteressados');
           if (txtInter) {
             destacarCampoAtivo(txtInter, 'Prazo Interessados', item.prazoInteressados);
+            txtInter.disabled = false;
             txtInter.value = item.prazoInteressados;
             if (window.jQuery) {
               window.jQuery(txtInter).val(item.prazoInteressados).trigger('input').trigger('change').trigger('keyup');
@@ -15396,7 +15458,10 @@
           }
           if (chkInter) {
             destacarCampoAtivo(chkInter, 'Marcar Interessados', 'true');
+            chkInter.disabled = false;
             chkInter.checked = true;
+            try { chkInter.click(); } catch (e) {}
+            if (!chkInter.checked) chkInter.checked = true;
             if (window.jQuery) {
               window.jQuery(chkInter).prop('checked', true).trigger('change').trigger('click');
             } else {
@@ -16429,7 +16494,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.2</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.3</span>
 
           </h3>
 
