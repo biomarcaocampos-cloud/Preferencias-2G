@@ -509,19 +509,31 @@
     return false;
   }
 
-  function ehTelaSuportada() {
-    return ehTelaDeMinuta() || ehTelaDeRelatorio() || ehTelaDeMovimentacao() || ehTelaDeMinutaAreaTrabalho();
+  /* [MÓDULO INTIMAÇÕES - v3.5] Detecção da tela de Intimação Eletrônica */
+  function ehTelaDeIntimacao() {
+    const params = new URLSearchParams(location.search);
+    const acao = (params.get('acao') || '').toLowerCase();
+    if (acao === 'processo_intimacao' || acao === 'processo_intimacao_bloco') return true;
+    const inpAcao = document.getElementById('acao');
+    if (inpAcao && ['processo_intimacao', 'processo_intimacao_bloco'].includes(String(inpAcao.value || '').toLowerCase())) return true;
+    return false;
   }
 
-  let moduloAtivo = ehTelaDeMinutaAreaTrabalho()
-    ? 'area_minutas'
-    : (ehTelaDeRelatorio()
-      ? 'relatorios'
-      : (ehTelaDeMovimentacao()
-        ? 'movimentacoes'
-        : (ehTelaDeMinuta()
-          ? 'minutas'
-          : (sessionStorage.getItem('eproc_pref_2g_modulo_ativo') || 'minutas'))));
+  function ehTelaSuportada() {
+    return ehTelaDeMinuta() || ehTelaDeRelatorio() || ehTelaDeMovimentacao() || ehTelaDeMinutaAreaTrabalho() || ehTelaDeIntimacao();
+  }
+
+  let moduloAtivo = ehTelaDeIntimacao()
+    ? 'intimacoes'
+    : (ehTelaDeMinutaAreaTrabalho()
+      ? 'area_minutas'
+      : (ehTelaDeRelatorio()
+        ? 'relatorios'
+        : (ehTelaDeMovimentacao()
+          ? 'movimentacoes'
+          : (ehTelaDeMinuta()
+            ? 'minutas'
+            : (sessionStorage.getItem('eproc_pref_2g_modulo_ativo') || 'minutas')))));
 
   function gerarStatusTelaHtml() {
     if (moduloAtivo === 'minutas') {
@@ -541,6 +553,12 @@
         return '<span style="color:#15803d; font-weight:700;">✅ Área de Trabalho de Minutas (Pronto)</span>';
       } else {
         return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px; color:#92400e; font-size:11.5px; line-height:1.4; margin-top:2px;">⚠️ <strong>Tela incompatível:</strong> Acesse a tela de <strong>Minutas > Área de Trabalho</strong> para gravar preferências deste módulo.</div>';
+      }
+    } else if (moduloAtivo === 'intimacoes') {
+      if (ehTelaDeIntimacao()) {
+        return '<span style="color:#15803d; font-weight:700;">✅ Intimação Eletrônica (Pronto)</span>';
+      } else {
+        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px; color:#92400e; font-size:11.5px; line-height:1.4; margin-top:2px;">⚠️ <strong>Tela incompatível:</strong> Acesse a tela de <strong>Intimação Eletrônica</strong> do processo para gravar preferências deste módulo.</div>';
       }
     } else {
       if (ehTelaDeRelatorio()) {
@@ -580,7 +598,8 @@
       minutas: document.getElementById('btn-modulo-minutas'),
       relatorios: document.getElementById('btn-modulo-relatorios'),
       movimentacoes: document.getElementById('btn-modulo-movimentacoes'),
-      area_minutas: document.getElementById('btn-modulo-area-minutas')
+      area_minutas: document.getElementById('btn-modulo-area-minutas'),
+      intimacoes: document.getElementById('btn-modulo-intimacoes')
     };
 
     Object.entries(mapBotoes).forEach(([chave, btn]) => {
@@ -606,6 +625,9 @@
       } else if (moduloAtivo === 'area_minutas') {
         btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências da Área de Minutas';
         btnGerenciador.title = 'Abre a lista oficial de preferências da Área de Trabalho de Minutas da Unidade';
+      } else if (moduloAtivo === 'intimacoes') {
+        btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências de Intimação';
+        btnGerenciador.title = 'Abre a lista oficial de preferências de Intimação Eletrônica da Unidade';
       } else {
         btnGerenciador.innerHTML = '<span>📋</span> Abrir Gerenciador de Preferências (Minutas)';
         btnGerenciador.title = 'Abre a tela oficial do eproc para visualizar ou editar preferências de minutas';
@@ -614,11 +636,13 @@
 
     // Se a planilha já foi carregada em memória, reprocessa para a aba correspondente sem recarregar a página
     if (window._eprocUltimoArquivoPlanilha) {
-      const nomeAba = moduloAtivo === 'relatorios'
-        ? 'Preferências - Relatório Geral'
-        : (moduloAtivo === 'movimentacoes'
-          ? 'Preferências - Movimentar'
-          : (moduloAtivo === 'area_minutas' ? 'Preferências - Área de Minutas' : 'Preferências - Minutas'));
+      const nomeAba = moduloAtivo === 'intimacoes'
+        ? 'Preferências - Intimações'
+        : (moduloAtivo === 'relatorios'
+          ? 'Preferências - Relatório Geral'
+          : (moduloAtivo === 'movimentacoes'
+            ? 'Preferências - Movimentar'
+            : (moduloAtivo === 'area_minutas' ? 'Preferências - Área de Minutas' : 'Preferências - Minutas')));
       addLog('🔄 Aba selecionada: ' + nomeAba + '. Carregando dados...');
       carregarArquivo(window._eprocUltimoArquivoPlanilha);
     }
@@ -1159,11 +1183,13 @@
 
 
 
-    const buscaTermo = moduloAtivo === 'relatorios'
-      ? 'relat'
-      : (moduloAtivo === 'movimentacoes'
-        ? 'moviment'
-        : (moduloAtivo === 'area_minutas' ? 'area' : 'minuta'));
+    const buscaTermo = moduloAtivo === 'intimacoes'
+      ? 'intimac'
+      : (moduloAtivo === 'relatorios'
+        ? 'relat'
+        : (moduloAtivo === 'movimentacoes'
+          ? 'moviment'
+          : (moduloAtivo === 'area_minutas' ? 'area' : 'minuta')));
 
     const sheetRegex = /<sheet\b([^>]+)>/gi;
 
@@ -1192,7 +1218,9 @@
           const fullPath = 'xl/' + target.replace(/^\//, '').replace(/^xl\//, '');
 
           let condicaoAba = false;
-          if (moduloAtivo === 'area_minutas') {
+          if (moduloAtivo === 'intimacoes') {
+            condicaoAba = norm.includes('intimac') || norm.includes('citac');
+          } else if (moduloAtivo === 'area_minutas') {
             condicaoAba = norm.includes('area') || norm.includes('trabalho') || (norm.includes('minuta') && norm.includes('doc'));
           } else if (moduloAtivo === 'minutas') {
             condicaoAba = norm.includes('minuta') && !norm.includes('area') && !norm.includes('trabalho');
@@ -1359,7 +1387,125 @@
     if (moduloAtivo === 'area_minutas') {
       return { sheetName: sheetNameEncontrada, itens: converterTabelaParaItensAreaMinutas(tabela) };
     }
+    if (moduloAtivo === 'intimacoes') {
+      return { sheetName: sheetNameEncontrada, itens: converterTabelaParaItensIntimacoes(tabela) };
+    }
     return { sheetName: sheetNameEncontrada, itens: converterTabelaParaItens(tabela) };
+  }
+
+  
+  /* ========================================================================== */
+  /* [MÓDULO INTIMAÇÕES - v3.5] PARSER DA PLANILHA OFICIAL DE INTIMAÇÕES        */
+  /* ========================================================================== */
+  function converterTabelaParaItensIntimacoes(tabela) {
+    if (!tabela || tabela.length === 0) return [];
+    const itens = [];
+
+    const cab = tabela[0] || {};
+    let colNum = 0, colFluxo = 1, colFerramenta = 2, colNome = 3, colComoSalvar = 4, colGrupo = 5;
+    let colEvento = 6, colModoPrazos = 7, colPrazoEspEnt = 8, colPrazoSimpEnt = 9, colPrazoSimpDemais = 10, colPrazoDPU = 11;
+    let colPrazoAutores = 12, colPrazoReus = 13, colPrazoInteressados = 14, colPrazoMP = 15, colUrgente = 16;
+    let colComportamentoLoc = 17, colNovoLoc = 18, colLocDesativar = 19, colEncIntimacao = 20, colEventoEncIntimacao = 21, colObs = 22;
+
+    for (const [idxStr, rawHeader] of Object.entries(cab)) {
+      const c = parseInt(idxStr, 10);
+      const h = normalizar(rawHeader);
+      if (!h) continue;
+      if (h === 'no' || h === 'n' || h === 'num' || h === 'numero') colNum = c;
+      else if (h === 'fluxo') colFluxo = c;
+      else if (h.includes('ferramenta')) colFerramenta = c;
+      else if (h.includes('obs') || h.includes('orientac')) colObs = c;
+      else if (h.includes('nome')) colNome = c;
+      else if (h.includes('como salvar') || h.includes('opcoes padrao')) colComoSalvar = c;
+      else if (h.includes('grupo')) colGrupo = c;
+      else if (h.includes('evento a ser') || h.includes('evento')) colEvento = c;
+      else if (h.includes('modo de prazo') || h.includes('modo')) colModoPrazos = c;
+      else if (h.includes('especial') && h.includes('entidade')) colPrazoEspEnt = c;
+      else if (h.includes('simples') && h.includes('entidade')) colPrazoSimpEnt = c;
+      else if (h.includes('simples') && (h.includes('demais') || h.includes('parte'))) colPrazoSimpDemais = c;
+      else if (h.includes('dpu') || h.includes('defensoria')) colPrazoDPU = c;
+      else if (h.includes('ativo') || h.includes('autores')) colPrazoAutores = c;
+      else if (h.includes('passivo') || h.includes('reus')) colPrazoReus = c;
+      else if (h.includes('interessad') || h.includes('terceir')) colPrazoInteressados = c;
+      else if (h.includes('mp') || h.includes('ministerio') || h.includes('custos')) colPrazoMP = c;
+      else if (h.includes('urgente')) colUrgente = c;
+      else if (h.includes('comportamento') || h.includes('comportamento do loc')) colComportamentoLoc = c;
+      else if (h.includes('novo loc') || h.includes('destino')) colNovoLoc = c;
+      else if (h.includes('desativar') || h.includes('remover')) colLocDesativar = c;
+      else if (h.includes('encadeamento') && !h.includes('evento')) colEncIntimacao = c;
+      else if (h.includes('evento encadeado')) colEventoEncIntimacao = c;
+    }
+
+    for (let r = 1; r < tabela.length; r++) {
+      const row = tabela[r];
+      if (!row) continue;
+      const nome = (row[colNome] || '').trim();
+      if (!nome) continue;
+
+      const rawNum = row[colNum];
+      const numVal = parseInt(rawNum, 10);
+      const comoSalvarStr = (row[colComoSalvar] || 'Unidade | Localizadores selecionados | Ação preferencial').trim();
+      const normComoSalvar = normalizar(comoSalvarStr);
+      const ehIndividual = normComoSalvar.includes('individual') && !normComoSalvar.includes('unidade');
+      const acaoPreferencial = normComoSalvar.includes('acao preferencial') || normComoSalvar.includes('preferencial');
+      const padrao = normComoSalvar.includes('padrao') && !normComoSalvar.includes('nao padrao');
+
+      const modoPrazosStr = (row[colModoPrazos] || 'Por Polo').trim();
+      const normModoPrazos = normalizar(modoPrazosStr);
+
+      const urgenteStr = (row[colUrgente] || '').trim();
+      const normUrgente = normalizar(urgenteStr);
+      const ehUrgente = normUrgente === 'sim' || normUrgente === 's' || normUrgente === 'true';
+
+      const comportamentoStr = (row[colComportamentoLoc] || 'NÃO remover de localizador algum').trim();
+      const normComp = normalizar(comportamentoStr);
+      let tipoLocalizador = 'L'; // 'L' = Localizadores selecionados
+      if (normComp.includes('marcar todos') && !normComp.includes('desmarcar')) {
+        tipoLocalizador = 'M';
+      } else if (normComp.includes('desmarcar todos') || normComp.includes('remover todos')) {
+        tipoLocalizador = 'D';
+      }
+
+      const encIntimacaoStr = (row[colEncIntimacao] || '').trim();
+      const encIntimacao = normalizar(encIntimacaoStr) === 'sim' || normalizar(encIntimacaoStr) === 's';
+
+      const item = {
+        linha: r + 1,
+        num: (rawNum !== undefined && rawNum !== null && String(rawNum).trim() !== '') ? String(rawNum).trim() : String(r),
+        numero: isNaN(numVal) ? r : numVal,
+        fluxo: (row[colFluxo] || '').trim(),
+        ferramenta: (row[colFerramenta] || 'Intimação Eletrônica').trim(),
+        nome: nome,
+        comoSalvar: comoSalvarStr,
+        rdPrefTipo: ehIndividual ? 'I' : 'U',
+        tipo: ehIndividual ? 'Individual' : 'Unidade',
+        acaoPreferencial: acaoPreferencial,
+        padrao: padrao,
+        grupo: (row[colGrupo] || '').trim(),
+        evento: (row[colEvento] || '').trim(),
+        modoPrazos: modoPrazosStr,
+        normModoPrazos: normModoPrazos,
+        prazoEspEnt: (row[colPrazoEspEnt] || '').trim(),
+        prazoSimpEnt: (row[colPrazoSimpEnt] || '').trim(),
+        prazoSimpDemais: (row[colPrazoSimpDemais] || '').trim(),
+        prazoDPU: (row[colPrazoDPU] || '').trim(),
+        prazoAutores: (row[colPrazoAutores] || '').trim(),
+        prazoReus: (row[colPrazoReus] || '').trim(),
+        prazoInteressados: (row[colPrazoInteressados] || '').trim(),
+        prazoMP: (row[colPrazoMP] || '').trim(),
+        urgente: ehUrgente,
+        comportamentoLoc: comportamentoStr,
+        rdPrefLocalizadores: tipoLocalizador,
+        novoLocalizador: (row[colNovoLoc] || '').trim(),
+        locDesativar: (row[colLocDesativar] || '').trim(),
+        encadeamentoIntimacao: encIntimacao,
+        eventoEncadeadoIntimacao: (row[colEventoEncIntimacao] || '').trim(),
+        obs: (row[colObs] || '').trim()
+      };
+      itens.push(item);
+    }
+
+    return itens;
   }
 
   function converterTabelaParaItensAreaMinutas(tabela) {
@@ -7365,6 +7511,9 @@
     if (moduloAtivo === 'area_minutas') {
       return await executarPassoAPassoAreaMinutas(item);
     }
+    if (moduloAtivo === 'intimacoes') {
+      return await executarPassoAPassoIntimacao(item);
+    }
     return await executarPassoAPassoItemMinuta(item);
   }
 
@@ -10829,7 +10978,7 @@
 
       .rito-module-tabs {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: 6px;
         background: #f1f5f9;
         padding: 4px;
@@ -11605,7 +11754,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.4</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5</span></span>
 
         </div>
 
@@ -11651,6 +11800,11 @@
             <button type="button" id="btn-modulo-area-minutas" class="rito-btn-modulo ${moduloAtivo === 'area_minutas' ? 'active' : ''}" title="Módulo de Preferências da Área de Minutas (Documentos)">
               <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
               <span>Documentos</span>
+            </button>
+
+            <button type="button" id="btn-modulo-intimacoes" class="rito-btn-modulo ${moduloAtivo === 'intimacoes' ? 'active' : ''}" title="Módulo de Preferências de Intimação Eletrônica">
+              <svg viewBox="0 0 24 24"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/><line x1="2" y1="3" x2="22" y2="21"/></svg>
+              <span>Intimações</span>
             </button>
 
           </div>
@@ -11848,6 +12002,11 @@
     const btnModAreaMin = document.getElementById('btn-modulo-area-minutas');
     if (btnModAreaMin) {
       btnModAreaMin.onclick = () => alternarModulo('area_minutas');
+    }
+
+    const btnModIntim = document.getElementById('btn-modulo-intimacoes');
+    if (btnModIntim) {
+      btnModIntim.onclick = () => alternarModulo('intimacoes');
     }
 
 
@@ -12309,6 +12468,35 @@
       return;
     }
 
+    if (moduloAtivo === 'intimacoes') {
+      card.innerHTML = `
+        <div class="rito-log-card-header">
+          <span>📋 Linha ${dados.linha} (Planilha): "${dados.nome}"</span>
+          <span class="rito-badge-success">✅ Criada (Intimação)</span>
+        </div>
+        <div class="rito-log-card-body">
+          <div><span class="rito-log-label">• Nome:</span> ${dados.nome}</div>
+          <div><span class="rito-log-label">• Tipo:</span> ${dados.tipoPref || 'Unidade'}</div>
+          <div><span class="rito-log-label">• Grupo:</span> ${dados.grupo || '(Nenhum - sem grupo)'}</div>
+          <div><span class="rito-log-label">• Ação Preferencial:</span> ${dados.acaoPref}</div>
+          <div><span class="rito-log-label">• Evento Judicial:</span> <span style="color:#38bdf8; font-weight:600;">${dados.evento}</span></div>
+          <div><span class="rito-log-label">• Modo de Prazos:</span> ${dados.modoPrazos || 'Por Polo'}</div>
+          ${dados.prazoMP ? `<div><span class="rito-log-label">• Prazo MP (Custos iuris):</span> ${dados.prazoMP} dias</div>` : ''}
+          ${dados.prazoAutores ? `<div><span class="rito-log-label">• Prazo Autores:</span> ${dados.prazoAutores} dias</div>` : ''}
+          ${dados.prazoReus ? `<div><span class="rito-log-label">• Prazo Réus:</span> ${dados.prazoReus} dias</div>` : ''}
+          ${dados.prazoEspEnt ? `<div><span class="rito-log-label">• Prazo Especial Entidades:</span> ${dados.prazoEspEnt} dias</div>` : ''}
+          ${dados.prazoSimpDemais ? `<div><span class="rito-log-label">• Prazo Simples Partes:</span> ${dados.prazoSimpDemais} dias</div>` : ''}
+          <div><span class="rito-log-label">• Intimação Urgente:</span> ${dados.urgente ? 'Sim' : 'Não'}</div>
+          <div><span class="rito-log-label">• Comportamento Loc.:</span> ${dados.comportamento}</div>
+          <div><span class="rito-log-label">• Novo Localizador:</span> ${dados.locPrincipal || '(Nenhum)'}</div>
+          ${dados.locDesativar ? `<div><span class="rito-log-label">• Localizador a Desativar:</span> ${dados.locDesativar}</div>` : ''}
+        </div>
+      `;
+      box.appendChild(card);
+      salvarLogsNoStorage();
+      return;
+    }
+
 
 
     const secTxt = Array.isArray(dados.locSecundarios) ? dados.locSecundarios.join('; ') : dados.locSecundarios;
@@ -12734,7 +12922,9 @@
 
 
   async function iniciarExecucao() {
-    if (ehTelaDeRelatorio()) {
+    if (ehTelaDeIntimacao()) {
+      moduloAtivo = 'intimacoes';
+    } else if (ehTelaDeRelatorio()) {
       moduloAtivo = 'relatorios';
     } else if (ehTelaDeMovimentacao()) {
       moduloAtivo = 'movimentacoes';
@@ -12769,6 +12959,16 @@
       if (!ehTelaDeMinutaAreaTrabalho()) {
 
         alertOriginal.call(window, 'Acesse a tela de "Minutas > Área de Trabalho" para criar as preferências de documentos.');
+
+        return;
+
+      }
+
+    } else if (moduloAtivo === 'intimacoes') {
+
+      if (!ehTelaDeIntimacao()) {
+
+        alertOriginal.call(window, 'Acesse a tela de "Intimação Eletrônica" de um processo para criar as preferências de intimação.');
 
         return;
 
@@ -12813,6 +13013,8 @@
       resetarFormularioCompletamente();
     } else if (moduloAtivo === 'movimentacoes') {
       resetarFormularioMovimentacao();
+    } else if (moduloAtivo === 'intimacoes') {
+      resetarFormularioIntimacao();
     }
 
     await sleep(200);
@@ -12954,6 +13156,16 @@
       existentes = await obterPreferenciaAreaMinutasExistentes();
 
       addLog(`ℹ️ Encontradas ${existentes.size} preferências da Área de Minutas cadastradas na Unidade.`, 'info');
+
+      await garantirGruposRelatoriosEmLote(st.itens);
+
+    } else if (moduloAtivo === 'intimacoes') {
+
+      addLog('🔍 Verificando preferências de intimação já cadastradas na Unidade...', 'info');
+
+      existentes = await obterPreferenciaIntimacaoExistentes();
+
+      addLog(`ℹ️ Encontradas ${existentes.size} preferências de intimação cadastradas na Unidade.`, 'info');
 
       await garantirGruposRelatoriosEmLote(st.itens);
 
@@ -14714,6 +14926,453 @@
       erro: null
     };
   }
+
+  /* ========================================================================== */
+  /* [MÓDULO 5: INTIMAÇÕES ELETRÔNICAS - v3.5]                                  */
+  /* Criação automatizada de preferências na tela de Intimação Eletrônica      */
+  /* (processo_intimacao / processo_intimacao_bloco)                           */
+  /* ========================================================================== */
+
+  async function obterPreferenciaIntimacaoExistentes() {
+    const existentes = new Set();
+
+    const registrar = (nome) => {
+      if (!nome) return;
+      const n = decodificarEntidadesHtml(nome).trim();
+      if (!n || n.length < 2) return;
+      existentes.add(n);
+      const norm = normalizar(n);
+      if (norm) existentes.add(norm);
+    };
+
+    // 1. Tenta carregar do autocomplete nativo se disponível
+    try {
+      if (window.objAjaxAutoCompPreferencia && Array.isArray(window.objAjaxAutoCompPreferencia.arrItens)) {
+        window.objAjaxAutoCompPreferencia.arrItens.forEach(it => {
+          registrar(it.descricao || it.label || it.value);
+        });
+      }
+    } catch (e) {}
+
+    // 2. Consulta o endpoint ajax do autocomplete de preferências para processo_intimacao_bloco
+    try {
+      let urlAuto = '';
+      if (window.objAjaxAutoCompPreferencia && (window.objAjaxAutoCompPreferencia.ajaxTarget || window.objAjaxAutoCompPreferencia.urlServico)) {
+        urlAuto = window.objAjaxAutoCompPreferencia.ajaxTarget || window.objAjaxAutoCompPreferencia.urlServico;
+      }
+      if (!urlAuto) {
+        const m = document.documentElement.innerHTML.match(/['"](controlador_ajax\.php\?acao_ajax=preferencia_auto_completar[^'"]*processo_intimacao_bloco[^'"]*)['"]/i);
+        if (m && m[1]) urlAuto = m[1].replace(/&amp;/g, '&');
+      }
+      if (!urlAuto) {
+        const h = obterHashAtual();
+        if (h) urlAuto = `controlador_ajax.php?acao_ajax=preferencia_auto_completar&nomeAcao=processo_intimacao_bloco&hash=${h}`;
+      }
+      if (urlAuto) {
+        const res = await fetch(urlAuto, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+          body: 'palavra_pesquisa='
+        });
+        if (res.ok) {
+          const txt = await res.text();
+          const matches = txt.match(/<item[^>]*descricao=["']([^"']+)["']/gi) || [];
+          matches.forEach(mTag => {
+            const d = mTag.match(/descricao=["']([^"']+)["']/i);
+            if (d && d[1]) registrar(d[1]);
+          });
+        }
+      }
+    } catch (e) {}
+
+    // 3. Fallback: Consulta gerenciador geral
+    try {
+      const listaUnid = await obterTodasPreferenciasUnidade();
+      if (Array.isArray(listaUnid)) {
+        listaUnid.forEach(item => { if (item && item.nome) registrar(item.nome); });
+      }
+    } catch (e) {}
+
+    return existentes;
+  }
+
+  function resetarFormularioIntimacao() {
+    try {
+      const txtDesc = document.getElementById('txtDescricaoCadastro');
+      if (txtDesc) txtDesc.value = '';
+      const hdnPref = document.getElementById('hdnPreferencia');
+      if (hdnPref) hdnPref.value = '';
+      const txtPref = document.getElementById('txtPreferencia');
+      if (txtPref) txtPref.value = '';
+      const rdUnidade = document.getElementById('rdUnidade');
+      if (rdUnidade) rdUnidade.checked = true;
+      const rdIndividuais = document.getElementById('rdIndividuais');
+      if (rdIndividuais) rdIndividuais.checked = true;
+      const chkPadrao = document.getElementById('chkValorPadrao');
+      if (chkPadrao) chkPadrao.checked = false;
+      const chkMovPref = document.getElementById('chkMovPreferencial');
+      if (chkMovPref) chkMovPref.checked = true;
+      const chkUrgente = document.getElementById('chkIntimacaoUrgente');
+      if (chkUrgente) chkUrgente.checked = false;
+      const selNovoLoc = document.getElementById('selNovoLocalizador');
+      if (selNovoLoc) selNovoLoc.value = '';
+      const selDesativar = document.getElementById('selLocalizadorDesativar');
+      if (selDesativar) {
+        Array.from(selDesativar.options).forEach(o => { o.selected = false; });
+      }
+      const chkEnc = document.getElementById('chkEncadeamentoIntimar');
+      if (chkEnc) chkEnc.checked = false;
+    } catch (e) {}
+  }
+
+  async function executarDiagnosticoPreVooIntimacoes() {
+    addLog('🧪 Iniciando Verificação Prévia de Auditoria do Módulo de Intimações...', 'info');
+
+    if (!ehTelaDeIntimacao()) {
+      addLog('❌ Tela atual não é de Intimação Eletrônica (processo_intimacao).', 'error');
+      alertOriginal.call(window, 'Acesse a tela de "Intimação Eletrônica" de um processo para validar as preferências deste módulo.');
+      return false;
+    }
+
+    const selEvento = document.getElementById('selEventoJudicial');
+    if (!selEvento) {
+      addLog('❌ Elemento #selEventoJudicial não encontrado na página.', 'error');
+      return false;
+    }
+
+    const eventosDisponiveis = Array.from(selEvento.options)
+      .filter(o => o.value && o.value !== 'null')
+      .map(o => ({ value: o.value, texto: o.text.trim(), norm: normalizar(o.text) }));
+
+    addLog(`✓ ${eventosDisponiveis.length} evento(s) judicial(is) mapeado(s) na combo.`, 'info');
+
+    const itens = itensCarregados || [];
+    let faltantes = 0;
+    for (const item of itens) {
+      const normEv = normalizar(item.evento);
+      const match = eventosDisponiveis.find(e => e.norm === normEv || e.norm.includes(normEv) || normEv.includes(e.norm));
+      if (!match) {
+        addLog(`⚠️ Item #${item.num} ("${item.nome}"): Evento "${item.evento}" não encontrado no catálogo da tela!`, 'warn');
+        faltantes++;
+      }
+    }
+
+    if (faltantes === 0) {
+      addLog('✅ Todos os eventos da planilha constam no catálogo do eproc!', 'success');
+    } else {
+      addLog(`⚠️ Atenção: ${faltantes} evento(s) da planilha não foram localizados no catálogo nativo.`, 'warn');
+    }
+
+    return true;
+  }
+
+  async function executarPassoAPassoIntimacao(item) {
+    if (window._eprocPararLote) throw new Error('PARADA_SOLICITADA');
+
+    ultimoAvisoEproc = '';
+    gravacaoEmAndamento = true;
+
+    resetarFormularioIntimacao();
+    await sleep(150);
+
+    const dados = {
+      linha: item.linha,
+      nome: item.nome,
+      tipoPref: item.tipo || 'Unidade',
+      grupo: item.grupo || '(Nenhum)',
+      acaoPref: item.acaoPreferencial ? 'Marcada' : 'Não marcada',
+      evento: item.evento,
+      modoPrazos: item.modoPrazos || 'Por Polo',
+      prazoMP: item.prazoMP || '',
+      prazoAutores: item.prazoAutores || '',
+      prazoReus: item.prazoReus || '',
+      prazoEspEnt: item.prazoEspEnt || '',
+      prazoSimpDemais: item.prazoSimpDemais || '',
+      urgente: !!item.urgente,
+      comportamento: item.comportamentoLoc || 'NÃO remover de localizador algum',
+      locPrincipal: item.novoLocalizador || '',
+      locPrincipalFallback: false,
+      locDesativar: item.locDesativar || '',
+      sucesso: false
+    };
+
+    try {
+      // 1. Abre subformulário de Preferências (#divPrefOpcoes)
+      if (typeof window.exibirFormPreferencias === 'function') {
+        try { window.exibirFormPreferencias('salvar'); } catch (e) {}
+      } else {
+        const btnSalvar = document.getElementById('btnSalvarPreferencias');
+        if (btnSalvar) dispararClique(btnSalvar);
+      }
+      if (typeof window.exibeOcultaItens === 'function') {
+        try { window.exibeOcultaItens(false); } catch (e) {}
+      }
+      const divOpcoes = document.getElementById('divPrefOpcoes');
+      if (divOpcoes) divOpcoes.style.display = 'block';
+      const hdnAcao = document.getElementById('hdnAcaoPreferencia');
+      if (hdnAcao) hdnAcao.value = 'salvar';
+      const hdnPref = document.getElementById('hdnPreferencia');
+      if (hdnPref) hdnPref.value = '';
+      await sleep(200);
+
+      // 2. Nome da Preferência (#txtDescricaoCadastro)
+      const txtDescricaoCadastro = document.getElementById('txtDescricaoCadastro');
+      if (!txtDescricaoCadastro) throw new Error('Campo txtDescricaoCadastro não encontrado na tela de Intimação Eletrônica.');
+      destacarCampoAtivo(txtDescricaoCadastro, 'Nome da Preferência', item.nome);
+      txtDescricaoCadastro.disabled = false;
+      txtDescricaoCadastro.value = item.nome;
+      dispararEventos(txtDescricaoCadastro, ['input', 'change', 'blur']);
+
+      // 3. Tipo de Preferência (#rdUnidade / #rdIndividual)
+      if (window.jQuery) {
+        window.jQuery('input[name=rdPrefTipo]').prop('disabled', false);
+      }
+      const usarIndividual = normalizar(item.tipo) === 'individual';
+      const rdTipoAlvo = document.getElementById(usarIndividual ? 'rdIndividual' : 'rdUnidade');
+      if (rdTipoAlvo) {
+        destacarCampoAtivo(rdTipoAlvo, 'Tipo de Preferência', usarIndividual ? 'Individual' : 'Unidade');
+        rdTipoAlvo.checked = true;
+        dispararEventos(rdTipoAlvo, ['change', 'click']);
+      }
+
+      // 4. Grupo de Preferência (#selFormularioPersonalizacaoGrupo)
+      const selGrupoEl = document.getElementById('selFormularioPersonalizacaoGrupo');
+      const temGrupoDefinido = !!(item.grupo && String(item.grupo).trim() !== '' && String(item.grupo).trim() !== '-' && normalizar(item.grupo) !== 'nenhum');
+      if (selGrupoEl) {
+        if (temGrupoDefinido) {
+          const optMatch = Array.from(selGrupoEl.options).find(o => normalizar(o.text) === normalizar(item.grupo));
+          if (optMatch) {
+            selGrupoEl.value = optMatch.value;
+            optMatch.selected = true;
+          }
+        } else {
+          let optNull = Array.from(selGrupoEl.options).find(o => o.value === 'null' || o.value === '');
+          if (optNull) {
+            Array.from(selGrupoEl.options).forEach(o => { o.selected = (o === optNull); });
+            selGrupoEl.value = optNull.value;
+          }
+        }
+      }
+
+      // 5. Radio "Como salvar seleção de localizadores": (#rdIndividuais, #rdMarcarTodos, #rdDesmarcarTodos)
+      if (window.jQuery) {
+        window.jQuery('input[name=rdPrefLocalizadores]').prop('disabled', false);
+      }
+      const radioLocId = item.rdPrefLocalizadores === 'M' ? 'rdMarcarTodos' : (item.rdPrefLocalizadores === 'D' ? 'rdDesmarcarTodos' : 'rdIndividuais');
+      const rdLoc = document.getElementById(radioLocId) || document.getElementById('rdIndividuais');
+      if (rdLoc) {
+        rdLoc.disabled = false;
+        rdLoc.checked = true;
+        dispararEventos(rdLoc, ['change', 'click']);
+      }
+
+      // 6. Opções padrão: Ação Preferencial e Marcar como Padrão
+      const chkMovPref = document.getElementById('chkMovPreferencial');
+      if (chkMovPref) {
+        chkMovPref.disabled = false;
+        chkMovPref.checked = !!item.acaoPreferencial;
+        dispararEventos(chkMovPref, ['change']);
+      }
+      const chkPadrao = document.getElementById('chkValorPadrao');
+      if (chkPadrao) {
+        chkPadrao.disabled = false;
+        chkPadrao.checked = !!item.padrao;
+        dispararEventos(chkPadrao, ['change']);
+      }
+
+      // 7. Evento Judicial (#selEventoJudicial)
+      const selEvento = document.getElementById('selEventoJudicial');
+      let idEventoSelecionado = '';
+      if (selEvento) {
+        const normEvento = normalizar(item.evento);
+        let optEvento = Array.from(selEvento.options).find(o => {
+          if (!o.value || o.value === 'null') return false;
+          const oNorm = normalizar(o.text);
+          return oNorm === normEvento || oNorm.includes(normEvento) || normEvento.includes(oNorm);
+        });
+        if (optEvento) {
+          selEvento.value = optEvento.value;
+          optEvento.selected = true;
+          idEventoSelecionado = optEvento.value;
+          destacarCampoAtivo(selEvento, 'Evento Judicial', optEvento.text);
+          dispararEventos(selEvento, ['change']);
+        } else {
+          addLog(`⚠️ Evento "${item.evento}" não encontrado na combo selEventoJudicial!`, 'warn');
+        }
+      }
+
+      // 8. Modo de Prazos e Preenchimento dos Prazos
+      const modoPolo = item.normModoPrazos.includes('polo');
+      const modoTipoParte = item.normModoPrazos.includes('tipo') || item.normModoPrazos.includes('parte');
+
+      if (modoPolo) {
+        const rdPolo = document.getElementById('porPolo');
+        if (rdPolo) {
+          rdPolo.checked = true;
+          dispararEventos(rdPolo, ['change', 'click']);
+        }
+        if (item.prazoMP) {
+          const txtMP = document.getElementById('txtPrazoMPF');
+          const chkMP = document.getElementById('chkSelMPF');
+          if (txtMP) { txtMP.value = item.prazoMP; dispararEventos(txtMP, ['input', 'change', 'keyup']); }
+          if (chkMP) { chkMP.checked = true; dispararEventos(chkMP, ['change']); }
+        }
+        if (item.prazoAutores) {
+          const txtAutores = document.getElementById('txtPrazoAutores');
+          const chkAutores = document.getElementById('chkSelPrazoAutores');
+          if (txtAutores) { txtAutores.value = item.prazoAutores; dispararEventos(txtAutores, ['input', 'change', 'keyup']); }
+          if (chkAutores) { chkAutores.checked = true; dispararEventos(chkAutores, ['change']); }
+        }
+        if (item.prazoReus) {
+          const txtReus = document.getElementById('txtPrazoReus');
+          const chkReus = document.getElementById('chkSelPrazoReus');
+          if (txtReus) { txtReus.value = item.prazoReus; dispararEventos(txtReus, ['input', 'change', 'keyup']); }
+          if (chkReus) { chkReus.checked = true; dispararEventos(chkReus, ['change']); }
+        }
+        if (item.prazoInteressados) {
+          const txtInter = document.getElementById('txtPrazoInteressados');
+          const chkInter = document.getElementById('chkSelPrazoInteressados');
+          if (txtInter) { txtInter.value = item.prazoInteressados; dispararEventos(txtInter, ['input', 'change', 'keyup']); }
+          if (chkInter) { chkInter.checked = true; dispararEventos(chkInter, ['change']); }
+        }
+      } else if (modoTipoParte) {
+        const rdTipoParte = document.getElementById('porTipoDeParte');
+        if (rdTipoParte) {
+          rdTipoParte.checked = true;
+          dispararEventos(rdTipoParte, ['change', 'click']);
+        }
+        if (item.prazoEspEnt) {
+          const txtEsp = document.getElementById('txtPrazoEntPrazoEspecial');
+          const chkEsp = document.getElementById('chkSelEntPrazoEspecial');
+          if (txtEsp) { txtEsp.value = item.prazoEspEnt; dispararEventos(txtEsp, ['input', 'change', 'keyup']); }
+          if (chkEsp) { chkEsp.checked = true; dispararEventos(chkEsp, ['change']); }
+        }
+        if (item.prazoSimpEnt) {
+          const txtSimp = document.getElementById('txtPrazoEntPrazoSimples');
+          const chkSimp = document.getElementById('chkSelEntPrazoSimples');
+          if (txtSimp) { txtSimp.value = item.prazoSimpEnt; dispararEventos(txtSimp, ['input', 'change', 'keyup']); }
+          if (chkSimp) { chkSimp.checked = true; dispararEventos(chkSimp, ['change']); }
+        }
+        if (item.prazoSimpDemais) {
+          const txtDemais = document.getElementById('txtPrazoNaoEntPrazoSimples');
+          const chkDemais = document.getElementById('chkSelNaoEntPrazoSimples');
+          if (txtDemais) { txtDemais.value = item.prazoSimpDemais; dispararEventos(txtDemais, ['input', 'change', 'keyup']); }
+          if (chkDemais) { chkDemais.checked = true; dispararEventos(chkDemais, ['change']); }
+        }
+        if (item.prazoDPU) {
+          const txtDPU = document.getElementById('txtPrazoDPU');
+          const chkDPU = document.getElementById('chkSelDPU');
+          if (txtDPU) { txtDPU.value = item.prazoDPU; dispararEventos(txtDPU, ['input', 'change', 'keyup']); }
+          if (chkDPU) { chkDPU.checked = true; dispararEventos(chkDPU, ['change']); }
+        }
+      }
+
+      // Prazo Geral / Igual para todos
+      if (item.prazoSimpDemais || item.prazoMP) {
+        const pVal = item.prazoMP || item.prazoSimpDemais;
+        const txtPrazoIgual = document.getElementById('txtPrazoIgual');
+        if (txtPrazoIgual) { txtPrazoIgual.value = pVal; dispararEventos(txtPrazoIgual, ['input', 'change', 'keyup']); }
+      }
+
+      // 9. Intimação Urgente
+      const chkUrg = document.getElementById('chkIntimacaoUrgente');
+      if (chkUrg) {
+        chkUrg.checked = !!item.urgente;
+        dispararEventos(chkUrg, ['change']);
+      }
+
+      // 10. Novo Localizador (Destino)
+      const selNovoLoc = document.getElementById('selNovoLocalizador');
+      if (selNovoLoc && item.novoLocalizador && item.novoLocalizador !== '-') {
+        const normLoc = normalizar(item.novoLocalizador);
+        const optLoc = Array.from(selNovoLoc.options).find(o => {
+          if (!o.value || o.value === 'null') return false;
+          const oNorm = normalizar(o.text);
+          return oNorm === normLoc || oNorm.includes(normLoc) || normLoc.includes(oNorm);
+        });
+        if (optLoc) {
+          selNovoLoc.value = optLoc.value;
+          optLoc.selected = true;
+          destacarCampoAtivo(selNovoLoc, 'Novo Localizador', optLoc.text);
+          dispararEventos(selNovoLoc, ['change']);
+        } else {
+          addLog(`⚠️ Localizador destino "${item.novoLocalizador}" não encontrado no selNovoLocalizador da unidade.`, 'warn');
+        }
+      }
+
+      // 11. Localizadores a Desativar
+      const selDesativar = document.getElementById('selLocalizadorDesativar');
+      if (selDesativar) {
+        if (!item.locDesativar || item.locDesativar === '-' || normalizar(item.locDesativar).includes('nao remover')) {
+          Array.from(selDesativar.options).forEach(o => { o.selected = false; });
+        } else {
+          const alvos = item.locDesativar.split(/[;,]/).map(s => normalizar(s)).filter(Boolean);
+          Array.from(selDesativar.options).forEach(o => {
+            const oNorm = normalizar(o.text);
+            o.selected = alvos.some(a => oNorm === a || oNorm.includes(a));
+          });
+        }
+      }
+
+      // 12. Encadeamento
+      const chkEnc = document.getElementById('chkEncadeamentoIntimar');
+      if (chkEnc) {
+        chkEnc.checked = !!item.encadeamentoIntimacao;
+        dispararEventos(chkEnc, ['change']);
+      }
+
+      instalarHookGravarPreferencias();
+      await sleep(150);
+
+      // 13. Gravação da Preferência (#btnOK / validarPreferencias)
+      const btnOK = document.getElementById('btnOK');
+      if (btnOK) {
+        btnOK.disabled = false;
+        destacarCampoAtivo(btnOK, 'Salvar Preferência', `Gravando: ${item.nome}`);
+        dispararClique(btnOK);
+      } else if (typeof window.validarPreferencias === 'function') {
+        window.validarPreferencias();
+      }
+
+      let aguardouSave = 0;
+      while (aguardouSave < 5000) {
+        if (window._eprocPararLote) break;
+        await sleep(250);
+        aguardouSave += 250;
+        if (ultimoAvisoEproc) {
+          const avisoNorm = normalizar(ultimoAvisoEproc);
+          if (avisoNorm.includes('cadastrada') || avisoNorm.includes('atualizada') || avisoNorm.includes('sucesso')) {
+            break;
+          }
+          if (avisoNorm.includes('erro') || avisoNorm.includes('ja existe') || avisoNorm.includes('mesma descricao')) {
+            break;
+          }
+        }
+        if (btnOK && !btnOK.disabled && aguardouSave > 1200) {
+          break;
+        }
+      }
+
+      if (ultimoAvisoEproc) {
+        const avisoNorm = normalizar(ultimoAvisoEproc);
+        if (avisoNorm.includes('ja existe') || avisoNorm.includes('mesma descricao')) {
+          throw new Error('DUPLICADA: ' + ultimoAvisoEproc);
+        }
+        if (avisoNorm.includes('erro') || avisoNorm.includes('falha') || avisoNorm.includes('nao foi possivel') || avisoNorm.includes('informe a descricao')) {
+          throw new Error(ultimoAvisoEproc);
+        }
+      }
+
+      addLog(`✅ Preferência de Intimação gravada com sucesso: "${item.nome}"`, 'success');
+      dados.sucesso = true;
+      return dados;
+    } finally {
+      removerDestaqueCampo();
+      gravacaoEmAndamento = false;
+    }
+  }
+
   async function executarDiagnosticoPreVoo() {
 
     if (moduloAtivo === 'relatorios') {
@@ -14731,6 +15390,12 @@
     if (moduloAtivo === 'area_minutas') {
 
       return await executarDiagnosticoPreVooAreaMinutas();
+
+    }
+
+    if (moduloAtivo === 'intimacoes') {
+
+      return await executarDiagnosticoPreVooIntimacoes();
 
     }
 
@@ -15469,7 +16134,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.4</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5</span>
 
           </h3>
 

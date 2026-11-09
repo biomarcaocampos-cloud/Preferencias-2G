@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Instruções — Criar Preferências em Lote 2G v3.4 (Segundo Grau TJSP)</title>
+  <title>Instruções — Criar Preferências em Lote 2G v3.5 (Segundo Grau TJSP)</title>
   <style>
     :root {
       --primary: #15803d;
@@ -196,7 +196,7 @@
     <div class="header">
       <h1><span class="badge-icon-p">P</span> Criar Preferências em Lote 2G (eproc TJSP - Segundo Grau)</h1>
       <p>Guia Completo de Operação, Auditoria Prévia e Arquitetura de Segurança de Dados.</p>
-      <div class="badge-version">Versão 3.4 - 09/11/2026</div>
+      <div class="badge-version">Versão 3.5 - 09/11/2026</div>
     </div>
 
     <div class="content">
@@ -214,7 +214,7 @@
       <h2>1. O que este Script faz</h2>
       <p>A extensão automatiza a criação em lote de preferências no <b>eproc 2G TJSP</b> a partir da planilha oficial unificada (<code>Fluxo 2G - Preferências Oficial (Unificada).xlsx</code>), operando em quatro módulos integrados:</p>
       <ul>
-        <li><b>📝 Módulo 1 (Minutas):</b> Lê a aba <code>Preferências - Minutas</code> e grava preferências no formulário oficial de <b>Nova Minuta</b> (<code>minuta_cadastrar</code>), aplicando regras de negócio do 2G, incluindo agendamento encadeado de intimações com prazos especiais/simples/DPU, remessas e matrizes de acórdão. <i>(v3.2: Múltiplas classificações e emojis íntegros; v3.4: Correção do indicador de progresso #num e estabilidade do fluxo de minutas).</i></li>
+        <li><b>📝 Módulo 1 (Minutas):</b> Lê a aba <code>Preferências - Minutas</code> e grava preferências no formulário oficial de <b>Nova Minuta</b> (<code>minuta_cadastrar</code>), aplicando regras de negócio do 2G, incluindo agendamento encadeado de intimações com prazos especiais/simples/DPU, remessas e matrizes de acórdão. <i>(v3.2: Múltiplas classificações e emojis íntegros; v3.5: Correção do indicador de progresso #num e estabilidade do fluxo de minutas).</i></li>
         <li><b>📊 Módulo 2 (Relatórios):</b> Lê a aba <code>Preferências - Relatório Geral</code> e grava preferências na tela de <b>Relatório Geral de Processos</b> (<code>relatorio_geral_listar</code>), incluindo pré-cadastro e vinculação a Grupos de Preferências (ex.: <i>Gestão</i>, <i>Servidores 1 a 5</i>), operador do localizador configurado conforme a coluna <b>"Operação (E/OU)"</b> da planilha (com padrão em <b>"E"</b>), injeção dos filtros de localizadores, situação processual (Movimento/Suspenso/Baixado) e conteúdo de lembretes.</li>
         <li><b>⚡ Módulo 3 (Movimentações):</b> Lê a aba <code>Preferências - Movimentar</code> e grava preferências na tela de <b>Movimentação Processual</b> (<code>processo_movimento_consultar</code>), buscando o evento exato pelo nome completo da movimentação (desambiguando eventos que compartilham o mesmo código numérico, como o código <code>51</code> ou <code>123</code>), configurando o comportamento e os novos localizadores e respeitando a ausência de grupo quando a coluna <i>Grupo de preferência</i> estiver vazia.</li>
         <li><b>📄 Módulo 4 (Documentos / Área de Minutas):</b> Lê a aba <code>Preferências - Área de Minutas</code> e grava preferências na tela da <b>Área de Trabalho de Minutas</b> (<code>minuta_area_trabalho</code>), filtrando por tipo de documento (Despachos/Decisões e Votos), status da minuta, localizador de servidor e grupo de preferências.</li>
@@ -495,6 +495,71 @@
         </tbody>
       </table>
 
+
+      <h3>📬 5.5 Módulo 5: Intimações (Tela Intimação Eletrônica)</h3>
+      <p>Configura preferências oficiais de intimação na tela <code>acao=processo_intimacao</code> / <code>processo_intimacao_bloco</code> (aba <i>Preferências - Intimações</i> da planilha oficial):</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 26%;">Campo no eproc 2G</th>
+            <th style="width: 36%;">Ação Executada pela Extensão</th>
+            <th style="width: 38%;">Origem / Regra de Negócio 2G</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Nome da Preferência</b></td>
+            <td>Insere o identificador único com emojis padronizados em <code>txtDescricaoCadastro</code> (ex.: <code>⬛Vista MP⬛</code>).</td>
+            <td>Coluna <i>Nome da Preferência</i> da aba Preferências - Intimações.</td>
+          </tr>
+          <tr>
+            <td><b>Tipo de Preferência</b></td>
+            <td>Define como <b>Unidade</b> (<code>rdPrefTipo = 'U'</code>) ou Individual.</td>
+            <td>Disponibiliza a regra para toda a unidade judiciária.</td>
+          </tr>
+          <tr>
+            <td><b>Evento Judicial</b></td>
+            <td>Localiza e seleciona em <code>selEventoJudicial</code> o evento oficial (ex.: <i>Expedida/certificada a intimação eletrônica - Vista ao MP para Parecer</i>, cód. <code>40400403</code>).</td>
+            <td>Coluna <i>Evento a ser Lançado (eproc)</i>.</td>
+          </tr>
+          <tr>
+            <td><b>Modo de Prazos</b></td>
+            <td>Aciona o modo correspondente (<b>Por Polo</b> via <code>#porPolo</code> ou <b>Por Tipo de Parte</b> via <code>#porTipoDeParte</code>).</td>
+            <td>Coluna <i>Modo de Prazos</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Prazos por Polo / MP</b></td>
+            <td>Preenche os campos específicos de prazo e marca os checkboxes respectivos (ex.: <code>txtPrazoMPF</code> = 30 dias com <code>chkSelMPF</code> marcado).</td>
+            <td>Colunas <i>Prazo MP (Custos iuris)</i>, <i>Prazo Polo Ativo</i>, <i>Prazo Polo Passivo</i>, etc.</td>
+          </tr>
+          <tr>
+            <td><b>Intimação Urgente</b></td>
+            <td>Marca ou desmarca o checkbox <code>chkIntimacaoUrgente</code> conforme parametrização.</td>
+            <td>Coluna <i>Intimação Urgente (Sim/Não)</i>.</td>
+          </tr>
+          <tr>
+            <td><b>Comportamento do Localizador</b></td>
+            <td>Configura <code>rdPrefLocalizadores</code> para <i>Localizadores selecionados</i> (<code>L</code>), <i>Marcar todos</i> (<code>M</code>) ou <i>Desmarcar todos</i> (<code>D</code>).</td>
+            <td>Coluna <i>Comportamento do Localizador</i>.</td>
+          </tr>
+          <tr>
+            <td><b>Novo Localizador (Destino)</b></td>
+            <td>Seleciona em <code>selNovoLocalizador</code> o localizador pós-intimação (ex.: <code>⏳Ag. Manif. - Para Voto⌛</code>).</td>
+            <td>Coluna <i>Novo Localizador (Destino)</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Localizadores a Desativar</b></td>
+            <td>Desmarca ou retira localizadores específicos em <code>selLocalizadorDesativar</code> se especificado.</td>
+            <td>Coluna <i>Localizadores a Desativar / Remover</i>.</td>
+          </tr>
+          <tr>
+            <td><b>Ação Preferencial</b></td>
+            <td>Mantém marcado como Ação Preferencial (<code>chkMovPreferencial = 'S'</code>).</td>
+            <td>Coluna <i>Como Salvar / Opções Padrão</i>.</td>
+          </tr>
+        </tbody>
+      </table>
+
       <h2>6. Camadas de Proteção e Segurança Ativa 2G</h2>
       <div class="card-security">
         <h4>🔒 1. Validação Estrita de Localizadores e Eventos</h4>
@@ -515,7 +580,7 @@
 
     <div class="footer">
       <div>Tribunal de Justiça do Estado de São Paulo • eproc 2G (Segundo Grau)</div>
-      <div>Extensão 2G • Versão 3.4 - 09/11/2026</div>
+      <div>Extensão 2G • Versão 3.5 - 09/11/2026</div>
     </div>
   </div>
 
