@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "eproc TJSP 2G - Criar Preferências em Lote",
+  "version": "3.4",
+  "description": "Cria preferências em lote exclusivamente no eproc 2G TJSP a partir da planilha oficial unificada.",
+  "permissions": [
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://eproc2g.tjsp.jus.br/*",
+        "*://eproc-2g-sp-hml.tjsp.jus.br/*"
+      ],
+      "js": [
+        "vendor/jszip.min.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN",
+      "all_frames": false,
+      "css": [
+        "content.css"
+      ]
+    },
+    {
+      "matches": [
+        "*://eproc2g.tjsp.jus.br/*",
+        "*://eproc-2g-sp-hml.tjsp.jus.br/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "instrucoes.html",
+        "vendor/jszip.min.js"
+      ],
+      "matches": [
+        "*://eproc2g.tjsp.jus.br/*",
+        "*://eproc-2g-sp-hml.tjsp.jus.br/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "eproc TJSP 2G - Criar Preferências em Lote (Segundo Grau)"
+  }
+}

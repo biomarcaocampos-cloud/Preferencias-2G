@@ -1,0 +1,551 @@
+/* ============================================================
+   eproc TJSP ? Criar e Copiar Prefer?ncias em Lote
+   Arquivo: content.css
+   Estilo visual integrado ao padr?o do eproc e das extens?es TJSP
+   ============================================================ */
+
+/* ?? Bot?es na Barra de Comandos Superior ???????????????????? */
+.eproc-pref-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  padding: 5px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  border-radius: 4px !important;
+  border: none !important;
+  cursor: pointer !important;
+  margin-left: 5px !important;
+  transition: all 0.2s ease !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15) !important;
+  color: #ffffff !important;
+  line-height: normal !important;
+  height: auto !important;
+  text-decoration: none !important;
+}
+.eproc-pref-btn:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.22) !important;
+  filter: brightness(1.08) !important;
+}
+.eproc-pref-btn:active {
+  transform: translateY(1px) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12) !important;
+}
+
+/* Cores espec?ficas dos bot?es */
+.eproc-pref-btn-lote {
+  background: linear-gradient(135deg, #005b8f 0%, #0088cc 100%) !important;
+}
+.eproc-pref-btn-copiar {
+  background: linear-gradient(135deg, #15803d 0%, #22c55e 100%) !important;
+}
+.eproc-pref-btn-colar {
+  background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%) !important;
+}
+.eproc-pref-btn-limpar {
+  background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%) !important;
+}
+.eproc-pref-btn-ajuda {
+  background: linear-gradient(135deg, #475569 0%, #64748b 100%) !important;
+}
+.eproc-pref-btn-parar {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+  animation: pulse-red 1.5s infinite !important;
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+/* Badge indicativo de prefer?ncia salva */
+.eproc-pref-badge {
+  background: #f59e0b;
+  color: #1e293b;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 1px 6px;
+  margin-left: 3px;
+  display: inline-block;
+}
+
+/* ?? Painel Flutuante (arrast?vel) ??????????????????????????? */
+#eproc-prefs-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483640;
+  background: #ffffff;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  width: 380px;
+  max-width: calc(100vw - 30px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  color: #1e293b;
+  overflow: hidden;
+  user-select: none;
+  transition: opacity 0.2s ease;
+}
+
+#eproc-prefs-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  background: linear-gradient(135deg, #005b8f 0%, #003e63 100%);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: move;
+  border-bottom: 2px solid #0088cc;
+}
+
+.eproc-panel-header-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.eproc-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eproc-panel-btn-icon {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+.eproc-panel-btn-icon:hover {
+  opacity: 1;
+  background: rgba(255,255,255,0.2);
+}
+
+#eproc-prefs-panel-body {
+  padding: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+  background: #f8fafc;
+}
+
+.eproc-panel-status-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.eproc-panel-status-title {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.eproc-panel-status-desc {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.eproc-panel-btn-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.eproc-panel-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  color: #ffffff;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.eproc-panel-action-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+.eproc-panel-action-btn:active {
+  transform: translateY(1px);
+}
+
+.btn-panel-lote {
+  background: linear-gradient(135deg, #005b8f 0%, #0088cc 100%);
+}
+.btn-panel-copiar {
+  background: linear-gradient(135deg, #15803d 0%, #22c55e 100%);
+}
+.btn-panel-colar {
+  background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
+}
+
+/* ?? Modal Flutuante Principal (Upload de Planilha e Gerenciamento) ? */
+#eproc-pref-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(2px);
+  z-index: 2147483647;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px 20px 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+#eproc-pref-modal-container {
+  background: #ffffff;
+  width: 1000px;
+  max-width: 95vw;
+  max-height: 90vh;
+  border-radius: 10px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  margin-top: 5px;
+  margin-bottom: 25px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #1e293b;
+}
+
+.eproc-pref-modal-header {
+  background: linear-gradient(135deg, #005b8f 0%, #003e63 100%);
+  color: #ffffff;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 3px solid #0088cc;
+}
+.eproc-pref-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.eproc-pref-modal-close {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 20px;
+  cursor: pointer;
+  opacity: 0.8;
+  line-height: 1;
+}
+.eproc-pref-modal-close:hover {
+  opacity: 1;
+}
+
+/* Tabs do modal */
+.eproc-pref-modal-tabs {
+  display: flex;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0 16px;
+  gap: 4px;
+}
+.eproc-pref-tab-btn {
+  padding: 11px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s ease;
+}
+.eproc-pref-tab-btn:hover {
+  color: #005b8f;
+  background: rgba(255,255,255,0.6);
+}
+.eproc-pref-tab-btn.active {
+  color: #005b8f;
+  background: #ffffff;
+  border-bottom-color: #0088cc;
+}
+
+.eproc-pref-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  background: #f8fafc;
+}
+
+/* Zona de Upload / Arrastar Planilha */
+.eproc-dropzone {
+  border: 2px dashed #94a3b8;
+  border-radius: 8px;
+  padding: 26px 20px;
+  text-align: center;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 16px;
+}
+.eproc-dropzone:hover, .eproc-dropzone.dragover {
+  border-color: #0088cc;
+  background: #f0fdf4;
+}
+.eproc-dropzone-icon {
+  font-size: 36px;
+  color: #0088cc;
+  margin-bottom: 8px;
+}
+.eproc-dropzone-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+.eproc-dropzone-desc {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Barra de Op??es e Filtros */
+.eproc-pref-options-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 14px;
+  align-items: center;
+}
+.eproc-pref-option-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #334155;
+}
+.eproc-pref-option-item label {
+  font-weight: 600;
+}
+.eproc-pref-option-item select, .eproc-pref-option-item input {
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+}
+.eproc-pref-option-item select:focus, .eproc-pref-option-item input:focus {
+  border-color: #0088cc;
+}
+
+/* Tabela de Pr?-visualiza??o */
+.eproc-preview-table-container {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 280px;
+  margin-bottom: 14px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+}
+.eproc-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+.eproc-preview-table th {
+  background: #f1f5f9;
+  padding: 8px 10px;
+  font-weight: 700;
+  color: #334155;
+  border-bottom: 2px solid #cbd5e1;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.eproc-preview-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: middle;
+}
+.eproc-preview-table tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Status Badges */
+.eproc-status-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.badge-pendente { background: #e2e8f0; color: #475569; }
+.badge-processando { background: #bae6fd; color: #0369a1; }
+.badge-criada { background: #bbf7d0; color: #15803d; }
+.badge-atualizada { background: #bfdbfe; color: #1d4ed8; }
+.badge-pulada { background: #fef08a; color: #854d0e; }
+.badge-erro { background: #fecaca; color: #991b1b; }
+
+/* Tag de Localizador */
+.eproc-tag-loc {
+  display: inline-block;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  margin: 1px 2px;
+  color: #334155;
+}
+
+/* Barra de Progresso */
+.eproc-progress-container {
+  background: #e2e8f0;
+  border-radius: 10px;
+  height: 10px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  display: none;
+}
+.eproc-progress-bar {
+  background: linear-gradient(90deg, #0088cc 0%, #15803d 100%);
+  height: 100%;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+/* Rodap? do Modal */
+.eproc-pref-modal-footer {
+  background: #f1f5f9;
+  padding: 12px 20px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.eproc-modal-footer-stats {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+}
+.eproc-modal-footer-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* Toast de Notifica??o Flutuante */
+#eproc-prefs-toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #1e293b;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#eproc-prefs-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-10px);
+}
+
+/* ════ Destaque Fluorescente no Campo Ativo & Tooltip ao Vivo ════ */
+.eproc-campo-destaque-neon {
+  outline: 2.5px solid #00ff66 !important;
+  box-shadow: 0 0 12px rgba(0, 255, 102, 0.85), inset 0 0 4px rgba(0, 255, 102, 0.4) !important;
+  transition: outline 0.08s ease, box-shadow 0.08s ease !important;
+}
+
+#eproc-tooltip-live-data {
+  position: absolute;
+  z-index: 2147483640;
+  display: none;
+  pointer-events: none;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1.5px solid #00ff66;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(0, 255, 102, 0.5);
+  white-space: nowrap;
+  max-width: 460px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+
+#eproc-tooltip-live-data.visivel {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#eproc-tooltip-live-data .tooltip-badge-origem {
+  background: #00ff66;
+  color: #0f172a;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-right: 6px;
+}

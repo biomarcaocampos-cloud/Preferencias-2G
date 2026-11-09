@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Instruções — Criar Preferências em Lote 2G v3.4 (Segundo Grau TJSP)</title>
+  <style>
+    :root {
+      --primary: #15803d;
+      --primary-dark: #14532d;
+      --primary-light: #dcfce7;
+      --secondary: #16a34a;
+      --accent: #22c55e;
+      --success: #15803d;
+      --success-bg: #f0fdf4;
+      --warning: #b45309;
+      --warning-bg: #fffbeb;
+      --danger: #b91c1c;
+      --danger-bg: #fef2f2;
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-600: #475569;
+      --gray-800: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--gray-800);
+      background-color: #f0fdf4;
+      line-height: 1.6;
+      padding: 30px 20px;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #bbf7d0;
+      border-radius: 12px;
+      box-shadow: 0 4px 25px rgba(21, 128, 61, 0.12);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+      color: #ffffff;
+      padding: 32px 30px;
+      border-bottom: 4px solid var(--secondary);
+    }
+    .header h1 {
+      font-size: 23px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-icon-p {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: #16a34a;
+      border: 2px solid #86efac;
+      color: #ffffff;
+      font-weight: 900;
+      font-size: 16px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .header p {
+      font-size: 14.5px;
+      color: #dcfce7;
+    }
+    .badge-version {
+      display: inline-block;
+      font-size: 12.5px;
+      font-weight: 600;
+      margin-top: 10px;
+      color: #dcfce7;
+      letter-spacing: 0.3px;
+    }
+    .content { padding: 32px; }
+    h2 {
+      font-size: 17.5px;
+      color: var(--primary);
+      margin: 28px 0 14px 0;
+      border-bottom: 2px solid var(--primary-light);
+      padding-bottom: 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h3 { font-size: 15px; color: var(--gray-800); margin: 18px 0 8px 0; }
+    p, li { font-size: 13.5px; color: #334155; margin-bottom: 10px; }
+    ul, ol { margin-left: 22px; margin-bottom: 14px; }
+    li { margin-bottom: 6px; }
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--gray-200);
+      border-left: 4px solid var(--secondary);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin: 16px 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .card-instance {
+      background: #f0fdf4;
+      border: 1.5px solid #86efac;
+      border-left: 6px solid #16a34a;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+    }
+    .card-instance h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #14532d;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-security {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 5px solid #15803d;
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin: 14px 0;
+    }
+    .card-security h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .card-security p {
+      font-size: 13px;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+    .card-warning {
+      background: var(--warning-bg);
+      border-color: #fef08a;
+      border-left-color: var(--warning);
+    }
+    .step-box {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+      background: #f8fafc;
+      border: 1px solid var(--gray-200);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .step-num {
+      background: var(--primary);
+      color: #ffffff;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .step-text { flex: 1; }
+    .step-text h4 { font-size: 14px; font-weight: 700; color: var(--gray-800); margin-bottom: 4px; }
+    .step-text p { font-size: 13px; margin-bottom: 0; color: #475569; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 16px 0; }
+    th, td { border: 1px solid var(--gray-200); padding: 9px 12px; text-align: left; }
+    th { background: #dcfce7; font-weight: 700; color: #14532d; }
+    tr:nth-child(even) td { background: var(--gray-50); }
+    code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; color: #0f172a; font-weight: 600; }
+    .footer {
+      background: #f1f5f9;
+      padding: 20px 30px;
+      font-size: 12.5px;
+      color: var(--gray-600);
+      border-top: 1px solid var(--gray-200);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <h1><span class="badge-icon-p">P</span> Criar Preferências em Lote 2G (eproc TJSP - Segundo Grau)</h1>
+      <p>Guia Completo de Operação, Auditoria Prévia e Arquitetura de Segurança de Dados.</p>
+      <div class="badge-version">Versão 3.4 - 09/11/2026</div>
+    </div>
+
+    <div class="content">
+
+      <div class="card-instance">
+        <h4>🏛️ Escopo Exclusivo de Atuação: Segundo Grau (2G)</h4>
+        <p>Esta extensão foi construída especificamente para o <b>eproc Segundo Grau do TJSP</b> (Câmaras de Direito Público, Colégios Recursais e Tribunal de Justiça de São Paulo). Ela é identificada na barra do navegador pelo ícone <b style="color:#15803d;">[P] VERDE</b> e opera nos seguintes endereços:</p>
+        <ul style="margin-top:6px; margin-bottom:4px;">
+          <li><code>https://eproc2g.tjsp.jus.br/*</code> (Produção 2G)</li>
+          <li><code>https://eproc-2g-sp-hml.tjsp.jus.br/*</code> (Homologação 2G)</li>
+        </ul>
+        <p style="margin-top:6px; font-size:12.5px; color:#14532d;"><b>Nota de isolamento:</b> O painel flutuante se ativa <i>exclusivamente</i> nas telas de <b>Nova Minuta</b> (<code>acao=minuta_cadastrar</code>), <b>Relatório Geral de Processos</b> (<code>acao=relatorio_geral_listar</code>), <b>Movimentação Processual</b> (<code>acao=processo_movimento_consultar</code>) e <b>Área de Trabalho de Minutas</b> (<code>acao=minuta_area_trabalho</code>), permanecendo inativo em outras listagens para preservar a fluidez do sistema.</p>
+      </div>
+
+      <h2>1. O que este Script faz</h2>
+      <p>A extensão automatiza a criação em lote de preferências no <b>eproc 2G TJSP</b> a partir da planilha oficial unificada (<code>Fluxo 2G - Preferências Oficial (Unificada).xlsx</code>), operando em quatro módulos integrados:</p>
+      <ul>
+        <li><b>📝 Módulo 1 (Minutas):</b> Lê a aba <code>Preferências - Minutas</code> e grava preferências no formulário oficial de <b>Nova Minuta</b> (<code>minuta_cadastrar</code>), aplicando regras de negócio do 2G, incluindo agendamento encadeado de intimações com prazos especiais/simples/DPU, remessas e matrizes de acórdão. <i>(v3.2: Múltiplas classificações e emojis íntegros; v3.4: Correção do indicador de progresso #num e estabilidade do fluxo de minutas).</i></li>
+        <li><b>📊 Módulo 2 (Relatórios):</b> Lê a aba <code>Preferências - Relatório Geral</code> e grava preferências na tela de <b>Relatório Geral de Processos</b> (<code>relatorio_geral_listar</code>), incluindo pré-cadastro e vinculação a Grupos de Preferências (ex.: <i>Gestão</i>, <i>Servidores 1 a 5</i>), operador do localizador configurado conforme a coluna <b>"Operação (E/OU)"</b> da planilha (com padrão em <b>"E"</b>), injeção dos filtros de localizadores, situação processual (Movimento/Suspenso/Baixado) e conteúdo de lembretes.</li>
+        <li><b>⚡ Módulo 3 (Movimentações):</b> Lê a aba <code>Preferências - Movimentar</code> e grava preferências na tela de <b>Movimentação Processual</b> (<code>processo_movimento_consultar</code>), buscando o evento exato pelo nome completo da movimentação (desambiguando eventos que compartilham o mesmo código numérico, como o código <code>51</code> ou <code>123</code>), configurando o comportamento e os novos localizadores e respeitando a ausência de grupo quando a coluna <i>Grupo de preferência</i> estiver vazia.</li>
+        <li><b>📄 Módulo 4 (Documentos / Área de Minutas):</b> Lê a aba <code>Preferências - Área de Minutas</code> e grava preferências na tela da <b>Área de Trabalho de Minutas</b> (<code>minuta_area_trabalho</code>), filtrando por tipo de documento (Despachos/Decisões e Votos), status da minuta, localizador de servidor e grupo de preferências.</li>
+      </ul>
+
+      <h2>2. Instalação e Ativação no Chrome / Edge</h2>
+      <div class="step-box">
+        <div class="step-num">1</div>
+        <div class="step-text">
+          <h4>Abra o gerenciador de extensões</h4>
+          <p>Acesse <code>chrome://extensions</code> ou <code>edge://extensions</code> e certifique-se de ativar o <b>Modo do Desenvolvedor</b> (chave no canto superior direito).</p>
+        </div>
+      </div>
+      <div class="step-box">
+        <div class="step-num">2</div>
+        <div class="step-text">
+          <h4>Carregue a pasta do Segundo Grau</h4>
+          <p>Clique em <b>"Carregar sem compactação"</b> e selecione a pasta: <code>Extensão copiar preferências 2G - Direito Publico</code> onde o arquivo foi baixado. O ícone <b>[P] VERDE</b> ficará disponível para fixar na barra de ferramentas.</p>
+        </div>
+      </div>
+
+      <h2>3. Fluxo de Operação Passo a Passo (2G)</h2>
+      <div class="card">
+        <ol>
+          <li>Abra a tela correspondente ao módulo desejado no eproc 2G (<b>Nova Minuta</b>, <b>Relatório Geral</b>, <b>Movimentação Processual</b> ou <b>Área de Trabalho de Minutas</b>).</li>
+          <li>O <b>Painel Flutuante 2G</b> (com cabeçalho e insígnia <b style="color:#15803d;">[P] VERDE</b>) aparecerá no canto inferior direito.</li>
+          <li>Clique na caixa <b>📂 Selecionar Planilha</b> e carregue o arquivo <code>Fluxo 2G - Preferências Oficial (Unificada).xlsx</code>.</li>
+          <li>O script lerá automaticamente a aba correspondente ao módulo ativo e exibirá o total de itens identificados.</li>
+          <li><b>🔍 Verificação prévia (Recomendado):</b> Clique no botão de auditoria prévia para checar localizadores, modelos, códigos, grupos e preferências já existentes na Unidade.</li>
+          <li><b>Defina a faixa:</b> você pode informar <code>De: 1</code> e <code>Até: 15</code> (ou processar todos os itens).</li>
+          <li>Clique em <b>🚀 Iniciar Criação em Lote</b> e acompanhe o preenchimento em tempo real.</li>
+        </ol>
+      </div>
+
+      <h2>4. Verificação prévia: Auditoria de Integridade 2G</h2>
+      <div class="card" style="border-left-color: #16a34a;">
+        <p>Antes de gravar qualquer preferência, o botão <b>🔍 Verificação prévia</b> realiza varreduras completas cruzando a planilha com o banco do eproc 2G:</p>
+        <ul>
+          <li><b>📍 1. Localizadores da Unidade 2G:</b> Compara os localizadores da planilha (inclusive emojis) com os existentes no Gabinete/Secretaria 2G.</li>
+          <li><b>📄 2. Modelos de Documento:</b> Varre o catálogo da Unidade 2G e verifica se os modelos específicos existem ou se utilizarão a Matriz Genérica correspondente.</li>
+          <li><b>⚡ 3. Eventos Processuais:</b> Valida se todos os eventos e códigos numéricos de movimentação são reconhecidos pelo catálogo do eproc.</li>
+          <li><b>🛡️ 4. Matrizes Genéricas 2G:</b> Confere a presença das matrizes essenciais do Segundo Grau (<code>***ACÓRDÃO***</code>, <code>***DESPACHO/DECISÃO***</code>, <code>***ATO ORDINATÓRIO***</code>, <code>***MANDADO - CEMAN***</code>, <code>***CARTA AR DIGITAL***</code> e <code>***CERTIDÃO***</code>).</li>
+          <li><b>🏷️ 5. Classificações e Grupos de Preferências:</b> Consulta a tabela oficial de classificações e grupos da Unidade, preparando o autocadastro quando necessário.</li>
+        </ul>
+      </div>
+
+      <h2>5. Campos Inseridos e Configurações por Módulo (2G)</h2>
+      <p>Abaixo estão detalhados os campos, preenchimentos automáticos e regras de negócio executados pela extensão em cada um dos quatro módulos:</p>
+
+      <h3>📝 5.1 Módulo 1: Minutas (Tela Nova Minuta)</h3>
+      <p>Configura as preferências na tela <code>acao=minuta_cadastrar</code> (aba <i>Preferências - Minutas</i> da planilha):</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 26%;">Campo no eproc 2G</th>
+            <th style="width: 36%;">Ação Executada pela Extensão</th>
+            <th style="width: 38%;">Origem / Regra de Negócio 2G</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Nome da Preferência</b></td>
+            <td>Insere a descrição completa com emojis nativos.</td>
+            <td>Coluna <i>Nome</i> da planilha oficial.</td>
+          </tr>
+          <tr>
+            <td><b>Tipo de Preferência</b></td>
+            <td>Marca a opção <b>Unidade</b> (<code>rdPrefTipo = 'U'</code>).</td>
+            <td>Disponibiliza o modelo para toda a equipe do Gabinete / Secretaria.</td>
+          </tr>
+          <tr>
+            <td><b>Grupo de Preferências</b></td>
+            <td>Cria/localiza o grupo no eproc e vincula o usuário logado como padrão.</td>
+            <td>Coluna <i>Grupo de preferência</i> da planilha (ex.: <i>Servidores 1 a 5</i>).</td>
+          </tr>
+          <tr>
+            <td><b>Modelo de Documento</b></td>
+            <td>Pesquisa o modelo específico na Unidade ou vincula a <b>Matriz Genérica 2G</b>.</td>
+            <td>Aplica matrizes oficiais (<code>***ACÓRDÃO***</code>, <code>***DESPACHO/DECISÃO***</code>, etc.).</td>
+          </tr>
+          <tr>
+            <td><b>Classificação de Conteúdo</b></td>
+            <td>Vincula o ID numérico; se inédito, cadastra na unidade antes de salvar.</td>
+            <td>Coluna <i>Classificação de Conteúdo</i>.</td>
+          </tr>
+          <tr>
+            <td><b>Como Salvar Localizadores</b></td>
+            <td>Seleciona <b>Localizadores selecionados</b> (<code>rdIndividuais</code> / <code>rdPrefLocalizadores = 'L'</code>).</td>
+            <td>Preserva os localizadores estipulados na esteira de trabalho.</td>
+          </tr>
+          <tr>
+            <td><b>Comportamento do Localizador</b></td>
+            <td>Fixa <b>NÃO remover o processo de localizador algum</b> (Código 3).</td>
+            <td>Evita a perda do histórico de fases processuais anteriores.</td>
+          </tr>
+          <tr>
+            <td><b>Localizadores (Destino / Inclusão)</b></td>
+            <td>1º localizador entra como Principal; os subsequentes como inclusão.</td>
+            <td>Colunas de localizadores com fallback automático se inexistente na unidade.</td>
+          </tr>
+          <tr>
+            <td><b>Agendamento de Intimações e Prazos</b></td>
+            <td>Ativa intimação encadeada, vincula eventos e marca prazos diferenciados.</td>
+            <td>Preenche Prazo Especial (30d), Prazo Simples (15d), DPU (30d), etc.</td>
+          </tr>
+          <tr>
+            <td><b>Remessa Encadeada</b></td>
+            <td>Configura a remessa para o órgão competente quando houver.</td>
+            <td>Ativado se a coluna <i>Remessa</i> for "SIM".</td>
+          </tr>
+          <tr>
+            <td><b>Status de Destino da Minuta</b></td>
+            <td>Encaminha automaticamente para <b>Para assinar</b> (Código 4).</td>
+            <td>Envia a minuta diretamente para a fila de assinatura do relator/magistrado.</td>
+          </tr>
+          <tr>
+            <td><b>Ação Preferencial</b></td>
+            <td>Marca como preferencial (<code>chkMovPreferencial = 'S'</code>).</td>
+            <td>Permite execução direta e rápida a partir da capa do processo.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>📊 5.2 Módulo 2: Relatório Geral de Processos (Tela Relatório Geral)</h3>
+      <p>Configura as preferências na tela <code>acao=relatorio_geral_listar</code> (aba <i>Preferências - Relatório Geral</i> da planilha):</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 26%;">Campo no eproc 2G</th>
+            <th style="width: 36%;">Ação Executada pela Extensão</th>
+            <th style="width: 38%;">Origem / Regra de Negócio 2G</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Nome da Preferência</b></td>
+            <td>Converte a descrição com emojis em entidades decimais compatíveis.</td>
+            <td>Coluna <i>Nome</i> da aba de Relatório Geral.</td>
+          </tr>
+          <tr>
+            <td><b>Tipo de Preferência</b></td>
+            <td>Define como <b>Unidade</b> (<code>#rdUnidade</code>).</td>
+            <td>Disponibiliza o filtro de relatório para todos os usuários da unidade.</td>
+          </tr>
+          <tr>
+            <td><b>Valor Padrão & Painel Inicial</b></td>
+            <td>Marca os checkboxes <code>SinValorPadrao</code> e <code>SinPainelInicial</code> conforme a planilha.</td>
+            <td>Define se o filtro carrega como padrão ou aparece no painel principal.</td>
+          </tr>
+          <tr>
+            <td><b>Grupo de Preferências</b></td>
+            <td>Cria o grupo na unidade se inexistente e vincula o usuário logado automaticamente.</td>
+            <td>Coluna <i>Grupo de preferência</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Filtro de Localizadores</b></td>
+            <td>Insere os localizadores mapeados diretamente no componente Tagify (<code>selLocalizadorPrincipal</code>).</td>
+            <td>Garante o preenchimento exato dos localizadores da unidade.</td>
+          </tr>
+          <tr>
+            <td><b>Operação entre Localizadores</b></td>
+            <td>Seleciona dinamicamente o radio button <b>"E"</b> ou <b>"OU"</b> (<code>tipoOperacaoLocalizador</code>).</td>
+            <td>Preenchido conforme a coluna <i>Operação (E/OU)</i> da planilha (padrão em <b>"E"</b>).</td>
+          </tr>
+          <tr>
+            <td><b>Filtro de Conteúdo do Lembrete</b></td>
+            <td>Preenche o campo <code>txtLembrete</code> com o termo específico filtrado.</td>
+            <td>Remove prefixos e ignora termos de status genéricos (<i>todos</i>, <i>movimento</i>, etc.).</td>
+          </tr>
+          <tr>
+            <td><b>Serialização de Filtros (Request)</b></td>
+            <td>Salva o estado integral do formulário de pesquisa (<code>frmProcessoLista</code>) via <code>salvar_request</code>.</td>
+            <td>Garante que todos os filtros de tela fiquem memorizados sob a preferência criada.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>⚡ 5.3 Módulo 3: Movimentações (Tela Movimentação Processual)</h3>
+      <p>Configura as preferências na tela <code>acao=processo_movimento_consultar</code> (aba <i>Preferências - Movimentar</i> da planilha):</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 26%;">Campo no eproc 2G</th>
+            <th style="width: 36%;">Ação Executada pela Extensão</th>
+            <th style="width: 38%;">Origem / Regra de Negócio 2G</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Nome da Preferência</b></td>
+            <td>Insere o nome identificador da preferência no eproc.</td>
+            <td>Coluna <i>Nome</i> da aba de Movimentações.</td>
+          </tr>
+          <tr>
+            <td><b>Tipo de Preferência</b></td>
+            <td>Seleciona a opção <b>Unidade</b> (<code>rdPrefTipo = 'U'</code>).</td>
+            <td>Visível para toda a equipe do Gabinete / Secretaria 2G.</td>
+          </tr>
+          <tr>
+            <td><b>Evento Principal da Movimentação</b></td>
+            <td>Busca e vincula o evento no eproc pelo <b>nome textual completo</b> e código numérico.</td>
+            <td>Desambigua eventos que compartilham o mesmo código no 2G (ex.: código <code>51</code>).</td>
+          </tr>
+          <tr>
+            <td><b>Novo Localizador de Destino</b></td>
+            <td>Seleciona no combo <code>selNovoLocalizador</code> o localizador para onde o processo irá.</td>
+            <td>Coluna <i>Novo Localizador</i> da planilha (com fallback se não existir).</td>
+          </tr>
+          <tr>
+            <td><b>Localizadores Secundários</b></td>
+            <td>Marca localizadores adicionais via <code>multipleSelect</code> de inclusão.</td>
+            <td>Coluna <i>Localizadores Secundários</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Eventos Complementares</b></td>
+            <td>Lança eventos judiciais secundários associados à movimentação.</td>
+            <td>Coluna <i>Eventos Complementares</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Grupo de Preferências</b></td>
+            <td>Cria e vincula o grupo se informado; <b>se a coluna estiver vazia, não cria nem vincula grupo algum</b>.</td>
+            <td>Coluna <i>Grupo de preferência</i> da planilha (respeita campos em branco).</td>
+          </tr>
+          <tr>
+            <td><b>Ação Preferencial & Localizadores</b></td>
+            <td>Marca <i>Ação Preferencial</i> e fixa <i>Localizadores selecionados</i> antes da gravação.</td>
+            <td>Garante atalho direto e impede reversão involuntária do formulário.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>📄 5.4 Módulo 4: Documentos / Área de Minutas (Tela Área de Trabalho de Minutas)</h3>
+      <p>Configura as preferências na tela <code>acao=minuta_area_trabalho</code> (aba <i>Preferências - Área de Minutas</i> da planilha):</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 26%;">Campo no eproc 2G</th>
+            <th style="width: 36%;">Ação Executada pela Extensão</th>
+            <th style="width: 38%;">Origem / Regra de Negócio 2G</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Nome da Preferência</b></td>
+            <td>Insere o identificador único com emojis padronizados em <code>txtDescricaoCadastro</code>.</td>
+            <td>Coluna <i>Nome da Preferência</i> da aba Área de Minutas.</td>
+          </tr>
+          <tr>
+            <td><b>Tipo de Preferência</b></td>
+            <td>Define obrigatoriamente como <b>Unidade</b> (<code>rdPrefTipo = 'U'</code>).</td>
+            <td>Disponibiliza a preferência para todo o gabinete / unidade.</td>
+          </tr>
+          <tr>
+            <td><b>Tipo de Documento</b></td>
+            <td>Seleciona em <code>selTipoDocumento</code>: <i>DESPACHO/DECISÃO</i> e/ou os 4 tipos de voto (<i>VOTO</i>, <i>VOTO REVISÃO</i>, <i>VOTO COMPLEMENTAR</i>, <i>VOTO DIVERGENTE</i>).</td>
+            <td>Coluna <i>Tipo de Documento</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Status da Minuta</b></td>
+            <td>Marca todas as situações (<code>checkAll</code>) ou os status específicos configurados em <code>selStatusMinuta</code>.</td>
+            <td>Coluna <i>Status da Minuta</i> (ex.: "SELECIONAR TODAS").</td>
+          </tr>
+          <tr>
+            <td><b>Localizador</b></td>
+            <td>Filtra pelo localizador individual do servidor (ex.: <code>👤Servidor 1👤</code> a <code>👤Servidor 5👤</code>) ou mantém desmarcado para visão geral do gabinete (<code>-</code>).</td>
+            <td>Coluna <i>Localizador</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Usuário Criador</b></td>
+            <td>Preenche <code>txtUsuarioCriador</code> / <code>hdnIdUsuarioCriador</code> quando informado.</td>
+            <td>Coluna <i>Usuário Criador</i> da planilha.</td>
+          </tr>
+          <tr>
+            <td><b>Grupo de Preferências</b></td>
+            <td>Cria e vincula os grupos temáticos e individuais (ex.: <i>Relatório de Minutas</i>, <i>Servidor 1</i> a <i>Servidor 5</i>).</td>
+            <td>Coluna <i>Grupo de Preferências</i> da planilha.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>6. Camadas de Proteção e Segurança Ativa 2G</h2>
+      <div class="card-security">
+        <h4>🔒 1. Validação Estrita de Localizadores e Eventos</h4>
+        <p>A extensão confirma a seleção do radio <i>"Localizadores selecionados"</i> repetidamente até o instante da gravação, impedindo resets acidentais do formulário.</p>
+      </div>
+
+      <div class="card-security">
+        <h4>🛡️ 2. Fallbacks Homologados</h4>
+        <p>Caso algum localizador não exista no 2G, aplica preventivamente localizadores seguros (<code>ARQUIVO / BAIXADOS</code>) sem travar a esteira.</p>
+      </div>
+
+      <div class="card-security">
+        <h4>🚫 3. Detecção Antecipada de Duplicidades</h4>
+        <p>Itens que já possuam preferência de mesmo nome cadastrada na Unidade são detectados e pulados com segurança (<code>⛔ Pulada</code>).</p>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      <div>Tribunal de Justiça do Estado de São Paulo • eproc 2G (Segundo Grau)</div>
+      <div>Extensão 2G • Versão 3.4 - 09/11/2026</div>
+    </div>
+  </div>
+
+</body>
+</html>
