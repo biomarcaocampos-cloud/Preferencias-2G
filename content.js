@@ -4,7 +4,7 @@
 
 //  Arquivo: content.js
 
-//  Versão: 3.4 (atualizada em 09/11/2026)
+//  Versão: 3.5.2 (atualizada em 09/11/2026)
 
 // ============================================================
 
@@ -509,7 +509,7 @@
     return false;
   }
 
-  /* [MÓDULO INTIMAÇÕES - v3.5] Detecção da tela de Intimação Eletrônica */
+  /* [MÓDULO INTIMAÇÕES - v3.5.2] Detecção da tela de Intimação Eletrônica */
   function ehTelaDeIntimacao() {
     const params = new URLSearchParams(location.search);
     const acao = (params.get('acao') || '').toLowerCase();
@@ -1395,7 +1395,7 @@
 
   
   /* ========================================================================== */
-  /* [MÓDULO INTIMAÇÕES - v3.5] PARSER DA PLANILHA OFICIAL DE INTIMAÇÕES        */
+  /* [MÓDULO INTIMAÇÕES - v3.5.2] PARSER DA PLANILHA OFICIAL DE INTIMAÇÕES        */
   /* ========================================================================== */
   function converterTabelaParaItensIntimacoes(tabela) {
     if (!tabela || tabela.length === 0) return [];
@@ -1437,28 +1437,30 @@
       else if (h.includes('encadeamento') && !h.includes('evento')) colEncIntimacao = c;
     }
 
+    const strVal = v => (v !== undefined && v !== null ? String(v).trim() : '');
+
     for (let r = 1; r < tabela.length; r++) {
       const row = tabela[r];
       if (!row) continue;
-      const nome = (row[colNome] || '').trim();
+      const nome = strVal(row[colNome]);
       if (!nome) continue;
 
       const rawNum = row[colNum];
       const numVal = parseInt(rawNum, 10);
-      const comoSalvarStr = (row[colComoSalvar] || 'Unidade | Localizadores selecionados | Ação preferencial').trim();
+      const comoSalvarStr = strVal(row[colComoSalvar] || 'Unidade | Localizadores selecionados | Ação preferencial');
       const normComoSalvar = normalizar(comoSalvarStr);
       const ehIndividual = normComoSalvar.includes('individual') && !normComoSalvar.includes('unidade');
       const acaoPreferencial = normComoSalvar.includes('acao preferencial') || normComoSalvar.includes('preferencial');
       const padrao = normComoSalvar.includes('padrao') && !normComoSalvar.includes('nao padrao');
 
-      const modoPrazosStr = (row[colModoPrazos] || 'Por Polo').trim();
+      const modoPrazosStr = strVal(row[colModoPrazos] || 'Por Polo');
       const normModoPrazos = normalizar(modoPrazosStr);
 
-      const urgenteStr = (row[colUrgente] || '').trim();
+      const urgenteStr = strVal(row[colUrgente]);
       const normUrgente = normalizar(urgenteStr);
       const ehUrgente = normUrgente === 'sim' || normUrgente === 's' || normUrgente === 'true';
 
-      const comportamentoStr = (row[colComportamentoLoc] || 'NÃO remover de localizador algum').trim();
+      const comportamentoStr = strVal(row[colComportamentoLoc] || 'NÃO remover de localizador algum');
       const normComp = normalizar(comportamentoStr);
       let tipoLocalizador = 'L'; // 'L' = Localizadores selecionados
       if (normComp.includes('marcar todos') && !normComp.includes('desmarcar')) {
@@ -1467,45 +1469,44 @@
         tipoLocalizador = 'D';
       }
 
-      const encIntimacaoStr = (row[colEncIntimacao] || '').trim();
+      const encIntimacaoStr = strVal(row[colEncIntimacao]);
       const encIntimacao = normalizar(encIntimacaoStr) === 'sim' || normalizar(encIntimacaoStr) === 's';
 
-      const rawCodEvento = row[colCodigoEvento];
-      const codEvento = (rawCodEvento !== undefined && rawCodEvento !== null) ? String(rawCodEvento).trim() : '';
+      const codEvento = strVal(row[colCodigoEvento]);
 
       const item = {
         linha: r + 1,
         num: (rawNum !== undefined && rawNum !== null && String(rawNum).trim() !== '') ? String(rawNum).trim() : String(r),
         numero: isNaN(numVal) ? r : numVal,
-        fluxo: (row[colFluxo] || '').trim(),
-        ferramenta: (row[colFerramenta] || 'Intimação Eletrônica').trim(),
+        fluxo: strVal(row[colFluxo]),
+        ferramenta: strVal(row[colFerramenta] || 'Intimação Eletrônica'),
         nome: nome,
         comoSalvar: comoSalvarStr,
         rdPrefTipo: ehIndividual ? 'I' : 'U',
         tipo: ehIndividual ? 'Individual' : 'Unidade',
         acaoPreferencial: acaoPreferencial,
         padrao: padrao,
-        grupo: (row[colGrupo] || '').trim(),
-        evento: (row[colEvento] || '').trim(),
+        grupo: strVal(row[colGrupo]),
+        evento: strVal(row[colEvento]),
         codigoEvento: codEvento,
         modoPrazos: modoPrazosStr,
         normModoPrazos: normModoPrazos,
-        prazoEspEnt: (row[colPrazoEspEnt] || '').trim(),
-        prazoSimpEnt: (row[colPrazoSimpEnt] || '').trim(),
-        prazoSimpDemais: (row[colPrazoSimpDemais] || '').trim(),
-        prazoDPU: (row[colPrazoDPU] || '').trim(),
-        prazoAutores: (row[colPrazoAutores] || '').trim(),
-        prazoReus: (row[colPrazoReus] || '').trim(),
-        prazoInteressados: (row[colPrazoInteressados] || '').trim(),
-        prazoMP: (row[colPrazoMP] || '').trim(),
+        prazoEspEnt: strVal(row[colPrazoEspEnt]),
+        prazoSimpEnt: strVal(row[colPrazoSimpEnt]),
+        prazoSimpDemais: strVal(row[colPrazoSimpDemais]),
+        prazoDPU: strVal(row[colPrazoDPU]),
+        prazoAutores: strVal(row[colPrazoAutores]),
+        prazoReus: strVal(row[colPrazoReus]),
+        prazoInteressados: strVal(row[colPrazoInteressados]),
+        prazoMP: strVal(row[colPrazoMP]),
         urgente: ehUrgente,
         comportamentoLoc: comportamentoStr,
         rdPrefLocalizadores: tipoLocalizador,
-        novoLocalizador: (row[colNovoLoc] || '').trim(),
-        locDesativar: (row[colLocDesativar] || '').trim(),
+        novoLocalizador: strVal(row[colNovoLoc]),
+        locDesativar: strVal(row[colLocDesativar]),
         encadeamentoIntimacao: encIntimacao,
-        eventoEncadeadoIntimacao: (row[colEventoEncIntimacao] || '').trim(),
-        obs: (row[colObs] || '').trim()
+        eventoEncadeadoIntimacao: strVal(row[colEventoEncIntimacao]),
+        obs: strVal(row[colObs])
       };
       itens.push(item);
     }
@@ -11759,7 +11760,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.2</span></span>
 
         </div>
 
@@ -15239,71 +15240,327 @@
           addLog(`⚠️ Evento "${item.evento || item.codigoEvento}" não encontrado na combo selEventoJudicial!`, 'warn');
         }
       }
+      await sleep(250);
 
-      // 8. Modo de Prazos e Preenchimento dos Prazos
+      // 8. Modo de Prazos e Preenchimento dos Prazos [v3.5.2: Ativação com checkPorPolo/checkTipoDeParte e handlers eproc]
       const modoPolo = item.normModoPrazos.includes('polo');
       const modoTipoParte = item.normModoPrazos.includes('tipo') || item.normModoPrazos.includes('parte');
 
       if (modoPolo) {
+        // Ativação robusta do rádio "Por Pólo" no eproc
+        if (typeof window.checkPorPolo === 'function') {
+          try { window.checkPorPolo(true); } catch (e) { console.warn('Erro ao chamar checkPorPolo:', e); }
+        }
+        if (window.jQuery) {
+          try {
+            window.jQuery('#porTipoDeParte').prop('checked', false);
+            window.jQuery('#porPolo').prop('checked', true).trigger('click').trigger('change');
+            window.jQuery('.tipoParte').css('display', 'none');
+            window.jQuery('.porPolo').css('display', 'block');
+          } catch (e) {}
+        }
         const rdPolo = document.getElementById('porPolo');
+        const rdTipoParte = document.getElementById('porTipoDeParte');
+        if (rdTipoParte) rdTipoParte.checked = false;
         if (rdPolo) {
+          destacarCampoAtivo(rdPolo, 'Modo de Prazos', 'Por Pólo');
           rdPolo.checked = true;
+          try { rdPolo.click(); } catch (e) {}
           dispararEventos(rdPolo, ['change', 'click']);
         }
-        if (item.prazoMP) {
+        if (typeof window.alterarCoresPartes === 'function') {
+          try { window.alterarCoresPartes(false); } catch (e) {}
+        }
+        if (typeof window.alterarCoresPolo === 'function') {
+          try { window.alterarCoresPolo(true); } catch (e) {}
+        }
+        await sleep(250);
+
+        // Preenchimento de Prazo MP (Custos Legis / Custos Iuris)
+        if (item.prazoMP && item.prazoMP !== '-') {
           const txtMP = document.getElementById('txtPrazoMPF');
           const chkMP = document.getElementById('chkSelMPF');
-          if (txtMP) { txtMP.value = item.prazoMP; dispararEventos(txtMP, ['input', 'change', 'keyup']); }
-          if (chkMP) { chkMP.checked = true; dispararEventos(chkMP, ['change']); }
+          if (txtMP) {
+            destacarCampoAtivo(txtMP, 'Prazo MP', item.prazoMP);
+            txtMP.value = item.prazoMP;
+            if (window.jQuery) {
+              window.jQuery(txtMP).val(item.prazoMP).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtMP, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoMPF === 'function') {
+              try { window.onKeyUpTxtPrazoMPF(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoMPF === 'function') {
+              try { window.onChangeTxtPrazoMPF(); } catch (e) {}
+            }
+          }
+          if (chkMP) {
+            destacarCampoAtivo(chkMP, 'Marcar MP', 'true');
+            chkMP.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkMP).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkMP, ['change', 'click']);
+            }
+            if (typeof window.onChangeChkSelMPF === 'function') {
+              try { window.onChangeChkSelMPF(); } catch (e) {}
+            }
+          }
         }
-        if (item.prazoAutores) {
+
+        // Preenchimento de Prazo Polo Ativo / Autores
+        if (item.prazoAutores && item.prazoAutores !== '-') {
           const txtAutores = document.getElementById('txtPrazoAutores');
           const chkAutores = document.getElementById('chkSelPrazoAutores');
-          if (txtAutores) { txtAutores.value = item.prazoAutores; dispararEventos(txtAutores, ['input', 'change', 'keyup']); }
-          if (chkAutores) { chkAutores.checked = true; dispararEventos(chkAutores, ['change']); }
+          if (txtAutores) {
+            destacarCampoAtivo(txtAutores, 'Prazo Autores', item.prazoAutores);
+            txtAutores.value = item.prazoAutores;
+            if (window.jQuery) {
+              window.jQuery(txtAutores).val(item.prazoAutores).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtAutores, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoAutores === 'function') {
+              try { window.onKeyUpTxtPrazoAutores(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoAutores === 'function') {
+              try { window.onChangeTxtPrazoAutores(); } catch (e) {}
+            }
+          }
+          if (chkAutores) {
+            destacarCampoAtivo(chkAutores, 'Marcar Autores', 'true');
+            chkAutores.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkAutores).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkAutores, ['change', 'click']);
+            }
+            if (typeof window.onChangeChkSelPrazoAutores === 'function') {
+              try { window.onChangeChkSelPrazoAutores(); } catch (e) {}
+            }
+          }
         }
-        if (item.prazoReus) {
+
+        // Preenchimento de Prazo Polo Passivo / Réus
+        if (item.prazoReus && item.prazoReus !== '-') {
           const txtReus = document.getElementById('txtPrazoReus');
           const chkReus = document.getElementById('chkSelPrazoReus');
-          if (txtReus) { txtReus.value = item.prazoReus; dispararEventos(txtReus, ['input', 'change', 'keyup']); }
-          if (chkReus) { chkReus.checked = true; dispararEventos(chkReus, ['change']); }
+          if (txtReus) {
+            destacarCampoAtivo(txtReus, 'Prazo Réus', item.prazoReus);
+            txtReus.value = item.prazoReus;
+            if (window.jQuery) {
+              window.jQuery(txtReus).val(item.prazoReus).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtReus, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoReus === 'function') {
+              try { window.onKeyUpTxtPrazoReus(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoReus === 'function') {
+              try { window.onChangeTxtPrazoReus(); } catch (e) {}
+            }
+          }
+          if (chkReus) {
+            destacarCampoAtivo(chkReus, 'Marcar Réus', 'true');
+            chkReus.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkReus).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkReus, ['change', 'click']);
+            }
+            if (typeof window.onChangeChkSelPrazoReus === 'function') {
+              try { window.onChangeChkSelPrazoReus(); } catch (e) {}
+            }
+          }
         }
-        if (item.prazoInteressados) {
+
+        // Preenchimento de Prazo Interessados / Terceiros
+        if (item.prazoInteressados && item.prazoInteressados !== '-') {
           const txtInter = document.getElementById('txtPrazoInteressados');
           const chkInter = document.getElementById('chkSelPrazoInteressados');
-          if (txtInter) { txtInter.value = item.prazoInteressados; dispararEventos(txtInter, ['input', 'change', 'keyup']); }
-          if (chkInter) { chkInter.checked = true; dispararEventos(chkInter, ['change']); }
+          if (txtInter) {
+            destacarCampoAtivo(txtInter, 'Prazo Interessados', item.prazoInteressados);
+            txtInter.value = item.prazoInteressados;
+            if (window.jQuery) {
+              window.jQuery(txtInter).val(item.prazoInteressados).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtInter, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoInteressados === 'function') {
+              try { window.onKeyUpTxtPrazoInteressados(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoInteressados === 'function') {
+              try { window.onChangeTxtPrazoInteressados(); } catch (e) {}
+            }
+          }
+          if (chkInter) {
+            destacarCampoAtivo(chkInter, 'Marcar Interessados', 'true');
+            chkInter.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkInter).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkInter, ['change', 'click']);
+            }
+            if (typeof window.onChangeChkSelPrazoInteressados === 'function') {
+              try { window.onChangeChkSelPrazoInteressados(); } catch (e) {}
+            }
+          }
         }
       } else if (modoTipoParte) {
+        // Ativação robusta do rádio "Por Tipo de Parte" no eproc
+        if (typeof window.checkTipoDeParte === 'function') {
+          try { window.checkTipoDeParte(true); } catch (e) { console.warn('Erro ao chamar checkTipoDeParte:', e); }
+        }
+        if (window.jQuery) {
+          try {
+            window.jQuery('#porPolo').prop('checked', false);
+            window.jQuery('#porTipoDeParte').prop('checked', true).trigger('click').trigger('change');
+            window.jQuery('.tipoParte').css('display', 'block');
+            window.jQuery('.porPolo').css('display', 'none');
+          } catch (e) {}
+        }
         const rdTipoParte = document.getElementById('porTipoDeParte');
+        const rdPolo = document.getElementById('porPolo');
+        if (rdPolo) rdPolo.checked = false;
         if (rdTipoParte) {
+          destacarCampoAtivo(rdTipoParte, 'Modo de Prazos', 'Por Tipo de Parte');
           rdTipoParte.checked = true;
+          try { rdTipoParte.click(); } catch (e) {}
           dispararEventos(rdTipoParte, ['change', 'click']);
         }
-        if (item.prazoEspEnt) {
+        if (typeof window.alterarCoresPartes === 'function') {
+          try { window.alterarCoresPartes(true); } catch (e) {}
+        }
+        if (typeof window.alterarCoresPolo === 'function') {
+          try { window.alterarCoresPolo(false); } catch (e) {}
+        }
+        await sleep(250);
+
+        if (item.prazoEspEnt && item.prazoEspEnt !== '-') {
           const txtEsp = document.getElementById('txtPrazoEntPrazoEspecial');
           const chkEsp = document.getElementById('chkSelEntPrazoEspecial');
-          if (txtEsp) { txtEsp.value = item.prazoEspEnt; dispararEventos(txtEsp, ['input', 'change', 'keyup']); }
-          if (chkEsp) { chkEsp.checked = true; dispararEventos(chkEsp, ['change']); }
+          if (txtEsp) {
+            destacarCampoAtivo(txtEsp, 'Prazo Especial Ent.', item.prazoEspEnt);
+            txtEsp.value = item.prazoEspEnt;
+            if (window.jQuery) {
+              window.jQuery(txtEsp).val(item.prazoEspEnt).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtEsp, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoEntPrazoEspecial === 'function') {
+              try { window.onKeyUpTxtPrazoEntPrazoEspecial(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoEntPrazoEspecial === 'function') {
+              try { window.onChangeTxtPrazoEntPrazoEspecial(); } catch (e) {}
+            }
+          }
+          if (chkEsp) {
+            destacarCampoAtivo(chkEsp, 'Marcar Especial Ent.', 'true');
+            chkEsp.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkEsp).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkEsp, ['change', 'click']);
+            }
+          }
         }
-        if (item.prazoSimpEnt) {
+        if (item.prazoSimpEnt && item.prazoSimpEnt !== '-') {
           const txtSimp = document.getElementById('txtPrazoEntPrazoSimples');
           const chkSimp = document.getElementById('chkSelEntPrazoSimples');
-          if (txtSimp) { txtSimp.value = item.prazoSimpEnt; dispararEventos(txtSimp, ['input', 'change', 'keyup']); }
-          if (chkSimp) { chkSimp.checked = true; dispararEventos(chkSimp, ['change']); }
+          if (txtSimp) {
+            destacarCampoAtivo(txtSimp, 'Prazo Simples Ent.', item.prazoSimpEnt);
+            txtSimp.value = item.prazoSimpEnt;
+            if (window.jQuery) {
+              window.jQuery(txtSimp).val(item.prazoSimpEnt).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtSimp, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoEntPrazoSimples === 'function') {
+              try { window.onKeyUpTxtPrazoEntPrazoSimples(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoEntPrazoSimples === 'function') {
+              try { window.onChangeTxtPrazoEntPrazoSimples(); } catch (e) {}
+            }
+          }
+          if (chkSimp) {
+            destacarCampoAtivo(chkSimp, 'Marcar Simples Ent.', 'true');
+            chkSimp.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkSimp).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkSimp, ['change', 'click']);
+            }
+          }
         }
-        if (item.prazoSimpDemais) {
+        if (item.prazoSimpDemais && item.prazoSimpDemais !== '-') {
           const txtDemais = document.getElementById('txtPrazoNaoEntPrazoSimples');
           const chkDemais = document.getElementById('chkSelNaoEntPrazoSimples');
-          if (txtDemais) { txtDemais.value = item.prazoSimpDemais; dispararEventos(txtDemais, ['input', 'change', 'keyup']); }
-          if (chkDemais) { chkDemais.checked = true; dispararEventos(chkDemais, ['change']); }
+          if (txtDemais) {
+            destacarCampoAtivo(txtDemais, 'Prazo Demais Partes', item.prazoSimpDemais);
+            txtDemais.value = item.prazoSimpDemais;
+            if (window.jQuery) {
+              window.jQuery(txtDemais).val(item.prazoSimpDemais).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtDemais, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoNaoEntPrazoSimples === 'function') {
+              try { window.onKeyUpTxtPrazoNaoEntPrazoSimples(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoNaoEntPrazoSimples === 'function') {
+              try { window.onChangeTxtPrazoNaoEntPrazoSimples(); } catch (e) {}
+            }
+          }
+          if (chkDemais) {
+            destacarCampoAtivo(chkDemais, 'Marcar Demais Partes', 'true');
+            chkDemais.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkDemais).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkDemais, ['change', 'click']);
+            }
+          }
         }
-        if (item.prazoDPU) {
+        if (item.prazoDPU && item.prazoDPU !== '-') {
           const txtDPU = document.getElementById('txtPrazoDPU');
           const chkDPU = document.getElementById('chkSelDPU');
-          if (txtDPU) { txtDPU.value = item.prazoDPU; dispararEventos(txtDPU, ['input', 'change', 'keyup']); }
-          if (chkDPU) { chkDPU.checked = true; dispararEventos(chkDPU, ['change']); }
+          if (txtDPU) {
+            destacarCampoAtivo(txtDPU, 'Prazo DPU', item.prazoDPU);
+            txtDPU.value = item.prazoDPU;
+            if (window.jQuery) {
+              window.jQuery(txtDPU).val(item.prazoDPU).trigger('input').trigger('change').trigger('keyup');
+            } else {
+              dispararEventos(txtDPU, ['input', 'change', 'keyup', 'blur']);
+            }
+            if (typeof window.onKeyUpTxtPrazoDPU === 'function') {
+              try { window.onKeyUpTxtPrazoDPU(); } catch (e) {}
+            }
+            if (typeof window.onChangeTxtPrazoDPU === 'function') {
+              try { window.onChangeTxtPrazoDPU(); } catch (e) {}
+            }
+          }
+          if (chkDPU) {
+            destacarCampoAtivo(chkDPU, 'Marcar DPU', 'true');
+            chkDPU.checked = true;
+            if (window.jQuery) {
+              window.jQuery(chkDPU).prop('checked', true).trigger('change').trigger('click');
+            } else {
+              dispararEventos(chkDPU, ['change', 'click']);
+            }
+          }
         }
+      }
+
+      // Reafirmação defensiva do rádio Por Pólo antes de prosseguir
+      if (modoPolo) {
+        if (window.jQuery) {
+          window.jQuery('#porTipoDeParte').prop('checked', false);
+          window.jQuery('#porPolo').prop('checked', true);
+        }
+        const rdPoloReforco = document.getElementById('porPolo');
+        const rdTipoReforco = document.getElementById('porTipoDeParte');
+        if (rdTipoReforco) rdTipoReforco.checked = false;
+        if (rdPoloReforco) rdPoloReforco.checked = true;
       }
 
       // Prazo Geral / Igual para todos
@@ -16172,7 +16429,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.2</span>
 
           </h3>
 
