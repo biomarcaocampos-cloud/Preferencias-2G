@@ -1403,9 +1403,9 @@
 
     const cab = tabela[0] || {};
     let colNum = 0, colFluxo = 1, colFerramenta = 2, colNome = 3, colComoSalvar = 4, colGrupo = 5;
-    let colEvento = 6, colModoPrazos = 7, colPrazoEspEnt = 8, colPrazoSimpEnt = 9, colPrazoSimpDemais = 10, colPrazoDPU = 11;
-    let colPrazoAutores = 12, colPrazoReus = 13, colPrazoInteressados = 14, colPrazoMP = 15, colUrgente = 16;
-    let colComportamentoLoc = 17, colNovoLoc = 18, colLocDesativar = 19, colEncIntimacao = 20, colEventoEncIntimacao = 21, colObs = 22;
+    let colEvento = 6, colCodigoEvento = 7, colModoPrazos = 8, colPrazoEspEnt = 9, colPrazoSimpEnt = 10, colPrazoSimpDemais = 11, colPrazoDPU = 12;
+    let colPrazoAutores = 13, colPrazoReus = 14, colPrazoInteressados = 15, colPrazoMP = 16, colUrgente = 17;
+    let colComportamentoLoc = 18, colNovoLoc = 19, colLocDesativar = 20, colEncIntimacao = 21, colEventoEncIntimacao = 22, colObs = 23;
 
     for (const [idxStr, rawHeader] of Object.entries(cab)) {
       const c = parseInt(idxStr, 10);
@@ -1418,7 +1418,9 @@
       else if (h.includes('nome')) colNome = c;
       else if (h.includes('como salvar') || h.includes('opcoes padrao')) colComoSalvar = c;
       else if (h.includes('grupo')) colGrupo = c;
-      else if (h.includes('evento a ser') || h.includes('evento')) colEvento = c;
+      else if ((h.includes('codigo') || h.includes('cod')) && h.includes('evento')) colCodigoEvento = c;
+      else if (h.includes('evento encadeado')) colEventoEncIntimacao = c;
+      else if (h.includes('evento de citacao') || h.includes('evento de intimacao') || (h.includes('evento') && !h.includes('encadeado') && !h.includes('codigo') && !h.includes('cod'))) colEvento = c;
       else if (h.includes('modo de prazo') || h.includes('modo')) colModoPrazos = c;
       else if (h.includes('especial') && h.includes('entidade')) colPrazoEspEnt = c;
       else if (h.includes('simples') && h.includes('entidade')) colPrazoSimpEnt = c;
@@ -1427,13 +1429,12 @@
       else if (h.includes('ativo') || h.includes('autores')) colPrazoAutores = c;
       else if (h.includes('passivo') || h.includes('reus')) colPrazoReus = c;
       else if (h.includes('interessad') || h.includes('terceir')) colPrazoInteressados = c;
-      else if (h.includes('mp') || h.includes('ministerio') || h.includes('custos')) colPrazoMP = c;
-      else if (h.includes('urgente')) colUrgente = c;
       else if (h.includes('comportamento') || h.includes('comportamento do loc')) colComportamentoLoc = c;
+      else if (h.includes('custos') || h.includes('ministerio') || h.includes('prazo mp') || /\bmp\b/.test(h)) colPrazoMP = c;
+      else if (h.includes('urgente')) colUrgente = c;
       else if (h.includes('novo loc') || h.includes('destino')) colNovoLoc = c;
       else if (h.includes('desativar') || h.includes('remover')) colLocDesativar = c;
       else if (h.includes('encadeamento') && !h.includes('evento')) colEncIntimacao = c;
-      else if (h.includes('evento encadeado')) colEventoEncIntimacao = c;
     }
 
     for (let r = 1; r < tabela.length; r++) {
@@ -1469,6 +1470,9 @@
       const encIntimacaoStr = (row[colEncIntimacao] || '').trim();
       const encIntimacao = normalizar(encIntimacaoStr) === 'sim' || normalizar(encIntimacaoStr) === 's';
 
+      const rawCodEvento = row[colCodigoEvento];
+      const codEvento = (rawCodEvento !== undefined && rawCodEvento !== null) ? String(rawCodEvento).trim() : '';
+
       const item = {
         linha: r + 1,
         num: (rawNum !== undefined && rawNum !== null && String(rawNum).trim() !== '') ? String(rawNum).trim() : String(r),
@@ -1483,6 +1487,7 @@
         padrao: padrao,
         grupo: (row[colGrupo] || '').trim(),
         evento: (row[colEvento] || '').trim(),
+        codigoEvento: codEvento,
         modoPrazos: modoPrazosStr,
         normModoPrazos: normModoPrazos,
         prazoEspEnt: (row[colPrazoEspEnt] || '').trim(),
@@ -15185,20 +15190,53 @@
       const selEvento = document.getElementById('selEventoJudicial');
       let idEventoSelecionado = '';
       if (selEvento) {
-        const normEvento = normalizar(item.evento);
-        let optEvento = Array.from(selEvento.options).find(o => {
-          if (!o.value || o.value === 'null') return false;
-          const oNorm = normalizar(o.text);
-          return oNorm === normEvento || oNorm.includes(normEvento) || normEvento.includes(oNorm);
-        });
+        let optEvento = null;
+
+        // 1ª Prioridade Absoluta: Busca pelo Código do Evento se informado na planilha
+        if (item.codigoEvento && /^\d+$/.test(item.codigoEvento)) {
+          optEvento = Array.from(selEvento.options).find(o => String(o.value).trim() === String(item.codigoEvento).trim());
+        }
+
+        // 2ª Prioridade: Busca pelo texto oficial do evento
+        if (!optEvento && item.evento && item.evento !== '-' && item.evento.length >= 4) {
+          const normEvento = normalizar(item.evento);
+
+          // Correspondência exata
+          optEvento = Array.from(selEvento.options).find(o => {
+            if (!o.value || o.value === 'null') return false;
+            return normalizar(o.text) === normEvento;
+          });
+
+          // Opção contém o evento ou vice-versa
+          if (!optEvento) {
+            optEvento = Array.from(selEvento.options).find(o => {
+              if (!o.value || o.value === 'null') return false;
+              const oNorm = normalizar(o.text);
+              return oNorm.includes(normEvento) || normEvento.includes(oNorm);
+            });
+          }
+
+          // Fallback por palavra-chave crítica (ex.: "vista ao mp para parecer")
+          if (!optEvento && (normEvento.includes('vista ao mp') || normEvento.includes('parecer'))) {
+            optEvento = Array.from(selEvento.options).find(o => {
+              if (!o.value || o.value === 'null') return false;
+              const oNorm = normalizar(o.text);
+              return oNorm.includes('vista ao mp') || (oNorm.includes('mp') && oNorm.includes('parecer'));
+            });
+          }
+        }
+
         if (optEvento) {
           selEvento.value = optEvento.value;
           optEvento.selected = true;
           idEventoSelecionado = optEvento.value;
-          destacarCampoAtivo(selEvento, 'Evento Judicial', optEvento.text);
+          dados.evento = optEvento.text;
+          dados.codigoEvento = optEvento.value;
+          destacarCampoAtivo(selEvento, 'Evento Judicial', `[${optEvento.value}] ${optEvento.text}`);
           dispararEventos(selEvento, ['change']);
+          addLog(`✓ Evento Judicial selecionado com precisão: [${optEvento.value}] ${optEvento.text}`, 'info');
         } else {
-          addLog(`⚠️ Evento "${item.evento}" não encontrado na combo selEventoJudicial!`, 'warn');
+          addLog(`⚠️ Evento "${item.evento || item.codigoEvento}" não encontrado na combo selEventoJudicial!`, 'warn');
         }
       }
 
