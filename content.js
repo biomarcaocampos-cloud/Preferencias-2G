@@ -4,7 +4,7 @@
 
 //  Arquivo: content.js
 
-//  Versão: 3.5.4 (atualizada em 09/11/2026)
+//  Versão: 3.6.0 (atualizada em 10/11/2026)
 
 // ============================================================
 
@@ -519,24 +519,46 @@
     return false;
   }
 
-  function ehTelaSuportada() {
-    return ehTelaDeMinuta() || ehTelaDeRelatorio() || ehTelaDeMovimentacao() || ehTelaDeMinutaAreaTrabalho() || ehTelaDeIntimacao();
+  function ehTelaDeLocalizadores() {
+    const params = new URLSearchParams(window.location.search);
+    const acao = params.get('acao') || '';
+    return acao.startsWith('localizador_orgao');
   }
 
-  let moduloAtivo = ehTelaDeIntimacao()
-    ? 'intimacoes'
-    : (ehTelaDeMinutaAreaTrabalho()
-      ? 'area_minutas'
-      : (ehTelaDeRelatorio()
-        ? 'relatorios'
-        : (ehTelaDeMovimentacao()
-          ? 'movimentacoes'
-          : (ehTelaDeMinuta()
-            ? 'minutas'
-            : (sessionStorage.getItem('eproc_pref_2g_modulo_ativo') || 'minutas')))));
+  function ehTelaDeGruposPreferencia() {
+    const params = new URLSearchParams(window.location.search);
+    const acao = params.get('acao') || '';
+    return acao.includes('formulario_personalizacao_grupo');
+  }
+
+  function ehTelaDeUsuarios() {
+    const params = new URLSearchParams(window.location.search);
+    const acao = (params.get('acao') || '').toLowerCase();
+    return acao === 'usuario_listar_todos' || acao === 'usuario_listar';
+  }
+
+  function ehTelaSuportada() {
+    return ehTelaDeMinuta() || ehTelaDeRelatorio() || ehTelaDeMovimentacao() || ehTelaDeMinutaAreaTrabalho() || ehTelaDeIntimacao() || ehTelaDeLocalizadores() || ehTelaDeGruposPreferencia() || ehTelaDeUsuarios();
+  }
+
+  let moduloAtivo = ehTelaDeLocalizadores() || ehTelaDeGruposPreferencia() || ehTelaDeUsuarios()
+    ? 'servidores'
+    : (ehTelaDeIntimacao()
+      ? 'intimacoes'
+      : (ehTelaDeMinutaAreaTrabalho()
+        ? 'area_minutas'
+        : (ehTelaDeRelatorio()
+          ? 'relatorios'
+          : (ehTelaDeMovimentacao()
+            ? 'movimentacoes'
+            : (ehTelaDeMinuta()
+              ? 'minutas'
+              : (sessionStorage.getItem('eproc_pref_2g_modulo_ativo') || 'minutas'))))));
 
   function gerarStatusTelaHtml() {
-    if (moduloAtivo === 'minutas') {
+    if (moduloAtivo === 'servidores') {
+      return '<span style="color:#15803d; font-weight:700;">👥 Personalização de Servidores (Pronto para executar)</span>';
+    } else if (moduloAtivo === 'minutas') {
       if (ehTelaDeMinuta()) {
         return '<span style="color:#15803d; font-weight:700;">✅ Nova Minuta (Pronto)</span>';
       } else {
@@ -590,7 +612,72 @@
     return '';
   }
 
-  function alternarModulo(novoModulo) {
+  // No eproc cada ação de menu possui um hash próprio validado pelo servidor.
+  // Extrai o link oficial diretamente do menu lateral / DOM antes de usar fallback.
+  function obterUrlAcaoMenu(acao) {
+    const alvo = String(acao || '').toLowerCase();
+    const extrairSeBater = (rawUrl, exigirHash = true) => {
+      if (!rawUrl) return null;
+      const cleaned = rawUrl.replace(/&amp;/g, '&').trim();
+      if (!cleaned || cleaned.startsWith('javascript:') || cleaned.startsWith('#')) return null;
+      try {
+        const urlObj = new URL(cleaned, window.location.href);
+        if ((urlObj.searchParams.get('acao') || '').toLowerCase() !== alvo) return null;
+        if (exigirHash && !urlObj.searchParams.get('hash')) return null;
+        urlObj.hash = '';
+        return urlObj.href;
+      } catch (e) {
+        return null;
+      }
+    };
+
+    try {
+      // 1. Prioriza links puros dentro dos menus laterais/navegação (sem id_ / acao_retorno)
+      const menuContainers = '#main-menu a, nav#sidebar-wrapper a, ul.infraMenu a, #divInfraMenu a';
+      const menuLinks = Array.from(document.querySelectorAll(menuContainers));
+      for (const link of menuLinks) {
+        const res = extrairSeBater(link.getAttribute('href'), true);
+        if (res && !res.includes('acao_retorno=') && !res.includes('id_pessoa=')) return res;
+      }
+      for (const link of menuLinks) {
+        const res = extrairSeBater(link.getAttribute('href'), true);
+        if (res) return res;
+      }
+
+      // 2. Se a página atual já for a própria ação com hash válido
+      const atualUrl = extrairSeBater(window.location.href, true);
+      if (atualUrl && !atualUrl.includes('acao_retorno=')) return atualUrl;
+
+      // 3. Procura em qualquer <a> do documento
+      const allLinks = Array.from(document.querySelectorAll(`a[href*="acao=${acao}" i]`));
+      for (const link of allLinks) {
+        const res = extrairSeBater(link.getAttribute('href'), true);
+        if (res && !res.includes('acao_retorno=') && !res.includes('id_pessoa=')) return res;
+      }
+      for (const link of allLinks) {
+        const res = extrairSeBater(link.getAttribute('href'), true);
+        if (res) return res;
+      }
+
+      // 4. Procura em handlers onclick (submeterFrm, etc.)
+      const elOnclick = document.querySelector(`[onclick*="acao=${acao}" i]`);
+      if (elOnclick) {
+        const onclickStr = elOnclick.getAttribute('onclick') || '';
+        const m = onclickStr.match(/['"]([^'"]*controlador\.php\?[^'"]+)['"]/i);
+        if (m) {
+          const res = extrairSeBater(m[1], false);
+          if (res) return res;
+        }
+      }
+    } catch (e) {
+      console.warn('[obterUrlAcaoMenu] Erro ao localizar URL de menu para', acao, e);
+    }
+
+    const hashAtual = typeof obterHashAtual === 'function' ? obterHashAtual() : '';
+    return new URL(`controlador.php?acao=${acao}&hash=${hashAtual}`, window.location.href).href;
+  }
+
+  function alternarModulo(novoModulo, pularRecargaPlanilha = false) {
     moduloAtivo = novoModulo;
     sessionStorage.setItem('eproc_pref_2g_modulo_ativo', novoModulo);
 
@@ -599,7 +686,8 @@
       relatorios: document.getElementById('btn-modulo-relatorios'),
       movimentacoes: document.getElementById('btn-modulo-movimentacoes'),
       area_minutas: document.getElementById('btn-modulo-area-minutas'),
-      intimacoes: document.getElementById('btn-modulo-intimacoes')
+      intimacoes: document.getElementById('btn-modulo-intimacoes'),
+      servidores: document.getElementById('btn-modulo-servidores')
     };
 
     Object.entries(mapBotoes).forEach(([chave, btn]) => {
@@ -613,6 +701,33 @@
 
     const stDiv = document.getElementById('rito-status-tela');
     if (stDiv) stDiv.innerHTML = gerarStatusTelaHtml();
+
+    const containerSrv = document.getElementById('rito-container-servidores');
+    const dropzone = document.getElementById('rito-dropzone');
+    const cardInfo = document.getElementById('rito-card-info');
+    const btnDiagnostico = document.getElementById('btn-rito-diagnostico');
+    const btnIniciar = document.getElementById('btn-rito-iniciar');
+
+    const temPlanilha = window._eprocUltimoArquivoPlanilha instanceof File || window._eprocUltimoArquivoPlanilha instanceof Blob;
+
+    if (moduloAtivo === 'servidores') {
+      if (containerSrv) containerSrv.style.display = 'block';
+      if (dropzone) dropzone.style.display = 'none';
+      if (cardInfo) cardInfo.style.display = 'none';
+      if (btnDiagnostico) btnDiagnostico.style.display = 'none';
+      if (btnIniciar) btnIniciar.style.display = 'none';
+    } else {
+      if (containerSrv) containerSrv.style.display = 'none';
+      if (dropzone) dropzone.style.display = temPlanilha ? 'none' : 'block';
+      if (cardInfo) cardInfo.style.display = temPlanilha ? 'block' : 'none';
+      if (btnDiagnostico) btnDiagnostico.style.display = temPlanilha ? 'flex' : 'none';
+      if (btnIniciar) btnIniciar.style.display = temPlanilha ? 'flex' : 'none';
+    }
+
+    const pill = document.getElementById('rito-modulo-status-pill');
+    if (pill) {
+      pill.textContent = moduloAtivo === 'servidores' ? 'SERVIDORES' : (moduloAtivo === 'intimacoes' ? 'INTIMAÇÕES' : (moduloAtivo === 'relatorios' ? 'RELATÓRIOS' : (moduloAtivo === 'movimentacoes' ? 'MOVIMENTAÇÃO' : (moduloAtivo === 'area_minutas' ? 'DOCS' : 'MINUTAS'))));
+    }
 
     const btnGerenciador = document.getElementById('btn-rito-abrir-gerenciador');
     if (btnGerenciador) {
@@ -628,14 +743,17 @@
       } else if (moduloAtivo === 'intimacoes') {
         btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências de Intimação';
         btnGerenciador.title = 'Abre a lista oficial de preferências de Intimação Eletrônica da Unidade';
+      } else if (moduloAtivo === 'servidores') {
+        btnGerenciador.innerHTML = '<span>👥</span> Abrir Localizadores do Órgão';
+        btnGerenciador.title = 'Abre a tela oficial de Localizadores do Órgão no eproc';
       } else {
         btnGerenciador.innerHTML = '<span>📋</span> Abrir Gerenciador de Preferências (Minutas)';
         btnGerenciador.title = 'Abre a tela oficial do eproc para visualizar ou editar preferências de minutas';
       }
     }
 
-    // Se a planilha já foi carregada em memória, reprocessa para a aba correspondente sem recarregar a página
-    if (window._eprocUltimoArquivoPlanilha) {
+    // Se a planilha já foi carregada em memória e não estamos em Servidores, reprocessa para a aba correspondente
+    if (!pularRecargaPlanilha && temPlanilha && moduloAtivo !== 'servidores') {
       const nomeAba = moduloAtivo === 'intimacoes'
         ? 'Preferências - Intimações'
         : (moduloAtivo === 'relatorios'
@@ -11275,7 +11393,7 @@
 
       .rito-module-row-2 {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(3, 1fr);
         gap: 5px;
       }
 
@@ -12023,6 +12141,1753 @@
 
 
 
+  
+      /* ==========================================================================
+     MÓDULO SERVIDORES: PERSONALIZAÇÃO DA UNIDADE (v3.6.0)
+     Seleção por menu de usuários ativos da unidade, inclusão de todos os perfis,
+     preservação estrita de grupos existentes e execução direta sem telas extras.
+     ========================================================================== */
+
+  const PREPOSICOES_SIGLA = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'd', "d'"]);
+
+  function formatarPrimeiroNome(str) {
+    if (!str) return '';
+    const s = String(str).trim();
+    return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+  }
+
+  function calcularSiglaServidor(nomeCompleto) {
+    if (!nomeCompleto || typeof nomeCompleto !== 'string') return '';
+    const palavras = nomeCompleto.trim().split(/\s+/).filter(Boolean);
+    if (palavras.length === 0) return '';
+    const primeiroNome = formatarPrimeiroNome(palavras[0]);
+    if (palavras.length === 1) return primeiroNome;
+
+    let iniciaisSobrenome = '';
+    for (let i = 1; i < palavras.length; i++) {
+      const p = palavras[i].toLowerCase();
+      if (!PREPOSICOES_SIGLA.has(p)) {
+        iniciaisSobrenome += palavras[i].charAt(0).toUpperCase();
+      }
+    }
+    return iniciaisSobrenome ? `${primeiroNome}.${iniciaisSobrenome}` : primeiroNome;
+  }
+
+  function resolverColisoesSiglas(slots, localizadoresExistentes = []) {
+    const contagem = {};
+    const usados = new Set();
+
+    return slots.map(item => {
+      if (!item || !item.nomeServidor || !item.nomeServidor.trim()) {
+        return { ...item, sigla: '' };
+      }
+
+      const siglaBase = calcularSiglaServidor(item.nomeServidor);
+      const siglaAtualBase = String(item.nomeBase || '').replace(/👤/g, '').trim();
+      const temLocGenericoSlot = Array.isArray(localizadoresExistentes) && localizadoresExistentes.some(x =>
+        normalizar(x.nomeCurto || '') === normalizar(`Servidor ${item.slot}`) ||
+        normalizar(x.nomeCompleto || '') === normalizar(`Servidor ${item.slot}`)
+      );
+
+      // Verifica se já existe no eproc um localizador diferente com essa mesma sigla
+      const existeOutroNoEproc = (cand) => {
+        if (!Array.isArray(localizadoresExistentes) || localizadoresExistentes.length === 0) return false;
+        const candNorm = normalizar(cand);
+        return localizadoresExistentes.some(loc => {
+          const lCurto = normalizar(loc.nomeCurto || '');
+          const lComp = normalizar(loc.nomeCompleto || '');
+          const bateCand = lCurto === candNorm || lComp === candNorm;
+          if (!bateCand) return false;
+          // Se o localizador já encontrado É o próprio localizador deste slot, não há colisão
+          if (siglaAtualBase && (lCurto === normalizar(siglaAtualBase) || lComp === normalizar(item.nomeBase))) {
+            return false;
+          }
+          if (lCurto === normalizar(`Servidor ${item.slot}`) || lComp === normalizar(`Servidor ${item.slot}`)) {
+            return false;
+          }
+          // Se o localizador genérico "Servidor N" deste slot já foi renomeado antes para esta própria sigla, não é colisão
+          if (!temLocGenericoSlot && cand === siglaBase) {
+            const reivindicadoPorOutroSlot = slots.some(outro =>
+              outro && outro.slot !== item.slot && outro.nomeBase &&
+              (normalizar(outro.nomeBase) === lComp || normalizar(String(outro.nomeBase).replace(/👤/g, '')) === lCurto)
+            );
+            if (!reivindicadoPorOutroSlot) return false;
+          }
+          return true;
+        });
+      };
+
+      if (!contagem[siglaBase]) {
+        contagem[siglaBase] = 1;
+      }
+
+      let candidato = siglaBase;
+      if (usados.has(normalizar(candidato)) || existeOutroNoEproc(candidato)) {
+        let sufixo = 2;
+        while (usados.has(normalizar(`${siglaBase}.${sufixo}`)) || existeOutroNoEproc(`${siglaBase}.${sufixo}`)) {
+          sufixo++;
+        }
+        candidato = `${siglaBase}.${sufixo}`;
+      }
+
+      usados.add(normalizar(candidato));
+      return { ...item, sigla: candidato };
+    });
+  }
+
+  // Serializa parâmetros em Windows-1252 / ISO-8859-1 preservando acentos (%E3, %E7) e emojis (&#128100;) como no submit nativo do eproc
+  function encodeWindows1252Value(str) {
+    if (str === null || str === undefined) return '';
+    const mapWin1252 = {
+      0x20AC: 0x80, 0x201A: 0x82, 0x0192: 0x83, 0x201E: 0x84, 0x2026: 0x85,
+      0x2020: 0x86, 0x2021: 0x87, 0x02C6: 0x88, 0x2030: 0x89, 0x0160: 0x8A,
+      0x2039: 0x8B, 0x0152: 0x8C, 0x017D: 0x8E, 0x2018: 0x91, 0x2019: 0x92,
+      0x201C: 0x93, 0x201D: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97,
+      0x02DC: 0x98, 0x2122: 0x99, 0x0161: 0x9A, 0x203A: 0x9B, 0x0153: 0x9C,
+      0x017E: 0x9E, 0x0178: 0x9F
+    };
+    let out = '';
+    for (const ch of String(str)) {
+      const cp = ch.codePointAt(0);
+      if (cp === 0x20) {
+        out += '+';
+      } else if ((cp >= 0x30 && cp <= 0x39) || (cp >= 0x41 && cp <= 0x5A) || (cp >= 0x61 && cp <= 0x7A) || ch === '-' || ch === '_' || ch === '.' || ch === '*') {
+        out += ch;
+      } else if (cp <= 0xFF) {
+        out += '%' + cp.toString(16).toUpperCase().padStart(2, '0');
+      } else if (mapWin1252[cp] !== undefined) {
+        out += '%' + mapWin1252[cp].toString(16).toUpperCase().padStart(2, '0');
+      } else {
+        const entity = '&#' + cp + ';';
+        for (let i = 0; i < entity.length; i++) {
+          const c = entity[i];
+          const cCode = c.charCodeAt(0);
+          out += (cCode === 0x26 || cCode === 0x23 || cCode === 0x3B)
+            ? '%' + cCode.toString(16).toUpperCase()
+            : c;
+        }
+      }
+    }
+    return out;
+  }
+
+  function encodeWindows1252Body(pairs) {
+    return pairs.map(([k, v]) => `${encodeWindows1252Value(k)}=${encodeWindows1252Value(v)}`).join('&');
+  }
+
+  // Lê a lista oficial de usuários cadastrados ativos do órgão (usuario_listar_todos + POST Consultar + fallback usuario_listar)
+  async function carregarUsuariosAtivosDoOrgao() {
+    window._eprocUltimoErroUsuarios = '';
+    const usuarios = [];
+    const chavesVistas = new Set();
+
+    const extrairRows = (d) => {
+      const area = d.getElementById('divInfraAreaTabela') || d.querySelector('.infraAreaTabela');
+      if (!area) return { temArea: false, adicionados: 0, caption: '' };
+      const capEl = area.querySelector('caption');
+      const caption = capEl ? capEl.textContent.replace(/\s+/g, ' ').trim() : '';
+
+      // Detecta índices de colunas dinamicamente pelos <th>
+      let idxNome = 0, idxSigla = 1, idxTipo = 2;
+      const ths = Array.from(area.querySelectorAll('th'));
+      ths.forEach((th, idx) => {
+        const t = normalizar(th.textContent);
+        if (t === 'nome') idxNome = idx;
+        else if (t === 'sigla' || t.startsWith('sigla')) idxSigla = idx;
+        else if (t === 'tipo' || t.startsWith('tipo')) idxTipo = idx;
+      });
+      // Fallback caso haja coluna de checkbox no índice 0
+      const headerRow = area.querySelector('tr');
+      if (headerRow) {
+        const hdrCells = Array.from(headerRow.children);
+        hdrCells.forEach((cell, idx) => {
+          const t = normalizar(cell.textContent);
+          if (t === 'nome') idxNome = idx;
+          else if (t === 'sigla') idxSigla = idx;
+          else if (t === 'tipo') idxTipo = idx;
+        });
+      }
+
+      let adicionados = 0;
+      Array.from(area.querySelectorAll('tr')).forEach(tr => {
+        if (tr.classList.contains('infraTrOrdenacao') || tr.querySelector('th')) return;
+        const tds = tr.querySelectorAll('td');
+        const minCols = Math.max(2, idxTipo + 1);
+        if (tds.length < minCols) return;
+
+        const nome = (tds[idxNome] ? tds[idxNome].textContent : '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+        const sigla = (tds[idxSigla] ? tds[idxSigla].textContent : '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+        const tipo = (tds[idxTipo] ? tds[idxTipo].textContent : '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim() || 'SERVIDOR';
+
+        if (!nome || ['nome', 'nenhum registro encontrado', 'nenhum registro encontrado.'].includes(normalizar(nome))) return;
+
+        // Nota: id_pessoa != id_usuario; somente acaoDesativarPerfilUsuario e id_usuario= trazem IdUsuario real
+        const mId = tr.innerHTML.match(/acaoDesativarPerfilUsuario\(['"](\d+)['"]/i) ||
+                    tr.innerHTML.match(/id_usuario=(\d+)/i);
+        const idUsuario = mId ? mId[1] : '';
+        const chaveDedup = `${normalizar(nome)}|${sigla}|${tipo}`;
+        if (!chavesVistas.has(chaveDedup)) {
+          chavesVistas.add(chaveDedup);
+          usuarios.push({ id: idUsuario || `${sigla}:${tipo}`, idReal: idUsuario, nome, sigla, tipo });
+          adicionados++;
+        }
+      });
+
+      return { temArea: true, adicionados, caption };
+    };
+
+    const montarPairsConsultaUsuarios = (frmPag, paginaAlvo = '0', tipoFiltro = null) => {
+      const pairs = [];
+      frmPag.querySelectorAll('input[type="hidden"]').forEach(inp => {
+        if (!inp.name) return;
+        let val = inp.value || '';
+        if (inp.name === 'hdnInfraTipoPagina') val = '1';
+        else if (inp.name === 'hdnExcel') val = '0';
+        else if (inp.name === 'hdnInfraPaginaAtual') val = String(paginaAlvo);
+        else if (inp.name === 'hdnTipo' && tipoFiltro !== null) val = tipoFiltro;
+        pairs.push([inp.name, val]);
+      });
+      frmPag.querySelectorAll('select').forEach(sel => {
+        if (!sel.name || sel.disabled || sel.name.includes('Paginacao')) return;
+        if (sel.name === 'selTipo' && tipoFiltro !== null) {
+          pairs.push([sel.name, tipoFiltro]);
+        } else if (sel.name === 'selEntidade') {
+          pairs.push([sel.name, sel.value || 'null']);
+        } else {
+          pairs.push([sel.name, sel.value || '']);
+        }
+      });
+      frmPag.querySelectorAll('input[type="text"]').forEach(ti => {
+        if (ti.name && !ti.disabled) pairs.push([ti.name, ti.value || '']);
+      });
+      return pairs;
+    };
+
+    const consultarAcaoUsuarios = async (acao) => {
+      const url = obterUrlAcaoMenu(acao);
+      console.log(`[Servidores] Consultando ${acao} em:`, url);
+      const resp = await fetch(url, { credentials: 'same-origin' });
+      if (!resp.ok) {
+        return { ok: false, erro: `HTTP ${resp.status} ao acessar ${acao}.` };
+      }
+
+      let html = await lerRespostaTexto(resp);
+      let doc = new DOMParser().parseFromString(html, 'text/html');
+      let resExt = extrairRows(doc);
+
+      if (!resExt.temArea) {
+        const exc = doc.querySelector('.infraExcecao, #divInfraExcecao');
+        return {
+          ok: false,
+          erro: exc ? exc.textContent.trim().slice(0, 140) : `Tabela de usuários (#divInfraAreaTabela) não retornada em ${acao}.`
+        };
+      }
+
+      // Se a carga inicial via GET veio vazia, executa POST Consultar (selTipo='-' e depois 'USUINS')
+      let urlBasePag = url;
+      const frm = doc.querySelector('#frmUsuarioLista') || doc.querySelector(`form[action*="${acao}"]`);
+      if (resExt.adicionados === 0 && frm) {
+        const actionConsultar = new URL((frm.getAttribute('action') || url).replace(/&amp;/g, '&'), window.location.href).href;
+        for (const tipoTent of ['-', 'USUINS']) {
+          const respPost = await fetch(actionConsultar, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: encodeWindows1252Body(montarPairsConsultaUsuarios(frm, '0', tipoTent)),
+            credentials: 'same-origin'
+          });
+          if (respPost.ok) {
+            const htmlPost = await lerRespostaTexto(respPost);
+            const docPost = new DOMParser().parseFromString(htmlPost, 'text/html');
+            const resPost = extrairRows(docPost);
+            if (resPost.adicionados > 0 || resPost.caption) {
+              doc = docPost;
+              resExt = resPost;
+              urlBasePag = actionConsultar;
+              if (resPost.adicionados > 0) break;
+            }
+          }
+        }
+      }
+
+      // Paginação (múltiplas páginas)
+      const selPag = doc.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+      const frmPag = doc.querySelector('#frmUsuarioLista') || doc.querySelector(`form[action*="${acao}"]`);
+      if (selPag && selPag.options.length > 1 && frmPag) {
+        const actionPag = new URL((frmPag.getAttribute('action') || urlBasePag).replace(/&amp;/g, '&'), window.location.href).href;
+        for (let p = 1; p < selPag.options.length; p++) {
+          const respP = await fetch(actionPag, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: encodeWindows1252Body(montarPairsConsultaUsuarios(frmPag, selPag.options[p].value, null)),
+            credentials: 'same-origin'
+          });
+          if (respP.ok) {
+            const htmlP = await lerRespostaTexto(respP);
+            extrairRows(new DOMParser().parseFromString(htmlP, 'text/html'));
+          }
+        }
+      }
+
+      return { ok: true, caption: resExt.caption, qtd: usuarios.length };
+    };
+
+    try {
+      let res1 = await consultarAcaoUsuarios('usuario_listar_todos');
+      if (usuarios.length === 0) {
+        // Fallback: tenta usuario_listar (Cadastro de Usuários no menu) caso usuario_listar_todos esteja vazio/restrito
+        const res2 = await consultarAcaoUsuarios('usuario_listar');
+        if (!res1.ok && res2.ok) res1 = res2;
+      }
+
+      if (usuarios.length === 0) {
+        window._eprocUltimoErroUsuarios = res1.erro || (res1.caption ? `Resposta de usuários: ${res1.caption}` : 'Nenhum usuário ativo retornado na listagem da unidade.');
+        console.warn('[Servidores]', window._eprocUltimoErroUsuarios);
+      }
+
+      const porNome = {};
+      usuarios.forEach(u => {
+        const chave = normalizar(u.nome);
+        if (!porNome[chave]) {
+          porNome[chave] = { nome: u.nome, perfis: [] };
+        }
+        if (!porNome[chave].perfis.some(p => p.id === u.id && p.tipo === u.tipo)) {
+          porNome[chave].perfis.push({ id: u.idReal || u.id, idReal: u.idReal || '', tipo: u.tipo, sigla: u.sigla });
+        }
+      });
+
+      window._eprocUsuariosUnidade = porNome;
+      return porNome;
+    } catch (e) {
+      window._eprocUltimoErroUsuarios = e.message || 'Erro ao consultar usuários.';
+      console.warn('[Servidores] Erro ao carregar usuários ativos do órgão:', e);
+      return window._eprocUsuariosUnidade || {};
+    }
+  }
+
+  async function obterLocalizadoresOrgaoEproc() {
+    window._eprocUltimoErroLocalizadores = '';
+    try {
+      const urlListar = obterUrlAcaoMenu('localizador_orgao_listar');
+      console.log('[Servidores] Consultando localizadores em:', urlListar);
+      const resp = await fetch(urlListar, { credentials: 'same-origin' });
+      if (!resp.ok) {
+        window._eprocUltimoErroLocalizadores = `HTTP ${resp.status} ao acessar Localizadores do Órgão.`;
+        return [];
+      }
+      const htmlGet = await lerRespostaTexto(resp);
+      let doc = new DOMParser().parseFromString(htmlGet, 'text/html');
+
+      const montarPairsLocalizadores = (frm, paginaAlvo = '0') => {
+        const pairsMap = new Map();
+        frm.querySelectorAll('input[type="hidden"]').forEach(inp => {
+          if (inp.name) pairsMap.set(inp.name, inp.value || '');
+        });
+        pairsMap.set('hdnInfraTipoPagina', pairsMap.get('hdnInfraTipoPagina') || '1');
+        pairsMap.set('hdnExcel', '0');
+        pairsMap.set('hdnInfraPaginaAtual', String(paginaAlvo));
+        // Fundamental: eproc marca chkOcultarSemProcesso=1 por padrão, escondendo localizadores sem processos (ex: Servidor 1..9)
+        pairsMap.set('chkOcultarSemProcesso', '0');
+        frm.querySelectorAll('select').forEach(sel => {
+          if (sel.name && !sel.disabled && !sel.name.includes('Paginacao')) {
+            pairsMap.set(sel.name, sel.value || '');
+          }
+        });
+        const inpFiltro = frm.querySelector('#txtSiglaDescricaoLocalizador');
+        if (inpFiltro && inpFiltro.name) {
+          pairsMap.set(inpFiltro.name, '');
+        }
+        return Array.from(pairsMap.entries());
+      };
+
+      // Se chkOcultarSemProcesso vier marcado, reenvia o formulário desmarcado (0) para listar TODOS os localizadores
+      const chkOcultar = doc.getElementById('chkOcultarSemProcesso');
+      const frmLoc = doc.querySelector('#frmLocalizadorOrgaoLista') || doc.querySelector('form[action*="localizador_orgao_listar"]');
+      let urlBase = urlListar;
+      if (frmLoc && (!chkOcultar || chkOcultar.checked)) {
+        const actionAll = new URL((frmLoc.getAttribute('action') || urlListar).replace(/&amp;/g, '&'), window.location.href).href;
+        const respAll = await fetch(actionAll, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: encodeWindows1252Body(montarPairsLocalizadores(frmLoc, '0')),
+          credentials: 'same-origin'
+        });
+        if (respAll.ok) {
+          const htmlAll = await lerRespostaTexto(respAll);
+          const docAll = new DOMParser().parseFromString(htmlAll, 'text/html');
+          if (docAll.getElementById('divInfraAreaTabela') || docAll.querySelector('tr')) {
+            doc = docAll;
+            urlBase = actionAll;
+          }
+        }
+      }
+
+      const lista = [];
+      const idsVistos = new Set();
+      const extrairLocs = (d) => {
+        Array.from(d.querySelectorAll('tr')).forEach(tr => {
+          const linkAlt = tr.querySelector('a[href*="localizador_orgao_alterar"]');
+          if (!linkAlt) return;
+          const tds = tr.querySelectorAll('td');
+          if (tds.length >= 3) {
+            const col1 = tds[1].textContent.replace(/\u00a0/g, ' ').trim();
+            const col2 = tds[2].textContent.replace(/\u00a0/g, ' ').trim();
+            const urlAlt = linkAlt.getAttribute('href');
+            const mId = tr.innerHTML.match(/id_localizador_orgao=(\d+)/i);
+            const idLoc = mId ? mId[1] : urlAlt;
+            if (!idsVistos.has(idLoc)) {
+              idsVistos.add(idLoc);
+              lista.push({
+                id: mId ? mId[1] : null,
+                nomeCompleto: col1,
+                nomeCurto: col2,
+                urlAlterar: urlAlt
+              });
+            }
+          }
+        });
+      };
+
+      extrairLocs(doc);
+
+      const selPag = doc.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+      const frmPag = doc.querySelector('#frmLocalizadorOrgaoLista') || doc.querySelector('form[action*="localizador_orgao_listar"]');
+      if (selPag && selPag.options.length > 1 && frmPag) {
+        const actionPag = new URL((frmPag.getAttribute('action') || urlBase).replace(/&amp;/g, '&'), window.location.href).href;
+        for (let p = 1; p < selPag.options.length; p++) {
+          const respP = await fetch(actionPag, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: encodeWindows1252Body(montarPairsLocalizadores(frmPag, selPag.options[p].value)),
+            credentials: 'same-origin'
+          });
+          if (respP.ok) {
+            const htmlP = await lerRespostaTexto(respP);
+            extrairLocs(new DOMParser().parseFromString(htmlP, 'text/html'));
+          }
+        }
+      }
+
+      window._eprocLocalizadoresUnidade = lista;
+      return lista;
+    } catch (e) {
+      window._eprocUltimoErroLocalizadores = e.message || 'Erro ao consultar localizadores.';
+      console.warn('[Servidores] Erro ao obter localizadores do órgão:', e);
+      return [];
+    }
+  }
+
+  async function alterarLocalizadorEproc(urlAlterar, novoNomeCompleto, novoNomeCurto, nomeCurtoAtual = '') {
+    if (!urlAlterar) throw new Error('URL de alteração do localizador não informada.');
+    const fullUrl = new URL(urlAlterar.replace(/&amp;/g, '&'), window.location.href).href;
+    const respGet = await fetch(fullUrl, { credentials: 'same-origin' });
+    if (!respGet.ok) throw new Error(`Falha ao abrir tela de alteração do localizador (${respGet.status})`);
+    const htmlGet = await lerRespostaTexto(respGet);
+    const docGet = new DOMParser().parseFromString(htmlGet, 'text/html');
+
+    const form = docGet.querySelector('form#frmLocalizadorOrgaoCadastro') ||
+                 docGet.querySelector('form[action*="localizador_orgao_alterar"]') ||
+                 docGet.querySelector('form[action*="localizador_orgao"]') ||
+                 (docGet.getElementById('divInfraAreaDados') && docGet.getElementById('divInfraAreaDados').closest('form'));
+    if (!form) throw new Error('Formulário de alteração de localizador não localizado na página do eproc.');
+
+    const rawAction = (form.getAttribute('action') || fullUrl).replace(/&amp;/g, '&');
+    const actionUrl = new URL(rawAction, window.location.href).href;
+
+    const pairsMap = new Map();
+    const setPair = (k, v) => { if (k) pairsMap.set(k, v); };
+
+    form.querySelectorAll('input[type="hidden"]').forEach(inp => {
+      if (inp.name) setPair(inp.name, inp.value || '');
+    });
+    setPair('hdnInfraTipoPagina', pairsMap.get('hdnInfraTipoPagina') || '1');
+
+    form.querySelectorAll('select').forEach(sel => {
+      if (sel.name && !sel.disabled) setPair(sel.name, sel.value || '');
+    });
+
+    form.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(chk => {
+      if (chk.name && !chk.disabled && chk.checked) setPair(chk.name, chk.value || 'on');
+    });
+
+    form.querySelectorAll('textarea').forEach(ta => {
+      if (ta.name && !ta.disabled) setPair(ta.name, ta.value || '');
+    });
+
+    const textInputs = Array.from(form.querySelectorAll('input[type="text"], input:not([type])'))
+      .filter(ti => ti.name && !ti.disabled);
+
+    // Classifica os campos: Localizador (com emoji 👤) vs Nome do Localizador (sem emoji) vs Descrição
+    const camposSigla = [];
+    const camposNome = [];
+
+    textInputs.forEach(ti => {
+      const val = (ti.value || '').trim();
+      const nm = (ti.name + ' ' + (ti.id || '')).toLowerCase();
+      const idSemPrefixo = (ti.id || '').replace(/^(txt|ipt|sel)/i, '');
+      const lbl = ti.id
+        ? (form.querySelector(`label[for="${ti.id}"]`) ||
+           (idSemPrefixo ? form.querySelector(`label#lbl${idSemPrefixo}`) : null))
+        : null;
+      const lblTxt = lbl ? normalizar(lbl.textContent) : '';
+
+      // Atenção: o campo de "Nome do Localizador" no eproc pode se chamar txtDescricao (DesLocalizador)
+      const ehCampoDescricaoLonga = (lblTxt.includes('descric') && !lblTxt.includes('nome')) ||
+                                    (!lblTxt && nm.includes('descric') && (!nomeCurtoAtual || normalizar(val) !== normalizar(nomeCurtoAtual)) && !val.includes('👤'));
+      if (ehCampoDescricaoLonga) {
+        setPair(ti.name, val);
+        return;
+      }
+
+      if (lblTxt.startsWith('nome')) {
+        camposNome.push(ti);
+      } else if (lblTxt.includes('localizador') && !lblTxt.includes('sistema')) {
+        camposSigla.push(ti);
+      } else if (val.includes('👤') || ((nm.includes('sigla') || nm.includes('localizador')) && !nm.includes('nome'))) {
+        camposSigla.push(ti);
+      } else if (nm.includes('nome') || nm.includes('descric') || (nomeCurtoAtual && normalizar(val) === normalizar(nomeCurtoAtual)) || /servidor/i.test(val)) {
+        camposNome.push(ti);
+      } else {
+        setPair(ti.name, val);
+      }
+    });
+
+    if (camposSigla.length > 0) {
+      camposSigla.forEach(ti => setPair(ti.name, novoNomeCompleto));
+      camposNome.forEach(ti => setPair(ti.name, novoNomeCurto));
+    } else if (camposNome.length > 0) {
+      // Caso o formulário possua apenas um campo principal de nome
+      setPair(camposNome[0].name, novoNomeCompleto);
+      for (let i = 1; i < camposNome.length; i++) {
+        setPair(camposNome[i].name, novoNomeCurto);
+      }
+    } else {
+      setPair('txtNome', novoNomeCompleto);
+    }
+
+    // Inclui botão submit real da tela para o PHP validar a submissão
+    const submitBtns = Array.from(form.querySelectorAll('button[type="submit"], button:not([type="button"]):not([type="reset"]), input[type="submit"], button[name*="sbm" i], input[name*="sbm" i], button[id*="Salvar" i], input[id*="Salvar" i]'));
+    let incluiuSubmit = false;
+    submitBtns.forEach(btn => {
+      if (btn.name && !incluiuSubmit) {
+        setPair(btn.name, btn.value || btn.textContent.trim() || 'Salvar');
+        incluiuSubmit = true;
+      }
+    });
+    if (!incluiuSubmit) {
+      setPair('sbmAlterarLocalizadorOrgao', 'Salvar');
+    }
+
+    const respPost = await fetch(actionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encodeWindows1252Body(Array.from(pairsMap.entries())),
+      credentials: 'same-origin'
+    });
+    if (!respPost.ok) throw new Error(`Erro ao submeter alteração do localizador (${respPost.status})`);
+
+    const htmlPost = await lerRespostaTexto(respPost);
+    const docPost = new DOMParser().parseFromString(htmlPost, 'text/html');
+    const exc = docPost.querySelector('.infraExcecao, #divInfraExcecao');
+    if (exc && exc.textContent.trim()) {
+      throw new Error(exc.textContent.trim().slice(0, 180));
+    }
+    const redirecionouParaLista = (respPost.url && respPost.url.includes('localizador_orgao_listar')) ||
+      !!docPost.querySelector('#frmLocalizadorOrgaoLista, form[action*="localizador_orgao_listar"]');
+    if (!redirecionouParaLista) {
+      // Remove definições de funções JS estáticas antes de verificar alertas de validação inline
+      const htmlSemFuncs = htmlPost.replace(/function\s+[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/g, '');
+      const mAlert = htmlSemFuncs.match(/alert\(\s*['"]([^'"]+)['"]\s*\)/i);
+      if (mAlert && mAlert[1] && !/sucesso|alterad|salvo/i.test(mAlert[1])) {
+        throw new Error(mAlert[1].slice(0, 180));
+      }
+    }
+    return true;
+  }
+
+  async function obterGruposPreferenciaEproc() {
+    try {
+      const urlListar = obterUrlAcaoMenu('listar_formulario_personalizacao_grupo');
+      console.log('[Servidores] Consultando grupos de preferência em:', urlListar);
+      const resp = await fetch(urlListar, { credentials: 'same-origin' });
+      if (!resp.ok) return [];
+      const html = await lerRespostaTexto(resp);
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      const lista = [];
+      const vistos = new Set();
+      const extrairGrupos = (d) => {
+        d.querySelectorAll('tr').forEach(tr => {
+          const tds = tr.querySelectorAll('td');
+          if (tds.length >= 2) {
+            const linkEdit = tr.querySelector('a[href*="cadastrar_formulario_personalizacao_grupo"], a[href*="id_formulario_personalizacao_grupo"]') ||
+                             tr.querySelector('a[title*="Alterar"], a[title*="Editar"]');
+            if (!linkEdit) return;
+            const nomeGrupo = tds[1].textContent.trim() || tds[0].textContent.trim();
+            const urlEdit = linkEdit.getAttribute('href');
+            const m = tr.innerHTML.match(/id_formulario_personalizacao_grupo=(\d+)/i) ||
+                      tr.innerHTML.match(/id_grupo=(\d+)/i);
+            const idGrp = m ? m[1] : urlEdit;
+            if (nomeGrupo && !vistos.has(idGrp)) {
+              vistos.add(idGrp);
+              lista.push({
+                id: m ? m[1] : null,
+                nome: nomeGrupo,
+                urlEditar: urlEdit
+              });
+            }
+          }
+        });
+      };
+
+      extrairGrupos(doc);
+
+      const selPag = doc.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+      const frmPag = doc.querySelector('form[action*="listar_formulario_personalizacao_grupo"]');
+      if (selPag && selPag.options.length > 1 && frmPag) {
+        const actionPag = new URL((frmPag.getAttribute('action') || urlListar).replace(/&amp;/g, '&'), window.location.href).href;
+        for (let p = 1; p < selPag.options.length; p++) {
+          const pairsPag = [];
+          frmPag.querySelectorAll('input[type="hidden"]').forEach(inp => {
+            if (inp.name) pairsPag.push([inp.name, inp.name === 'hdnInfraPaginaAtual' ? selPag.options[p].value : inp.value]);
+          });
+          const respP = await fetch(actionPag, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: encodeWindows1252Body(pairsPag),
+            credentials: 'same-origin'
+          });
+          if (respP.ok) {
+            const htmlP = await lerRespostaTexto(respP);
+            extrairGrupos(new DOMParser().parseFromString(htmlP, 'text/html'));
+          }
+        }
+      }
+
+      window._eprocGruposUnidade = lista;
+      return lista;
+    } catch (e) {
+      console.warn('[Servidores] Erro ao obter grupos de preferência:', e);
+      return [];
+    }
+  }
+
+  async function obterDadosCompletosGrupoEproc(urlEditar) {
+    if (!urlEditar) return null;
+    try {
+      const fullUrl = new URL(urlEditar.replace(/&amp;/g, '&'), window.location.href).href;
+      const resp = await fetch(fullUrl, { credentials: 'same-origin' });
+      if (!resp.ok) return null;
+      const html = await lerRespostaTexto(resp);
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      const form = doc.querySelector('form[action*="salvar_formulario_personalizacao_grupo"]') ||
+                   doc.querySelector('form[action*="formulario_personalizacao_grupo"]') ||
+                   doc.querySelector('form');
+      if (!form) return null;
+
+      const inpDesc = form.querySelector('#iptDescricaoGrupo');
+      const iptUsers = form.querySelector('#iptUsuariosGrupo');
+      let idsAtuais = (iptUsers && iptUsers.value)
+        ? iptUsers.value.split('-').map(s => s.trim()).filter(Boolean)
+        : [];
+
+      form.querySelectorAll('input[name="arrIdUsuarios[]"]').forEach(inp => {
+        if (inp.value && !idsAtuais.includes(String(inp.value).trim())) {
+          idsAtuais.push(String(inp.value).trim());
+        }
+      });
+
+      const iptPrefs = form.querySelector('#iptPreferenciasGrupo');
+      const prefsStr = iptPrefs ? (iptPrefs.value || '') : '';
+      const prefsAtuais = [];
+      form.querySelectorAll('input[name="arrIdPreferencias[]"]').forEach(inp => {
+        if (inp.value) prefsAtuais.push(String(inp.value).trim());
+      });
+      if (prefsAtuais.length === 0 && prefsStr) {
+        prefsStr.split('-').map(s => s.trim()).filter(Boolean).forEach(v => prefsAtuais.push(v));
+      }
+
+      const iptAut = form.querySelector('#iptPreferenciasAutomatizacaoGrupo');
+      const autStr = iptAut ? (iptAut.value || '') : '';
+      const autPairsAtuais = [];
+      form.querySelectorAll('input[name="arrCodControleLocalizadorSistema[]"], input[name="arrIdPreferenciasAutomatizacao[]"]').forEach(inp => {
+        if (inp.value) autPairsAtuais.push([inp.name, String(inp.value).trim()]);
+      });
+      if (autPairsAtuais.length === 0 && autStr) {
+        autStr.split('-').map(s => s.trim()).filter(Boolean).forEach(v => autPairsAtuais.push(['arrCodControleLocalizadorSistema[]', v]));
+      }
+
+      const mAjax = html.match(/controlador_ajax\.php\?acao_ajax=buscar_usuarios_orgao[^'"\\]*/i);
+      const urlAjaxUsuarios = mAjax ? new URL(mAjax[0].replace(/&amp;/g, '&'), window.location.href).href : null;
+
+      return {
+        url: fullUrl,
+        formAction: new URL((form.getAttribute('action') || fullUrl).replace(/&amp;/g, '&'), window.location.href).href,
+        urlAjaxUsuarios,
+        nomeGrupo: inpDesc ? inpDesc.value.trim() : '',
+        idsUsuarios: idsAtuais,
+        prefsStr,
+        idsPreferencias: prefsAtuais,
+        autStr,
+        autPairsAutomatizacoes: autPairsAtuais,
+        form
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Busca os IDs exatos esperados por arrIdUsuarios[] usando o próprio autocomplete da tela do grupo
+  async function resolverIdsUsuariosViaAjaxGrupo(urlAjaxUsuarios, nomeServidor, perfisFallback = []) {
+    const idsFallback = (perfisFallback || [])
+      .map(p => ({ id: String(p.idReal || p.id || '').trim(), tipo: p.tipo || 'SERVIDOR' }))
+      .filter(p => /^\d+$/.test(p.id));
+    if (!urlAjaxUsuarios || !nomeServidor) return idsFallback;
+
+    try {
+      const normAlvo = normalizar(nomeServidor);
+      const semAcento = nomeServidor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      const termos = [nomeServidor.trim()];
+      if (semAcento && semAcento !== nomeServidor.trim()) termos.push(semAcento);
+      const palavras = semAcento.split(/\s+/).filter(w => w.length >= 2);
+      if (palavras.length >= 2) termos.push(`${palavras[0]} ${palavras[1]}`);
+      const primeiraLonga = palavras.find(w => w.length >= 4);
+      if (primeiraLonga) termos.push(primeiraLonga);
+
+      const encontrados = [];
+      const idsVistos = new Set();
+      const bateNome = (desc) => {
+        const dNorm = normalizar(desc);
+        if (!dNorm) return false;
+        if (dNorm === normAlvo) return true;
+        const segs = String(desc).split(/\s*-\s*/);
+        if (segs.some(seg => normalizar(seg) === normAlvo)) return true;
+        const semParenteses = normalizar(String(desc).replace(/\([^)]*\)/g, ' '));
+        if (semParenteses === normAlvo) return true;
+        return normAlvo.length >= 8 && dNorm.includes(normAlvo);
+      };
+
+      for (const termo of termos) {
+        const bodyAjax = 'q=' + encodeWindows1252Value(termo) + '&palavra_pesquisa=' + encodeWindows1252Value(termo) + '&ids=';
+        const resp = await fetch(urlAjaxUsuarios, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: bodyAjax,
+          credentials: 'same-origin'
+        });
+
+        if (!resp.ok) continue;
+        const txt = await lerRespostaTexto(resp);
+
+        if (txt.includes('<item')) {
+          const parserAjax = new DOMParser();
+          let itemsDoc = parserAjax.parseFromString(txt, 'text/xml');
+          if (itemsDoc.querySelector('parsererror')) {
+            itemsDoc = parserAjax.parseFromString(txt, 'text/html');
+          }
+          itemsDoc.querySelectorAll('item').forEach(it => {
+            const id = (it.getAttribute('id') || '').trim();
+            const desc = decodeEntities(it.getAttribute('descricao') || it.textContent || '').trim();
+            const comp = decodeEntities(it.getAttribute('complemento') || '').trim();
+            if (id && bateNome(desc) && !idsVistos.has(id)) {
+              idsVistos.add(id);
+              encontrados.push({ id, tipo: comp || 'PERFIL' });
+            }
+          });
+        } else if (txt.trim().startsWith('[') || txt.trim().startsWith('{')) {
+          try {
+            const dados = JSON.parse(txt);
+            const lista = Array.isArray(dados) ? dados : (dados.itens || dados.items || []);
+            lista.forEach(u => {
+              const id = String(u.id || u.IdUsuario || u.value || '').trim();
+              const desc = (u.descricao || u.NomePessoa || u.nome || u.label || '').trim();
+              const comp = (u.complemento || u.DesTipoUsuario || '').trim();
+              if (id && bateNome(desc) && !idsVistos.has(id)) {
+                idsVistos.add(id);
+                encontrados.push({ id, tipo: comp || 'PERFIL' });
+              }
+            });
+          } catch (eJson) {}
+        }
+
+        if (encontrados.length > 0) break;
+      }
+
+      if (encontrados.length > 0) return encontrados;
+    } catch (e) {
+      console.warn('[Servidores] Fallback para IDs da listagem de usuários:', e);
+    }
+
+    return idsFallback;
+  }
+
+  async function renomearGrupoEprocPreservandoTudo(dadosGrupo, novoNomeGrupo, idsUsuariosAdicionar = []) {
+    if (!dadosGrupo) throw new Error('Dados do grupo inexistentes.');
+    const form = dadosGrupo.form;
+    const actionUrl = dadosGrupo.formAction;
+    const pairs = [];
+    const nomesReservados = new Set([
+      'iptUsuariosGrupo',
+      'arrIdUsuarios[]',
+      'iptPreferenciasGrupo',
+      'arrIdPreferencias[]',
+      'iptPreferenciasAutomatizacaoGrupo',
+      'arrIdPreferenciasAutomatizacao[]',
+      'arrCodControleLocalizadorSistema[]',
+      'iptDescricaoGrupo',
+      'hdnInfraTipoPagina'
+    ]);
+
+    form.querySelectorAll('input[type="hidden"]').forEach(inp => {
+      if (inp.name && !nomesReservados.has(inp.name)) {
+        pairs.push([inp.name, inp.value || '']);
+      }
+    });
+
+    pairs.push(['hdnInfraTipoPagina', '1']);
+    pairs.push(['iptDescricaoGrupo', novoNomeGrupo]);
+
+    const idsFinaisUsuarios = [...dadosGrupo.idsUsuarios];
+    const novosAdicionados = [];
+    const jaExistiam = [];
+
+    idsUsuariosAdicionar.forEach(uid => {
+      const sUid = String(uid).trim();
+      if (!sUid) return;
+      if (idsFinaisUsuarios.includes(sUid)) {
+        jaExistiam.push(sUid);
+      } else {
+        idsFinaisUsuarios.push(sUid);
+        novosAdicionados.push(sUid);
+      }
+    });
+
+    pairs.push(['iptUsuariosGrupo', idsFinaisUsuarios.length > 0 ? idsFinaisUsuarios.join('-') + '-' : '']);
+    idsFinaisUsuarios.forEach(uid => pairs.push(['arrIdUsuarios[]', uid]));
+
+    const prefsStrFinal = dadosGrupo.prefsStr || (dadosGrupo.idsPreferencias.length > 0 ? dadosGrupo.idsPreferencias.join('-') + '-' : '');
+    pairs.push(['iptPreferenciasGrupo', prefsStrFinal]);
+    dadosGrupo.idsPreferencias.forEach(pid => pairs.push(['arrIdPreferencias[]', pid]));
+
+    const autPairs = dadosGrupo.autPairsAutomatizacoes || [];
+    const autStrFinal = dadosGrupo.autStr || (autPairs.length > 0 ? autPairs.map(p => p[1]).join('-') + '-' : '');
+    pairs.push(['iptPreferenciasAutomatizacaoGrupo', autStrFinal]);
+    autPairs.forEach(([nm, aid]) => pairs.push([nm, aid]));
+
+    const respPost = await fetch(actionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encodeWindows1252Body(pairs),
+      credentials: 'same-origin'
+    });
+
+    if (!respPost.ok) throw new Error(`Erro ao salvar grupo de preferências (${respPost.status})`);
+    const htmlPost = await lerRespostaTexto(respPost);
+    const docPost = new DOMParser().parseFromString(htmlPost, 'text/html');
+    const exc = docPost.querySelector('.infraExcecao, #divInfraExcecao');
+    if (exc && exc.textContent.trim()) {
+      throw new Error(exc.textContent.trim().slice(0, 180));
+    }
+    return { novosAdicionados, jaExistiam };
+  }
+
+  // Persistência local (world: MAIN utiliza localStorage) e interface
+  function obterDadosServidoresDosInputs() {
+    const slots = [];
+    const mapaUsuarios = window._eprocUsuariosUnidade || {};
+
+    for (let i = 1; i <= 9; i++) {
+      const selUser = document.getElementById(`srv-select-user-${i}`);
+      const chkGestao = document.getElementById(`srv-gestao-${i}`);
+      const badgeAtual = document.getElementById(`srv-badge-base-${i}`);
+
+      const nomeServidor = selUser ? selUser.value.trim() : '';
+      const gestao = chkGestao ? chkGestao.checked : false;
+      const nomeBase = badgeAtual ? badgeAtual.getAttribute('data-base') || `👤Servidor ${i}👤` : `👤Servidor ${i}👤`;
+      const nomeGrupoBase = badgeAtual ? badgeAtual.getAttribute('data-grupo-base') || `Trabalho - Servidor ${i}` : `Trabalho - Servidor ${i}`;
+
+      const normNome = normalizar(nomeServidor);
+      const perfis = (mapaUsuarios[normNome] && mapaUsuarios[normNome].perfis) ? mapaUsuarios[normNome].perfis : [];
+
+      slots.push({
+        slot: i,
+        nomeBase,
+        nomeGrupoBase,
+        nomeServidor,
+        perfis,
+        gestao
+      });
+    }
+    return resolverColisoesSiglas(slots, window._eprocLocalizadoresUnidade || []);
+  }
+
+  function atualizarSiglasEmTempoReal() {
+    const slotsResolvidos = obterDadosServidoresDosInputs();
+    const mapaUsuarios = window._eprocUsuariosUnidade || {};
+    const temListaUsuarios = Object.keys(mapaUsuarios).length > 0;
+
+    slotsResolvidos.forEach(s => {
+      const inpSigla = document.getElementById(`srv-sigla-${s.slot}`);
+      const divPerfis = document.getElementById(`srv-perfis-info-${s.slot}`);
+
+      if (inpSigla) {
+        inpSigla.value = s.sigla ? `👤${s.sigla}👤` : '';
+      }
+
+      if (divPerfis) {
+        if (!s.nomeServidor) {
+          divPerfis.innerHTML = '';
+          divPerfis.style.display = 'none';
+        } else if (s.perfis && s.perfis.length > 0) {
+          const tiposFormatados = s.perfis.map(p => p.tipo).join(', ');
+          divPerfis.innerHTML = `<span style="color:#0369a1; font-weight:600;">✓ ${s.perfis.length} perfil(s) ativo(s):</span> <span style="color:#334155;">${tiposFormatados}</span>`;
+          divPerfis.style.display = 'block';
+        } else if (temListaUsuarios || (window._eprocServidoresVerificadosNaoEncontrados && window._eprocServidoresVerificadosNaoEncontrados.has(normalizar(s.nomeServidor)))) {
+          divPerfis.innerHTML = `<span style="color:#b45309; font-weight:600;">⚠️ Usuário não localizado nesta unidade</span> <span style="color:#64748b;">(localizador/grupo não serão alterados)</span>`;
+          divPerfis.style.display = 'block';
+        } else {
+          divPerfis.innerHTML = `<span style="color:#64748b;">ℹ️ Clique em "Ler eproc" para carregar perfis da unidade.</span>`;
+          divPerfis.style.display = 'block';
+        }
+      }
+    });
+  }
+
+  function salvarServidoresStorage(notificar = true) {
+    const slots = obterDadosServidoresDosInputs();
+    try {
+      localStorage.setItem('eproc_servidores_personalizados', JSON.stringify(slots));
+      if (notificar) addLog('💾 Rascunho dos servidores salvo com sucesso!');
+    } catch (e) {
+      console.warn('[Servidores] Erro ao salvar rascunho:', e);
+    }
+  }
+
+  function carregarServidoresStorage() {
+    try {
+      const raw = localStorage.getItem('eproc_servidores_personalizados');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function renderizarTabelaServidores(slotsExistentes = null) {
+    const container = document.getElementById('rito-servidores-slots-lista');
+    if (!container) return;
+
+    const mapaUsuarios = window._eprocUsuariosUnidade || {};
+    const nomesOrdenados = Object.values(mapaUsuarios).map(u => u.nome).sort((a, b) => a.localeCompare(b));
+
+    let html = '';
+    for (let i = 1; i <= 9; i++) {
+      const s = (slotsExistentes && slotsExistentes.find(item => item.slot === i)) || {
+        slot: i,
+        nomeBase: `👤Servidor ${i}👤`,
+        nomeGrupoBase: `Trabalho - Servidor ${i}`,
+        nomeServidor: '',
+        sigla: '',
+        gestao: false
+      };
+
+      const nomeBaseAtual = s.nomeBase || `👤Servidor ${i}👤`;
+      const nomeGrupoBaseAtual = s.nomeGrupoBase || `Trabalho - Servidor ${i}`;
+
+      let optionsUsuarios = `<option value="">-- Selecione o servidor da unidade --</option>`;
+      nomesOrdenados.forEach(nomeU => {
+        const normU = normalizar(nomeU);
+        const objU = mapaUsuarios[normU];
+        const qtdPerfis = objU ? objU.perfis.length : 1;
+        const isSelected = normalizar(s.nomeServidor) === normU;
+        const sufixoQtd = qtdPerfis > 1 ? ` (${qtdPerfis} perfis)` : '';
+        optionsUsuarios += `<option value="${nomeU}" ${isSelected ? 'selected' : ''}>${nomeU}${sufixoQtd}</option>`;
+      });
+
+      if (s.nomeServidor && !nomesOrdenados.some(n => normalizar(n) === normalizar(s.nomeServidor))) {
+        optionsUsuarios += `<option value="${s.nomeServidor}" selected>${s.nomeServidor} (Planilha / Manual)</option>`;
+      }
+
+      html += `
+        <div class="rito-srv-card" data-slot="${i}" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-weight:700; font-size:10.5px; background:#e0f2fe; color:#0369a1; padding:1px 6px; border-radius:4px;">Slot ${i}</span>
+              <span id="srv-badge-base-${i}" data-base="${nomeBaseAtual}" data-grupo-base="${nomeGrupoBaseAtual}" style="font-size:10px; color:#64748b; font-weight:600;" title="Localizador atual no eproc">${nomeBaseAtual}</span>
+            </div>
+            <label style="font-size:10.5px; font-weight:600; color:#334155; display:flex; align-items:center; gap:4px; cursor:pointer;">
+              <input type="checkbox" id="srv-gestao-${i}" class="srv-chk-gestao" ${s.gestao ? 'checked' : ''} style="cursor:pointer;">
+              Gestão
+            </label>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 110px; gap:6px;">
+            <select id="srv-select-user-${i}" class="srv-select-usuario" style="font-size:11px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:4px; outline:none; background:#ffffff; color:#0f172a; max-width:100%;">
+              ${optionsUsuarios}
+            </select>
+            <input type="text" id="srv-sigla-${i}" class="srv-input-sigla" readonly placeholder="👤Sigla👤" style="font-size:11px; font-weight:700; padding:4px 6px; border:1px solid #e2e8f0; background:#f1f5f9; border-radius:4px; color:#0f766e; text-align:center;" value="${s.sigla ? `👤${s.sigla}👤` : ''}">
+          </div>
+          <div id="srv-perfis-info-${i}" style="font-size:10px; line-height:1.2; display:none; padding-left:2px;"></div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = html;
+
+    for (let i = 1; i <= 9; i++) {
+      const sel = document.getElementById(`srv-select-user-${i}`);
+      const chk = document.getElementById(`srv-gestao-${i}`);
+      if (sel) {
+        sel.addEventListener('change', () => {
+          atualizarSiglasEmTempoReal();
+          salvarServidoresStorage(false);
+        });
+      }
+      if (chk) {
+        chk.addEventListener('change', () => {
+          salvarServidoresStorage(false);
+        });
+      }
+    }
+
+    atualizarSiglasEmTempoReal();
+  }
+
+  async function lerLocalizadoresAtuaisDoEproc() {
+    const banner = document.getElementById('srv-status-info');
+    if (banner) {
+      banner.style.display = 'block';
+      banner.style.background = '#e0f2fe';
+      banner.style.color = '#0369a1';
+      banner.innerHTML = '🔄 Consultando usuários ativos, localizadores e grupos no eproc...';
+    }
+
+    addLog('🔄 [Ler eproc] Consultando usuários ativos do órgão (usuario_listar_todos)...');
+    const mapaUsuarios = await carregarUsuariosAtivosDoOrgao();
+    const totalUsuarios = Object.keys(mapaUsuarios).length;
+
+    addLog('🔄 [Ler eproc] Consultando localizadores do órgão (localizador_orgao_listar)...');
+    const localizadores = await obterLocalizadoresOrgaoEproc();
+
+    addLog('🔄 [Ler eproc] Consultando grupos de preferência (listar_formulario_personalizacao_grupo)...');
+    const grupos = await obterGruposPreferenciaEproc();
+
+    addLog(`ℹ️ eproc: ${totalUsuarios} usuário(s) único(s), ${localizadores.length} localizador(es) e ${grupos.length} grupo(s) encontrado(s).`);
+
+    // Atualiza os selects mantendo seleções atuais
+    const slotsAtuais = obterDadosServidoresDosInputs();
+    renderizarTabelaServidores(slotsAtuais);
+
+    for (let i = 1; i <= 9; i++) {
+      const badge = document.getElementById(`srv-badge-base-${i}`);
+      if (!badge) continue;
+
+      let match = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(`Servidor ${i}`) || normalizar(l.nomeCurto) === normalizar(`Servidor ${i}`));
+      if (match) {
+        badge.textContent = match.nomeCompleto;
+        badge.setAttribute('data-base', match.nomeCompleto);
+        badge.setAttribute('data-grupo-base', `Trabalho - Servidor ${i}`);
+      } else {
+        const inpSigla = document.getElementById(`srv-sigla-${i}`);
+        const siglaAtual = inpSigla ? inpSigla.value.replace(/👤/g, '').trim() : '';
+        if (siglaAtual) {
+          match = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(`👤${siglaAtual}👤`) || normalizar(l.nomeCurto) === normalizar(siglaAtual));
+          if (match) {
+            badge.textContent = match.nomeCompleto;
+            badge.setAttribute('data-base', match.nomeCompleto);
+            badge.setAttribute('data-grupo-base', `Trabalho - ${siglaAtual}`);
+          }
+        }
+      }
+    }
+
+    atualizarSiglasEmTempoReal();
+    salvarServidoresStorage(false);
+
+    if (banner) {
+      const errs = [window._eprocUltimoErroUsuarios, window._eprocUltimoErroLocalizadores].filter(Boolean).join(' ');
+      if (totalUsuarios === 0 || localizadores.length === 0 || errs) {
+        banner.style.background = '#fef3c7';
+        banner.style.color = '#92400e';
+        banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${totalUsuarios} usuários e ${localizadores.length} localizadores carregados (${grupos.length} grupos). ${errs || 'Verifique permissões ou abra uma tela do eproc com o menu lateral.'}`;
+      } else {
+        banner.style.background = '#dcfce7';
+        banner.style.color = '#15803d';
+        banner.innerHTML = `✅ <strong>Pronto:</strong> ${totalUsuarios} usuários ativos, ${localizadores.length} localizadores e ${grupos.length} grupos carregados do eproc.`;
+        setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
+      }
+    }
+  }
+
+  // Lê a aba "Servidores" usando window.JSZip + DOMParser (sem dependência externa de SheetJS/XLSX)
+  async function extrairDadosAbaServidores(zip) {
+    const wbXml = await zip.file('xl/workbook.xml').async('text');
+    const parser = new DOMParser();
+    const relsFile = zip.file('xl/_rels/workbook.xml.rels');
+    const relsXml = relsFile ? await relsFile.async('text') : '';
+    const relMap = {};
+    if (relsXml) {
+      const relRegex = /<Relationship\b([^>]+)>/gi;
+      let mRel;
+      while ((mRel = relRegex.exec(relsXml)) !== null) {
+        const attrs = mRel[1];
+        const idMatch = attrs.match(/\bId=["']([^"']+)["']/i);
+        const targetMatch = attrs.match(/\bTarget=["']([^"']+)["']/i);
+        if (idMatch && targetMatch) {
+          relMap[idMatch[1]] = targetMatch[1];
+        }
+      }
+    }
+
+    let targetSheetPath = '';
+    const sheetRegex = /<sheet\b([^>]+)>/gi;
+    let mSheet;
+    while ((mSheet = sheetRegex.exec(wbXml)) !== null) {
+      const attrs = mSheet[1];
+      const nameMatch = attrs.match(/\bname=["']([^"']+)["']/i);
+      const ridMatch = attrs.match(/\b(?:r:id|id)=["']([^"']+)["']/i);
+      if (nameMatch && ridMatch) {
+        const sName = decodeEntities(nameMatch[1]).trim();
+        if (normalizar(sName).includes('servidor')) {
+          const rid = ridMatch[1];
+          const target = relMap[rid];
+          if (target) {
+            targetSheetPath = 'xl/' + target.replace(/^\//, '').replace(/^xl\//, '');
+            break;
+          }
+        }
+      }
+    }
+
+    if (!targetSheetPath) {
+      throw new Error('Aba "Servidores" não encontrada no arquivo Excel.');
+    }
+
+    const sheetFile = zip.file(targetSheetPath);
+    if (!sheetFile) throw new Error('Arquivo XML da aba "Servidores" não encontrado.');
+
+    const sharedStrings = [];
+    const ssFile = zip.file('xl/sharedStrings.xml');
+    if (ssFile) {
+      const ssXml = await ssFile.async('text');
+      const ssDoc = parser.parseFromString(ssXml, 'text/xml');
+      ssDoc.querySelectorAll('si').forEach(si => {
+        const textParts = Array.from(si.querySelectorAll('t')).map(t => t.textContent || '');
+        sharedStrings.push(textParts.join(''));
+      });
+    }
+
+    const sheetXml = await sheetFile.async('text');
+    const sheetDoc = parser.parseFromString(sheetXml, 'text/xml');
+    const rows = sheetDoc.querySelectorAll('row');
+    const servidoresSlots = [];
+
+    rows.forEach(r => {
+      const rNum = parseInt(r.getAttribute('r'), 10);
+      if (isNaN(rNum) || rNum < 2) return;
+
+      const cells = {};
+      r.querySelectorAll('c').forEach(c => {
+        const ref = c.getAttribute('r') || '';
+        const match = ref.match(/^([A-Z]+)(\d+)$/);
+        if (!match) return;
+        const col = match[1];
+        const t = c.getAttribute('t');
+        const vEl = c.querySelector('v');
+        const isEl = c.querySelector('is');
+        let val = '';
+        if (t === 's' && vEl) {
+          val = sharedStrings[parseInt(vEl.textContent, 10)] || '';
+        } else if (isEl) {
+          val = Array.from(isEl.querySelectorAll('t')).map(x => x.textContent || '').join('');
+        } else if (vEl) {
+          val = vEl.textContent || '';
+        }
+        cells[col] = val.replace(/\u00a0/g, ' ').trim();
+      });
+
+      const nomeOriginal = cells['A'] || '';
+      const nomeUsuario = cells['C'] || '';
+      const nomeGrupoOriginal = cells['D'] || '';
+      const grupoGestao = cells['E'] || '';
+
+      let slotNum = null;
+      const mSlot = nomeOriginal.match(/Servidor\s*(\d+)/i);
+      if (mSlot) {
+        slotNum = parseInt(mSlot[1], 10);
+      } else if (rNum >= 2 && rNum <= 10) {
+        slotNum = rNum - 1;
+      }
+
+      if (slotNum && slotNum >= 1 && slotNum <= 9) {
+        servidoresSlots.push({
+          slot: slotNum,
+          nomeOriginal: nomeOriginal || `👤Servidor ${slotNum}👤`,
+          nomeGrupoOriginal: nomeGrupoOriginal || `Trabalho - Servidor ${slotNum}`,
+          nomeUsuario: nomeUsuario === '-' ? '' : nomeUsuario,
+          gestao: /gest[aã]o|sim|true|1/i.test(grupoGestao)
+        });
+      }
+    });
+
+    return servidoresSlots;
+  }
+
+  async function processarArquivoPlanilhaServidores(bufOrFile) {
+    try {
+      if (!window.JSZip) throw new Error('Biblioteca JSZip não carregada na extensão.');
+
+      let buf = bufOrFile;
+      if (bufOrFile instanceof Blob || bufOrFile instanceof File) {
+        buf = await bufOrFile.arrayBuffer();
+      }
+      if (!buf) throw new Error('Arquivo de planilha inválido ou vazio.');
+
+      const zip = await window.JSZip.loadAsync(buf);
+      const servidoresSlots = await extrairDadosAbaServidores(zip);
+
+      if (!servidoresSlots || servidoresSlots.length === 0) {
+        alert('Aba "Servidores" não contém linhas de slots (Servidor 1 a 9).');
+        return;
+      }
+
+      if (!window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0) {
+        await carregarUsuariosAtivosDoOrgao();
+      }
+
+      // Obtém endpoint AJAX de usuários do órgão a partir de Grupos de Preferências como fallback imediato
+      let urlAjaxGrupoFallback = null;
+      const prepararAjaxUsuariosGrupo = async () => {
+        if (urlAjaxGrupoFallback !== null) return urlAjaxGrupoFallback;
+        urlAjaxGrupoFallback = '';
+        try {
+          let gruposList = window._eprocGruposUnidade || [];
+          if (!gruposList.length) gruposList = await obterGruposPreferenciaEproc();
+          if (gruposList.length > 0 && gruposList[0].urlEditar) {
+            const det = await obterDadosCompletosGrupoEproc(gruposList[0].urlEditar);
+            if (det && det.urlAjaxUsuarios) urlAjaxGrupoFallback = det.urlAjaxUsuarios;
+          }
+        } catch (e) {}
+        return urlAjaxGrupoFallback;
+      };
+
+      const mapaUsuarios = window._eprocUsuariosUnidade || {};
+      if (!window._eprocServidoresVerificadosNaoEncontrados) {
+        window._eprocServidoresVerificadosNaoEncontrados = new Set();
+      }
+      const slotsAtuais = obterDadosServidoresDosInputs();
+      const slotsNovos = [];
+      let qtdImportados = 0;
+      let qtdNaoEncontradosUnidade = 0;
+
+      for (let i = 1; i <= 9; i++) {
+        const atual = slotsAtuais.find(x => x.slot === i) || {
+          slot: i,
+          nomeBase: `👤Servidor ${i}👤`,
+          nomeGrupoBase: `Trabalho - Servidor ${i}`
+        };
+        const imp = servidoresSlots.find(x => x.slot === i);
+
+        let nomeSelecionado = '';
+        let perfisSelecionados = [];
+        let gestao = false;
+
+        if (imp) {
+          gestao = !!imp.gestao;
+          if (imp.nomeUsuario) {
+            qtdImportados++;
+            const normPlanilha = normalizar(imp.nomeUsuario);
+            let matchChave = Object.keys(mapaUsuarios).find(k => k === normPlanilha);
+            if (!matchChave && normPlanilha.length >= 6) {
+              matchChave = Object.keys(mapaUsuarios).find(k => k.includes(normPlanilha) || (k.length >= 6 && normPlanilha.includes(k)));
+            }
+            if (matchChave) {
+              nomeSelecionado = mapaUsuarios[matchChave].nome;
+              perfisSelecionados = mapaUsuarios[matchChave].perfis || [];
+              window._eprocServidoresVerificadosNaoEncontrados.delete(normPlanilha);
+            } else {
+              nomeSelecionado = imp.nomeUsuario;
+              const urlAjax = await prepararAjaxUsuariosGrupo();
+              if (urlAjax) {
+                const viaAjax = await resolverIdsUsuariosViaAjaxGrupo(urlAjax, imp.nomeUsuario, []);
+                if (viaAjax.length > 0) {
+                  perfisSelecionados = viaAjax;
+                  mapaUsuarios[normPlanilha] = { nome: imp.nomeUsuario, perfis: viaAjax };
+                  window._eprocUsuariosUnidade = mapaUsuarios;
+                  window._eprocServidoresVerificadosNaoEncontrados.delete(normPlanilha);
+                } else {
+                  window._eprocServidoresVerificadosNaoEncontrados.add(normPlanilha);
+                  qtdNaoEncontradosUnidade++;
+                }
+              } else if (Object.keys(mapaUsuarios).length > 0) {
+                qtdNaoEncontradosUnidade++;
+              }
+            }
+          }
+        }
+
+        const ehGrupoPadrao = !atual.nomeGrupoBase || normalizar(atual.nomeGrupoBase) === normalizar(`Trabalho - Servidor ${i}`);
+        slotsNovos.push({
+          slot: i,
+          nomeBase: atual.nomeBase,
+          nomeGrupoBase: (ehGrupoPadrao && imp && imp.nomeGrupoOriginal) ? imp.nomeGrupoOriginal : atual.nomeGrupoBase,
+          nomeServidor: nomeSelecionado,
+          perfis: perfisSelecionados,
+          gestao
+        });
+      }
+
+      const resolvidos = resolverColisoesSiglas(slotsNovos, window._eprocLocalizadoresUnidade || []);
+      renderizarTabelaServidores(resolvidos);
+      salvarServidoresStorage(false);
+      window._eprocServidoresArquivoImportadoRef = bufOrFile;
+
+      const nomeArq = (bufOrFile && bufOrFile.name) ? ` (${bufOrFile.name})` : '';
+      const banner = document.getElementById('srv-status-info');
+      if (banner) {
+        banner.style.display = 'block';
+        if (qtdNaoEncontradosUnidade > 0) {
+          banner.style.background = '#fef3c7';
+          banner.style.color = '#92400e';
+          banner.innerHTML = `📋 <strong>Planilha importada${nomeArq}:</strong> ${qtdImportados} servidor(es) lido(s), porém <strong>${qtdNaoEncontradosUnidade} não existe(m) nesta unidade</strong> (esses slots não alterarão localizadores/grupos).`;
+        } else {
+          banner.style.background = '#dcfce7';
+          banner.style.color = '#15803d';
+          banner.innerHTML = `📋 <strong>Planilha importada${nomeArq}:</strong> ${qtdImportados} servidor(es) lido(s) da aba "Servidores". Clique novamente em "Da Planilha" para escolher outro arquivo.`;
+          setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
+        }
+      }
+
+      addLog(`📋 Dados da aba "Servidores" importados com sucesso (${qtdImportados} servidor(es) preenchido(s))!`);
+    } catch (e) {
+      console.error('[Servidores] Erro ao processar planilha:', e);
+      alert('Erro ao processar planilha: ' + e.message);
+    }
+  }
+
+  function importarServidoresDaPlanilha() {
+    const temArquivo = window._eprocUltimoArquivoPlanilha instanceof File || window._eprocUltimoArquivoPlanilha instanceof Blob;
+    if (temArquivo && window._eprocServidoresArquivoImportadoRef !== window._eprocUltimoArquivoPlanilha) {
+      processarArquivoPlanilhaServidores(window._eprocUltimoArquivoPlanilha);
+      return;
+    }
+
+    let inpFile = document.getElementById('inp-servidores-excel-direto');
+    if (!inpFile) {
+      inpFile = document.createElement('input');
+      inpFile.id = 'inp-servidores-excel-direto';
+      inpFile.type = 'file';
+      inpFile.accept = '.xlsx,.xls';
+      inpFile.style.display = 'none';
+      document.body.appendChild(inpFile);
+
+      inpFile.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        window._eprocUltimoArquivoPlanilha = file;
+        window._eprocServidoresArquivoImportadoRef = null;
+        processarArquivoPlanilhaServidores(file);
+      });
+    }
+
+    inpFile.value = '';
+    inpFile.click();
+  }
+
+  // EXECUÇÃO DIRETA E ATÔMICA POR SLOT:
+  // Só altera o grupo se localizar EM CONJUNTO o localizador + grupo existente + usuário ativo no órgão!
+  async function executarPersonalizacaoServidores() {
+    const slots = obterDadosServidoresDosInputs().filter(s => s.nomeServidor && s.nomeServidor.trim());
+    if (slots.length === 0) {
+      alert('Nenhum servidor selecionado para personalização. Selecione pelo menos um servidor.');
+      return;
+    }
+
+    window._eprocPararLote = false;
+    gravacaoEmAndamento = true;
+
+    const btnExec = document.getElementById('btn-servidores-executar');
+    const btnParar = document.getElementById('btn-rito-parar');
+    if (btnExec) btnExec.disabled = true;
+    if (btnParar) btnParar.style.display = 'block';
+
+    const logsBox = document.getElementById('rito-logs');
+    if (logsBox) logsBox.style.display = 'block';
+
+    addLog('🚀 INICIANDO PERSONALIZAÇÃO DE SERVIDORES DA UNIDADE...', 'info');
+    addLog(`📋 Total de servidores configurados nos slots: ${slots.length}`);
+
+    let localizadoresSucesso = 0;
+    let gruposSucesso = 0;
+    const gruposNaoEncontrados = [];
+    const localizadoresNaoEncontrados = [];
+    const usuariosNovosVinculados = [];
+    const usuariosJaConstavam = [];
+    const pendentesSemUsuario = [];
+    const slotsBloqueados = [];
+
+    try {
+      if (!window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0) {
+        addLog('🔍 Carregando usuários ativos do órgão no eproc...');
+        const mapaLoaded = await carregarUsuariosAtivosDoOrgao();
+        slots.forEach(s => {
+          if (!s.perfis || s.perfis.length === 0) {
+            const match = mapaLoaded[normalizar(s.nomeServidor)];
+            if (match && match.perfis) s.perfis = match.perfis;
+          }
+        });
+      }
+
+      addLog('🔍 Consultando todos os localizadores do órgão no eproc (incluindo sem processo)...');
+      const localizadores = await obterLocalizadoresOrgaoEproc();
+      addLog(`ℹ️ ${localizadores.length} localizador(es) listado(s) no órgão.`);
+
+      addLog('🔍 Consultando grupos de preferência da unidade...');
+      const grupos = await obterGruposPreferenciaEproc();
+      addLog(`ℹ️ ${grupos.length} grupo(s) de preferência encontrado(s).`);
+
+      // Recalcula colisões considerando os localizadores reais da unidade
+      const slotsFinais = resolverColisoesSiglas(slots, localizadores);
+
+      const localizarLocDoSlot = (item, slotNum, novoLocalizadorNome, novoLocalizadorCurto) => {
+        const siglaBaseAntiga = String(item.nomeBase || '').replace(/👤/g, '').trim();
+        let m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(item.nomeBase) || (siglaBaseAntiga && normalizar(l.nomeCurto) === normalizar(siglaBaseAntiga)));
+        if (!m) {
+          m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(`Servidor ${slotNum}`) || normalizar(l.nomeCurto) === normalizar(`Servidor ${slotNum}`));
+        }
+        if (!m) {
+          m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(novoLocalizadorNome) || normalizar(l.nomeCurto) === normalizar(novoLocalizadorCurto));
+        }
+        return m || null;
+      };
+
+      const localizarGrupoDoSlot = (item, slotNum, novoGrupoNome) => {
+        const siglaBaseAntiga = String(item.nomeBase || '').replace(/👤/g, '').trim();
+        const grupoCandidatoAnterior = siglaBaseAntiga ? `Trabalho - ${siglaBaseAntiga}` : '';
+        const nomeGrupoPadraoSlot = `Trabalho - Servidor ${slotNum}`;
+
+        let g = grupos.find(x => item.nomeGrupoBase && normalizar(x.nome) === normalizar(item.nomeGrupoBase));
+        if (!g && grupoCandidatoAnterior) {
+          g = grupos.find(x => normalizar(x.nome) === normalizar(grupoCandidatoAnterior));
+        }
+        if (!g) {
+          g = grupos.find(x => normalizar(x.nome) === normalizar(nomeGrupoPadraoSlot) || normalizar(x.nome) === normalizar(novoGrupoNome));
+        }
+        if (!g) {
+          g = grupos.find(x => {
+            const gn = normalizar(x.nome);
+            return gn === `servidor ${slotNum}` || gn.endsWith(` servidor ${slotNum}`) || gn.includes(`trabalho servidor ${slotNum}`);
+          });
+        }
+        return { grpMatch: g || null, nomeEsperado: item.nomeGrupoBase || nomeGrupoPadraoSlot };
+      };
+
+      for (let idx = 0; idx < slotsFinais.length; idx++) {
+        if (window._eprocPararLote) {
+          addLog('🛑 Operação interrompida pelo usuário.', 'warn');
+          break;
+        }
+
+        const item = slotsFinais[idx];
+        const slotNum = item.slot;
+        const novoLocalizadorNome = `👤${item.sigla}👤`;
+        const novoLocalizadorCurto = item.sigla;
+        const novoGrupoNome = `Trabalho - ${item.sigla}`;
+        const perfisUsuario = item.perfis || [];
+
+        addLog(`🔹 [Slot ${slotNum}] Validando pré-requisitos para "${item.nomeServidor}" ➔ ${novoLocalizadorNome}...`, 'info');
+
+        // PRÉ-VALIDAÇÃO CONJUNTA (SOMENTE LEITURA):
+        // Localizador + Grupo Existente + Usuário no Órgão precisam existir ANTES de gravar qualquer alteração!
+        const locMatch = localizarLocDoSlot(item, slotNum, novoLocalizadorNome, novoLocalizadorCurto);
+        const { grpMatch, nomeEsperado } = localizarGrupoDoSlot(item, slotNum, novoGrupoNome);
+        const detGrupo = (grpMatch && grpMatch.urlEditar)
+          ? await obterDadosCompletosGrupoEproc(grpMatch.urlEditar)
+          : null;
+
+        // Tenta resolver os IDs exatos do usuário no órgão via buscar_usuarios_orgao (usando detGrupo ou 1º grupo disponível)
+        let urlAjaxConsulta = detGrupo ? detGrupo.urlAjaxUsuarios : null;
+        if (!urlAjaxConsulta && grupos.length > 0 && grupos[0].urlEditar) {
+          const detRef = await obterDadosCompletosGrupoEproc(grupos[0].urlEditar);
+          if (detRef && detRef.urlAjaxUsuarios) urlAjaxConsulta = detRef.urlAjaxUsuarios;
+        }
+
+        const perfisParaVincular = await resolverIdsUsuariosViaAjaxGrupo(urlAjaxConsulta, item.nomeServidor, perfisUsuario);
+        const motivosBloqueio = [];
+
+        if (!locMatch || !locMatch.urlAlterar) {
+          motivosBloqueio.push(`Localizador "${item.nomeBase}" não encontrado no eproc`);
+          localizadoresNaoEncontrados.push({ slot: slotNum, localizador: item.nomeBase });
+        }
+        if (!grpMatch || !grpMatch.urlEditar || !detGrupo) {
+          motivosBloqueio.push(`Grupo "${nomeEsperado}" inexistente (regra: não criar grupos)`);
+          gruposNaoEncontrados.push({ slot: slotNum, grupo: nomeEsperado });
+        }
+        if (perfisParaVincular.length === 0) {
+          motivosBloqueio.push(`Usuário "${item.nomeServidor}" não encontrado entre os ativos do órgão`);
+          pendentesSemUsuario.push({ slot: slotNum, nome: item.nomeServidor, localizador: novoLocalizadorNome });
+        }
+
+        if (motivosBloqueio.length > 0) {
+          addLog(`  🛡️ [Slot ${slotNum}] Alterações NÃO aplicadas para preservar consistência: ${motivosBloqueio.join('; ')}.`, 'warn');
+          slotsBloqueados.push({ slot: slotNum, nome: item.nomeServidor, motivos: motivosBloqueio });
+          await sleep(150);
+          continue;
+        }
+
+        // EXECUÇÃO CONJUNTA (1. Localizador -> 2. Grupo de Trabalho + Usuários -> 3. Gestão)
+        let localizadorOk = false;
+        const jaIgualLoc = decodeEntities(locMatch.nomeCompleto).trim() === novoLocalizadorNome &&
+                           decodeEntities(locMatch.nomeCurto).trim() === novoLocalizadorCurto;
+        if (jaIgualLoc) {
+          addLog(`  ✅ Localizador já está com o nome correto: ${novoLocalizadorNome}`);
+          localizadoresSucesso++;
+          localizadorOk = true;
+        } else {
+          addLog(`  ✏️ Renomeando localizador "${locMatch.nomeCompleto}" para "${novoLocalizadorNome}"...`);
+          try {
+            await alterarLocalizadorEproc(locMatch.urlAlterar, novoLocalizadorNome, novoLocalizadorCurto, locMatch.nomeCurto);
+            addLog(`  ✅ Localizador renomeado com sucesso: ${novoLocalizadorNome}`);
+            localizadoresSucesso++;
+            localizadorOk = true;
+            const badge = document.getElementById(`srv-badge-base-${slotNum}`);
+            if (badge) {
+              badge.textContent = novoLocalizadorNome;
+              badge.setAttribute('data-base', novoLocalizadorNome);
+            }
+            salvarServidoresStorage(false);
+          } catch (e) {
+            addLog(`  ❌ Erro ao renomear localizador: ${e.message}. Grupo mantido inalterado.`, 'error');
+            slotsBloqueados.push({ slot: slotNum, nome: item.nomeServidor, motivos: [`Falha ao renomear localizador: ${e.message}`] });
+          }
+        }
+
+        if (!localizadorOk) {
+          await sleep(200);
+          continue;
+        }
+
+        await sleep(250);
+
+        addLog(`  📁 Atualizando grupo "${grpMatch.nome}" para "${novoGrupoNome}" e vinculando ${perfisParaVincular.length} perfil(s)...`);
+        try {
+          const idsParaVincular = perfisParaVincular.map(p => p.id);
+          const resSave = await renomearGrupoEprocPreservandoTudo(detGrupo, novoGrupoNome, idsParaVincular);
+          gruposSucesso++;
+          addLog(`  ✅ Grupo de trabalho salvo como "${novoGrupoNome}" (vínculos e preferências anteriores preservados).`);
+
+          const badge = document.getElementById(`srv-badge-base-${slotNum}`);
+          if (badge) {
+            badge.setAttribute('data-grupo-base', novoGrupoNome);
+          }
+
+          perfisParaVincular.forEach(p => {
+            if (resSave.jaExistiam.includes(String(p.id))) {
+              addLog(`  ℹ️ Usuário ${item.nomeServidor} [${p.tipo}] já constava no grupo de trabalho (mantido sem duplicação).`);
+              usuariosJaConstavam.push({ slot: slotNum, nome: item.nomeServidor, tipo: p.tipo, grupo: novoGrupoNome });
+            } else if (resSave.novosAdicionados.includes(String(p.id))) {
+              addLog(`  ✅ Usuário ${item.nomeServidor} [${p.tipo}] incluído no grupo de trabalho.`);
+              usuariosNovosVinculados.push({ slot: slotNum, nome: item.nomeServidor, tipo: p.tipo, grupo: novoGrupoNome });
+            }
+          });
+        } catch (e) {
+          addLog(`  ❌ Erro ao salvar grupo de trabalho: ${e.message}`, 'error');
+        }
+
+        await sleep(250);
+
+        // C. Grupo de Gestão do Gabinete (se marcado)
+        if (item.gestao) {
+          const grpGestao = grupos.find(g => normalizar(g.nome) === 'gestao do gabinete' || normalizar(g.nome).includes('gestao do gabinete') || normalizar(g.nome) === 'gestao');
+          if (grpGestao && grpGestao.urlEditar) {
+            addLog(`  👥 Verificando inclusão na Gestão do Gabinete...`);
+            try {
+              const detGestao = await obterDadosCompletosGrupoEproc(grpGestao.urlEditar);
+              if (detGestao) {
+                const perfisParaGestao = await resolverIdsUsuariosViaAjaxGrupo(detGestao.urlAjaxUsuarios || urlAjaxConsulta, item.nomeServidor, perfisParaVincular);
+                const idsParaGestao = perfisParaGestao.map(p => p.id);
+
+                if (idsParaGestao.length > 0) {
+                  const resGestao = await renomearGrupoEprocPreservandoTudo(detGestao, detGestao.nomeGrupo || grpGestao.nome, idsParaGestao);
+                  perfisParaGestao.forEach(p => {
+                    if (resGestao.jaExistiam.includes(String(p.id))) {
+                      addLog(`  ℹ️ Usuário ${item.nomeServidor} [${p.tipo}] já constava na Gestão do Gabinete (mantido).`);
+                      usuariosJaConstavam.push({ slot: slotNum, nome: item.nomeServidor, tipo: p.tipo, grupo: grpGestao.nome });
+                    } else if (resGestao.novosAdicionados.includes(String(p.id))) {
+                      addLog(`  ✅ Usuário ${item.nomeServidor} [${p.tipo}] incluído na Gestão do Gabinete!`);
+                      usuariosNovosVinculados.push({ slot: slotNum, nome: item.nomeServidor, tipo: p.tipo, grupo: grpGestao.nome });
+                    }
+                  });
+                }
+              }
+            } catch (e) {
+              addLog(`  ⚠️ Erro na Gestão do Gabinete: ${e.message}`, 'warn');
+            }
+          } else {
+            addLog(`  ⚠️ Grupo "Gestão do Gabinete" não localizado no eproc.`, 'warn');
+          }
+        }
+
+        await sleep(300);
+      }
+
+      salvarServidoresStorage(false);
+
+      addLog('🏁 PERSONALIZAÇÃO DE SERVIDORES CONCLUÍDA!', 'info');
+      addLog(`📊 Localizadores: ${localizadoresSucesso} | Grupos: ${gruposSucesso} | Novos Vínculos: ${usuariosNovosVinculados.length} | Já Constavam: ${usuariosJaConstavam.length} | Não Alterados: ${slotsBloqueados.length}`);
+
+      renderizarModalConclusaoServidores({
+        total: slotsFinais.length,
+        localizadoresSucesso,
+        gruposSucesso,
+        gruposNaoEncontrados,
+        localizadoresNaoEncontrados,
+        usuariosNovosVinculados,
+        usuariosJaConstavam,
+        pendentesSemUsuario,
+        slotsBloqueados
+      });
+
+    } catch (e) {
+      addLog(`❌ Falha geral na personalização: ${e.message}`, 'error');
+      alert('Erro na personalização: ' + e.message);
+    } finally {
+      gravacaoEmAndamento = false;
+      if (btnExec) btnExec.disabled = false;
+      if (btnParar) btnParar.style.display = 'none';
+    }
+  }
+
+  function renderizarModalConclusaoServidores(rel) {
+    let overlay = document.getElementById('rito-modal-servidores-conclusao');
+    if (overlay) overlay.remove();
+
+    overlay = document.createElement('div');
+    overlay.id = 'rito-modal-servidores-conclusao';
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); z-index:999999; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(3px);';
+
+    let bloqueadosHtml = '';
+    if (rel.slotsBloqueados && rel.slotsBloqueados.length > 0) {
+      bloqueadosHtml = `
+        <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px; margin-top:10px;">
+          <div style="font-size:11.5px; font-weight:700; color:#b45309; margin-bottom:4px;">
+            🛡️ Slots preservados sem alteração parcial (pré-requisitos ausentes):
+          </div>
+          <ul style="margin:0; padding-left:18px; font-size:10.5px; color:#92400e;">
+            ${rel.slotsBloqueados.map(b => `<li>[Slot ${b.slot}] <strong>${b.nome}</strong>: ${b.motivos.join(' | ')}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
+    let jaConstavamHtml = '';
+    if (rel.usuariosJaConstavam && rel.usuariosJaConstavam.length > 0) {
+      jaConstavamHtml = `
+        <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px; margin-top:10px;">
+          <div style="font-size:11.5px; font-weight:700; color:#166534; margin-bottom:4px;">
+            ℹ️ Vínculos que já constavam no grupo (mantidos sem duplicar):
+          </div>
+          <ul style="margin:0; padding-left:18px; font-size:10.5px; color:#14532d;">
+            ${rel.usuariosJaConstavam.map(u => `<li>[Slot ${u.slot}] <strong>${u.nome}</strong> (${u.tipo}) &rarr; ${u.grupo}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
+    overlay.innerHTML = `
+      <div style="background:#ffffff; border-radius:12px; width:540px; max-width:92vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); overflow:hidden; font-family:system-ui, -apple-system, sans-serif;">
+        <div style="background:linear-gradient(135deg, #15803d 0%, #166534 100%); color:#ffffff; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:18px;">👤</span>
+            <span style="font-size:14px; font-weight:700;">Relatório Final de Servidores</span>
+          </div>
+          <button type="button" id="btn-modal-srv-fechar-topo" style="background:none; border:none; color:#ffffff; font-size:18px; cursor:pointer; font-weight:bold;">✕</button>
+        </div>
+
+        <div style="padding:16px; overflow-y:auto; flex:1;">
+          <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; margin-bottom:12px;">
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 4px; text-align:center;">
+              <div style="font-size:17px; font-weight:800; color:#15803d;">${rel.localizadoresSucesso}</div>
+              <div style="font-size:10px; color:#166534; font-weight:600;">Localizadores</div>
+            </div>
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 4px; text-align:center;">
+              <div style="font-size:17px; font-weight:800; color:#15803d;">${rel.gruposSucesso}</div>
+              <div style="font-size:10px; color:#166534; font-weight:600;">Grupos Renom.</div>
+            </div>
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 4px; text-align:center;">
+              <div style="font-size:17px; font-weight:800; color:#15803d;">${rel.usuariosNovosVinculados.length}</div>
+              <div style="font-size:10px; color:#166534; font-weight:600;">Novos Vínculos</div>
+            </div>
+            <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:8px 4px; text-align:center;">
+              <div style="font-size:17px; font-weight:800; color:#475569;">${rel.usuariosJaConstavam.length}</div>
+              <div style="font-size:10px; color:#475569; font-weight:600;">Já Constavam</div>
+            </div>
+          </div>
+
+          <div style="font-size:11.5px; color:#334155; line-height:1.45;">
+            Nos slots válidos, o localizador, o grupo de trabalho e os perfis ativos do servidor foram atualizados em conjunto, preservando integralmente preferências e membros anteriores. Slots com qualquer pendência foram mantidos intactos.
+          </div>
+
+          ${bloqueadosHtml}
+          ${jaConstavamHtml}
+        </div>
+
+        <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:12px 16px; display:flex; justify-content:flex-end;">
+          <button type="button" id="btn-modal-srv-fechar" class="rito-btn rito-btn-primary" style="padding:7px 18px; font-size:12px; font-weight:700;">
+            Entendido
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const fechar = () => overlay.remove();
+    const btnF1 = document.getElementById('btn-modal-srv-fechar-topo');
+    const btnF2 = document.getElementById('btn-modal-srv-fechar');
+    if (btnF1) btnF1.onclick = fechar;
+    if (btnF2) btnF2.onclick = fechar;
+  }
+
+  async function inicializarModuloServidores() {
+    const slotsSalvos = carregarServidoresStorage();
+    renderizarTabelaServidores(slotsSalvos);
+
+    const btnExec = document.getElementById('btn-servidores-executar');
+    if (btnExec) btnExec.onclick = executarPersonalizacaoServidores;
+
+    const btnLer = document.getElementById('btn-servidores-ler-eproc');
+    if (btnLer) btnLer.onclick = lerLocalizadoresAtuaisDoEproc;
+
+    const btnImp = document.getElementById('btn-servidores-importar-planilha');
+    if (btnImp) btnImp.onclick = importarServidoresDaPlanilha;
+
+    const btnSalvar = document.getElementById('btn-servidores-salvar-rascunho');
+    if (btnSalvar) btnSalvar.onclick = () => salvarServidoresStorage(true);
+
+    const btnLimpar = document.getElementById('btn-servidores-limpar');
+    if (btnLimpar) {
+      btnLimpar.onclick = () => {
+        if (confirm('Deseja limpar as seleções de servidores nos 9 slots?')) {
+          try { localStorage.removeItem('eproc_servidores_personalizados'); } catch (e) {}
+          renderizarTabelaServidores(null);
+          addLog('🗑️ Seleções de servidores limpas.');
+        }
+      };
+    }
+
+    // Carrega usuários da unidade em background sem apagar seleções em andamento
+    carregarUsuariosAtivosDoOrgao().then(mapa => {
+      if (mapa && Object.keys(mapa).length > 0) {
+        const slotsAtuais = obterDadosServidoresDosInputs();
+        const temSelecaoUi = slotsAtuais.some(s => s.nomeServidor && s.nomeServidor.trim());
+        renderizarTabelaServidores(temSelecaoUi ? slotsAtuais : (carregarServidoresStorage() || slotsAtuais));
+      }
+    });
+  }
+
+
   function criarPainel() {
 
     if (!ehTelaSuportada()) return; // não exibir em outras telas (ex.: painel principal)
@@ -12047,7 +13912,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.6</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.6.0</span></span>
 
         </div>
 
@@ -12100,6 +13965,11 @@
                 <svg viewBox="0 0 24 24"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/><line x1="2" y1="3" x2="22" y2="21"/></svg>
                 <span>Intimações</span>
               </button>
+
+              <button type="button" id="btn-modulo-servidores" class="rito-btn-modulo ${moduloAtivo === 'servidores' ? 'active' : ''}" title="Módulo de Personalização de Servidores da Unidade">
+                <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Servidores</span>
+              </button>
             </div>
           </div>
 
@@ -12112,6 +13982,46 @@
         </div>
 
 
+
+        <!-- MÓDULO SERVIDORES: CONTAINER DEDICADO -->
+        <div id="rito-container-servidores" style="display:${moduloAtivo === 'servidores' ? 'block' : 'none'}; margin-top:8px;">
+          <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:10px 10px 8px 10px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span style="font-size:11.5px; font-weight:700; color:#1e293b;">👤 Servidores da Unidade</span>
+              <span style="font-size:10px; color:#64748b; font-weight:600;">9 Slots (Servidor 1 a 9)</span>
+            </div>
+            <div style="font-size:10.5px; color:#475569; line-height:1.35; margin-bottom:8px;">
+              Escolha os servidores ativos da unidade diretamente nas opções de cada slot. Ao selecionar, todos os perfis e vínculos do servidor são associados automaticamente.
+            </div>
+
+            <div id="srv-status-info" style="display:none; font-size:10.5px; padding:5px 8px; border-radius:6px; margin-bottom:8px; line-height:1.35;"></div>
+
+            <!-- Barra de Ações do Módulo Servidores -->
+            <div style="display:flex; gap:5px; margin-bottom:8px;">
+              <button type="button" id="btn-servidores-ler-eproc" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Consulta usuários ativos e localizadores da unidade no eproc">
+                <span>🔄</span> Ler eproc
+              </button>
+              <button type="button" id="btn-servidores-importar-planilha" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Carrega ou importa da aba 'Servidores' da planilha Excel">
+                <span>📋</span> Da Planilha
+              </button>
+              <button type="button" id="btn-servidores-salvar-rascunho" class="rito-btn rito-btn-secondary" style="font-size:10.5px; padding:5px 8px;" title="Salva as escolhas na memória da extensão">
+                <span>💾</span>
+              </button>
+              <button type="button" id="btn-servidores-limpar" class="rito-btn rito-btn-secondary" style="font-size:10.5px; padding:5px 6px; color:#dc2626;" title="Limpa todas as seleções dos slots">
+                <span>🗑️</span>
+              </button>
+            </div>
+
+            <!-- Tabela dos 9 Slots -->
+            <div id="rito-servidores-slots-lista" style="display:flex; flex-direction:column; gap:6px; max-height:330px; overflow-y:auto; padding-right:2px;">
+              <!-- Injetado dinamicamente -->
+            </div>
+          </div>
+
+          <button type="button" class="rito-btn rito-btn-primary" id="btn-servidores-executar" style="width:100%; padding:9px; font-size:12px; font-weight:700; background:linear-gradient(135deg, #16a34a 0%, #15803d 100%); border-color:#14532d; box-shadow:0 2px 6px rgba(22,163,74,0.3);">
+            <span>🚀</span> Personalizar Servidores da Unidade
+          </button>
+        </div>
 
         <div class="rito-dropzone" id="rito-dropzone">
 
@@ -12267,6 +14177,9 @@
 
 
 
+        // Inicializa Módulo de Servidores
+    inicializarModuloServidores();
+
     // Listeners do seletor de módulos (Minutas / Relatórios / Movimentações)
 
     const btnModMin = document.getElementById('btn-modulo-minutas');
@@ -12301,6 +14214,11 @@
     const btnModIntim = document.getElementById('btn-modulo-intimacoes');
     if (btnModIntim) {
       btnModIntim.onclick = () => alternarModulo('intimacoes');
+    }
+
+    const btnModSrv = document.getElementById('btn-modulo-servidores');
+    if (btnModSrv) {
+      btnModSrv.onclick = () => alternarModulo('servidores');
     }
 
 
@@ -12503,6 +14421,11 @@
 
       btnGerenciador.onclick = () => {
 
+        if (moduloAtivo === 'servidores') {
+          window.open(obterUrlAcaoMenu('localizador_orgao_listar'), '_blank');
+          return;
+        }
+
         if (moduloAtivo === 'relatorios') {
 
           const btnListaRel = document.getElementById('selPreferencia-list') || document.getElementById('selPreferencia-listAll');
@@ -12588,6 +14511,9 @@
     };
 
 
+
+    // Garante consistência visual inicial conforme o módulo ativo (esconde dropzone se Servidores, etc.)
+    alternarModulo(moduloAtivo, true);
 
     // injetarBotaoBarraSuperior(panel, btnMin); -- Removido conforme solicitado: não fixar botão na barra do eproc
 
@@ -13216,6 +15142,9 @@
 
 
   async function iniciarExecucao() {
+    if (moduloAtivo === 'servidores') {
+      return await executarPersonalizacaoServidores();
+    }
     if (ehTelaDeIntimacao()) {
       moduloAtivo = 'intimacoes';
     } else if (ehTelaDeRelatorio()) {
@@ -16308,6 +18237,8 @@
 
   async function executarDiagnosticoPreVoo() {
 
+    if (moduloAtivo === 'servidores') return;
+
     if (moduloAtivo === 'relatorios') {
 
       return await executarDiagnosticoPreVooRelatorios();
@@ -17067,7 +18998,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.6</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.6.0</span>
 
           </h3>
 
