@@ -4,7 +4,7 @@
 
 //  Arquivo: content.js
 
-//  Versão: 3.6.1 (atualizada em 10/11/2026)
+//  Versão: 3.7.0 (atualizada em 10/11/2026)
 
 // ============================================================
 
@@ -12150,7 +12150,7 @@
 
   
       /* ==========================================================================
-     MÓDULO SERVIDORES: PERSONALIZAÇÃO DA UNIDADE (v3.6.1)
+     MÓDULO SERVIDORES: PERSONALIZAÇÃO DA UNIDADE (v3.7.0)
      Seleção por menu de usuários ativos da unidade, inclusão de todos os perfis,
      preservação estrita de grupos existentes e execução direta sem telas extras.
      ========================================================================== */
@@ -13001,6 +13001,625 @@
     return { novosAdicionados, jaExistiam };
   }
 
+  // Utilitários para localizar e renomear preferências de Relatórios e Documentos vinculadas aos slots
+  function substituirSiglaEmPreferencia(tituloAtual, siglasOrigem, novaSigla) {
+    const tituloLimpo = decodificarEntidadesHtml(decodeEntities(tituloAtual || '')).trim();
+    const novaLimpa = String(novaSigla || '').replace(/👤/g, '').replace(/["']/g, '').trim();
+    if (!tituloLimpo || !novaLimpa) {
+      return { alterado: false, novoNome: tituloLimpo, siglaEncontrada: '' };
+    }
+
+    const candidatas = (Array.isArray(siglasOrigem) ? siglasOrigem : [siglasOrigem])
+      .map(s => decodificarEntidadesHtml(decodeEntities(String(s || ''))).replace(/👤/g, '').trim())
+      .filter(Boolean);
+    const setNorm = new Set(candidatas.map(s => normalizar(s)).filter(Boolean));
+    if (setNorm.size === 0) {
+      return { alterado: false, novoNome: tituloLimpo, siglaEncontrada: '' };
+    }
+
+    let alterado = false;
+    let siglaEncontrada = '';
+    const reMarcador = /👤(\s*)([^👤\p{Extended_Pictographic}\u203C-\u3299\uFE0F\r\n]+?)(\s*)(?=$|👤|\p{Extended_Pictographic}|[\u203C-\u3299])/gu;
+    const novoNome = tituloLimpo.replace(reMarcador, (match, sp1, miolo, sp2) => {
+      const mioloLimpo = String(miolo || '').trim();
+      if (!mioloLimpo || !setNorm.has(normalizar(mioloLimpo))) {
+        return match;
+      }
+      if (normalizar(mioloLimpo) === normalizar(novaLimpa) && mioloLimpo === novaLimpa) {
+        return match;
+      }
+      alterado = true;
+      siglaEncontrada = mioloLimpo;
+      return `👤${sp1}${novaLimpa}${sp2}`;
+    });
+
+    if (!alterado || novoNome === tituloLimpo) {
+      return { alterado: false, novoNome: tituloLimpo, siglaEncontrada: '' };
+    }
+    return { alterado: true, novoNome, siglaEncontrada };
+  }
+
+  function filtrarPreferenciasParaSlot(listaPrefs = [], siglasOrigem = []) {
+    if (!Array.isArray(listaPrefs) || listaPrefs.length === 0) return [];
+    const candidatas = (Array.isArray(siglasOrigem) ? siglasOrigem : [siglasOrigem])
+      .map(s => decodificarEntidadesHtml(decodeEntities(String(s || ''))).replace(/👤/g, '').trim())
+      .filter(Boolean);
+    const setNorm = new Set(candidatas.map(s => normalizar(s)).filter(Boolean));
+    if (setNorm.size === 0) return [];
+
+    return listaPrefs.filter(p => {
+      if (!p || !p.nome) return false;
+      const reMarcador = /👤(\s*)([^👤\p{Extended_Pictographic}\u203C-\u3299\uFE0F\r\n]+?)(\s*)(?=$|👤|\p{Extended_Pictographic}|[\u203C-\u3299])/gu;
+      let m;
+      while ((m = reMarcador.exec(p.nome)) !== null) {
+        const miolo = String(m[2] || '').trim();
+        if (miolo && setNorm.has(normalizar(miolo))) return true;
+      }
+      return false;
+    });
+  }
+
+  function serializarObjetoAjaxEproc(obj) {
+    const params = new URLSearchParams();
+    const appendVal = (key, val) => {
+      if (val === undefined || val === null) {
+        params.append(key, '');
+      } else if (Array.isArray(val)) {
+        val.forEach((v, idx) => {
+          if (v !== null && typeof v === 'object') {
+            appendVal(`${key}[${idx}]`, v);
+          } else {
+            params.append(`${key}[]`, v === undefined || v === null ? '' : String(v));
+          }
+        });
+      } else if (typeof val === 'object') {
+        Object.entries(val).forEach(([k, v]) => appendVal(`${key}[${k}]`, v));
+      } else {
+        params.append(key, String(val));
+      }
+    };
+    if (obj && typeof obj === 'object') {
+      Object.entries(obj).forEach(([k, v]) => appendVal(k, v));
+    }
+    return params.toString();
+  }
+
+  async function obterDocumentoAcaoEproc(acao) {
+    try {
+      const urlAcao = obterUrlAcaoMenu(acao);
+      const acaoEsc = String(acao || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const reAcaoUrl = new RegExp(`[?&]acao=${acaoEsc}(?:&|$)`, 'i');
+      if (window.location && window.location.href && reAcaoUrl.test(window.location.href)) {
+        return { doc: document, html: document.documentElement ? document.documentElement.innerHTML : '', url: window.location.href };
+      }
+      const resp = await fetch(urlAcao, { credentials: 'same-origin' });
+      if (!resp.ok) return null;
+      const html = await lerRespostaTexto(resp);
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      return { doc, html, url: urlAcao };
+    } catch (e) {
+      console.warn(`[Servidores] Falha ao carregar tela ${acao}:`, e);
+      return null;
+    }
+  }
+
+  async function obterPreferenciasRelatorioParaServidores() {
+    try {
+      const contexto = await obterDocumentoAcaoEproc('relatorio_geral_listar');
+      if (!contexto) return [];
+
+      let urlModalLista = '';
+      const btnLista = contexto.doc.getElementById('selPreferencia-list') ||
+                       contexto.doc.querySelector('[data-url*="modal_lista_preferencias"]');
+      if (btnLista && btnLista.getAttribute('data-url')) {
+        urlModalLista = btnLista.getAttribute('data-url');
+      }
+      if (!urlModalLista && contexto.html) {
+        const mModal = contexto.html.match(/['"]([^'"]*ui_preferencias[\\\/]+modal_lista_preferencias[^'"]*)['"]/i);
+        if (mModal) urlModalLista = mModal[1];
+      }
+      if (!urlModalLista) {
+        const h = typeof obterHashAtual === 'function' ? obterHashAtual() : '';
+        if (h) urlModalLista = `controlador.php?acao=ui_preferencias/modal_lista_preferencias&acao_request=relatorio_geral_listar&acao_origem=relatorio_geral_listar&hash=${h}`;
+      }
+      if (!urlModalLista) return [];
+
+      const cleanUrlModal = new URL(urlModalLista.replace(/\\/g, '').replace(/&amp;/g, '&'), window.location.href).href;
+      const respModal = await fetch(cleanUrlModal, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: 'form_request_id=frmProcessoLista'
+      });
+      if (!respModal.ok) return [];
+
+      const htmlModal = await lerRespostaTexto(respModal);
+      const docModal = new DOMParser().parseFromString(htmlModal, 'text/html');
+
+      const tbl = docModal.getElementById('tbl_preferencias');
+      const urlDataTableRaw = tbl ? (tbl.getAttribute('data-url') || '') : '';
+      const inpAcaoReq = docModal.getElementById('acao_request');
+      const acaoRequest = (inpAcaoReq && inpAcaoReq.value) ? inpAcaoReq.value : 'relatorio_geral_listar';
+
+      let urlEditBase = '';
+      const linkEditInicial = docModal.querySelector('a.btnAlterar[href*="modal_edit_preferencia"], a[href*="modal_edit_preferencia"]');
+      if (linkEditInicial && linkEditInicial.getAttribute('href')) {
+        urlEditBase = linkEditInicial.getAttribute('href').replace(/&amp;/g, '&');
+      } else {
+        const mEdit = htmlModal.match(/https?:\/\/[^'"]*ui_preferencias\/modal_edit_preferencia[^'"]*|controlador\.php\?acao=ui_preferencias\/modal_edit_preferencia[^'"]*/i);
+        if (mEdit) urlEditBase = mEdit[0].replace(/&amp;/g, '&');
+      }
+
+      const lista = [];
+      const idsVistos = new Set();
+
+      if (urlDataTableRaw) {
+        const urlDataTable = new URL(urlDataTableRaw.replace(/&amp;/g, '&'), window.location.href).href;
+        const colsDef = [
+          { data: 'col_checkbox', orderable: 'false' },
+          { data: 'Descricao', orderable: 'true' },
+          { data: 'SinValorPadrao', orderable: 'true' },
+          { data: 'SinPainelInicial', orderable: 'true' },
+          { data: 'SinPreferenciaIndividual', orderable: 'true' },
+          { data: 'DescricaoGrupoFormularioPersonalizacaoGrupo', orderable: 'true' },
+          { data: 'col_acoes', orderable: 'false' }
+        ];
+
+        let start = 0;
+        const pageLen = 500;
+        let recordsTotal = Infinity;
+        let draw = 1;
+
+        while (start < recordsTotal && draw <= 20) {
+          const payloadDt = {
+            draw: String(draw),
+            start: String(start),
+            length: String(pageLen),
+            'search[value]': '',
+            'search[regex]': 'false',
+            'order[0][column]': '1',
+            'order[0][dir]': 'asc',
+            dt_acoes: [
+              ['ui_preferencias/modal_edit_preferencia', 'false'],
+              ['ui_preferencias/desativar_preferencia', 'false']
+            ],
+            dt_paramsComunsAcoes: {
+              0: { name: 'acao_request', type: 'string', value: acaoRequest }
+            },
+            acao_request: acaoRequest
+          };
+          colsDef.forEach((col, cIdx) => {
+            payloadDt[`columns[${cIdx}][data]`] = col.data;
+            payloadDt[`columns[${cIdx}][name]`] = '';
+            payloadDt[`columns[${cIdx}][searchable]`] = 'true';
+            payloadDt[`columns[${cIdx}][orderable]`] = col.orderable;
+            payloadDt[`columns[${cIdx}][search][value]`] = '';
+            payloadDt[`columns[${cIdx}][search][regex]`] = 'false';
+          });
+
+          try {
+            const respDt = await fetch(urlDataTable, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest'
+              },
+              body: serializarObjetoAjaxEproc(payloadDt)
+            });
+            if (!respDt.ok) break;
+            const txtDt = await lerRespostaTexto(respDt);
+            const jsonDt = JSON.parse(txtDt);
+            const rows = Array.isArray(jsonDt.data) ? jsonDt.data : [];
+            if (typeof jsonDt.recordsTotal === 'number') {
+              recordsTotal = jsonDt.recordsTotal;
+            }
+            if (rows.length === 0) break;
+
+            rows.forEach(row => {
+              const id = String(row.IdFormularioPersonalizacao || row.DT_RowId || '').trim();
+              const nome = decodificarEntidadesHtml(decodeEntities(row.Descricao || '')).trim();
+              if (!id || !nome || idsVistos.has(id)) return;
+              idsVistos.add(id);
+
+              let rowEditUrl = urlEditBase;
+              if (Array.isArray(row.col_acoes) && row.col_acoes[0]) {
+                rowEditUrl = String(row.col_acoes[0]).replace(/&amp;/g, '&');
+              }
+
+              lista.push({
+                tipo: 'relatorio',
+                id,
+                nome,
+                grupo: decodificarEntidadesHtml(decodeEntities(row.DescricaoGrupoFormularioPersonalizacaoGrupo || '')).trim(),
+                row,
+                urlModalEdit: rowEditUrl ? new URL(rowEditUrl, window.location.href).href : ''
+              });
+            });
+
+            start += rows.length;
+            draw++;
+            if (rows.length < pageLen && start >= recordsTotal) break;
+          } catch (eDt) {
+            console.warn('[Servidores] Fallback na leitura DataTable de relatórios:', eDt);
+            break;
+          }
+        }
+      }
+
+      // Fallback usando linhas já renderizadas no HTML de modal_lista_preferencias
+      if (lista.length === 0) {
+        docModal.querySelectorAll('#tbl_preferencias tbody tr, tbody tr').forEach(tr => {
+          const tds = tr.querySelectorAll('td');
+          const idAttr = (tr.getAttribute('id') || tr.getAttribute('data-id') || '').trim();
+          const linkA = tr.querySelector('a.btnAlterar, a[href*="modal_edit_preferencia"]');
+          const hrefRow = linkA && linkA.getAttribute('href') ? linkA.getAttribute('href').replace(/&amp;/g, '&') : urlEditBase;
+          let rawDesc = '';
+          if (tds.length >= 6) rawDesc = tds[1].textContent || '';
+          else if (tds.length >= 1) rawDesc = tds[0].textContent || '';
+          const nome = decodificarEntidadesHtml(decodeEntities(rawDesc)).trim();
+          const grupo = tds.length >= 6 ? decodificarEntidadesHtml(decodeEntities(tds[5].textContent || '')).trim() : '';
+
+          if (idAttr && nome && !idsVistos.has(idAttr)) {
+            idsVistos.add(idAttr);
+            lista.push({
+              tipo: 'relatorio',
+              id: idAttr,
+              nome,
+              grupo,
+              row: { IdFormularioPersonalizacao: idAttr, Descricao: nome },
+              urlModalEdit: hrefRow ? new URL(hrefRow, window.location.href).href : ''
+            });
+          }
+        });
+      }
+
+      window._eprocPrefsRelatorioServidores = lista;
+      return lista;
+    } catch (e) {
+      console.warn('[Servidores] Erro ao obter preferências de Relatórios:', e);
+      return [];
+    }
+  }
+
+  async function renomearPreferenciaRelatorioEproc(prefItem, novoNome) {
+    if (!prefItem || !prefItem.urlModalEdit) {
+      throw new Error('URL de edição da preferência de relatório indisponível.');
+    }
+
+    const rowPayload = (prefItem.row && typeof prefItem.row === 'object')
+      ? { ...prefItem.row }
+      : { IdFormularioPersonalizacao: prefItem.id };
+    if (!rowPayload.IdFormularioPersonalizacao && prefItem.id) {
+      rowPayload.IdFormularioPersonalizacao = prefItem.id;
+    }
+
+    const respEdit = await fetch(prefItem.urlModalEdit, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: serializarObjetoAjaxEproc(rowPayload)
+    });
+    if (!respEdit.ok) {
+      throw new Error(`Falha ao abrir edição de relatório (HTTP ${respEdit.status})`);
+    }
+
+    const htmlEdit = await lerRespostaTexto(respEdit);
+    const docEdit = new DOMParser().parseFromString(htmlEdit, 'text/html');
+    const formEdit = docEdit.getElementById('frm_alterar_preferencia') || docEdit.querySelector('form[id*="alterar_preferencia" i]');
+    if (!formEdit) {
+      throw new Error('Formulário frm_alterar_preferencia não encontrado no modal de edição.');
+    }
+
+    const mAlterar = htmlEdit.match(/['"](controlador\.php\?acao=ui_preferencias\/alterar_preferencia[^'"]*)['"]/i);
+    if (!mAlterar || !mAlterar[1]) {
+      throw new Error('Endpoint ui_preferencias/alterar_preferencia não encontrado no modal de edição.');
+    }
+    const urlAlterar = new URL(mAlterar[1].replace(/&amp;/g, '&'), window.location.href).href;
+
+    const inpDesc = formEdit.querySelector('#Descricao, input[name="Descricao"]');
+    if (inpDesc) {
+      inpDesc.value = toHtmlEntityDecimal(novoNome);
+    }
+
+    const paramsSave = new URLSearchParams();
+    formEdit.querySelectorAll('input, select, textarea').forEach(el => {
+      const elName = el.name || (el.getAttribute && el.getAttribute('name')) || '';
+      if (!elName || el.disabled) return;
+      const elType = String(el.type || (el.getAttribute && el.getAttribute('type')) || '').toLowerCase();
+      const elTag = String(el.tagName || '').toUpperCase();
+      if (elType === 'checkbox') {
+        if (el.checked) paramsSave.append(elName, el.value || 'on');
+      } else if (elType === 'radio') {
+        if (el.checked) paramsSave.append(elName, el.value);
+      } else if (elTag === 'SELECT') {
+        let valSel = '';
+        if (el.options && el.options.length > 0) {
+          const optSel = Array.from(el.options).find(o => o.selected || (o.getAttribute && o.getAttribute('selected') !== null));
+          valSel = optSel ? (optSel.value || '') : (el.value || '');
+        } else {
+          valSel = el.value || '';
+        }
+        paramsSave.append(elName, valSel);
+      } else {
+        paramsSave.append(elName, el.value || '');
+      }
+    });
+    paramsSave.set('Descricao', toHtmlEntityDecimal(novoNome));
+    if (!paramsSave.get('IdFormularioPersonalizacao') && prefItem.id) {
+      paramsSave.set('IdFormularioPersonalizacao', prefItem.id);
+    }
+
+    const respSave = await fetch(urlAlterar, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: paramsSave.toString()
+    });
+
+    const respTxt = await lerRespostaTexto(respSave);
+    if (!respSave.ok) {
+      let msgErr = `HTTP ${respSave.status}`;
+      try {
+        const jErr = JSON.parse(respTxt);
+        if (jErr && jErr.geral && jErr.geral.geral0) msgErr = String(jErr.geral.geral0);
+      } catch (eJ) {}
+      throw new Error(msgErr);
+    }
+
+    if (respTxt && (respTxt.includes('infraExcecao') || respTxt.includes('"geral":'))) {
+      let msgErr = respTxt.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+      try {
+        const jErr = JSON.parse(respTxt);
+        if (jErr && jErr.geral && jErr.geral.geral0) msgErr = String(jErr.geral.geral0);
+      } catch (eJ) {}
+      throw new Error(msgErr || 'Erro retornado pelo eproc ao alterar relatório.');
+    }
+
+    prefItem.nome = novoNome;
+    if (prefItem.row && typeof prefItem.row === 'object') {
+      prefItem.row.Descricao = novoNome;
+    }
+    return true;
+  }
+
+  async function obterPreferenciasDocumentosParaServidores() {
+    try {
+      const contexto = await obterDocumentoAcaoEproc('minuta_area_trabalho');
+      if (!contexto) return [];
+
+      let urlListarArea = '';
+      const btnLista = contexto.doc.getElementById('listaPreferencias');
+      if (btnLista) {
+        const onclickStr = btnLista.getAttribute('onclick') || '';
+        const mSub = onclickStr.match(/exibirSubFrm\('([^']+)'/);
+        if (mSub && mSub[1]) urlListarArea = mSub[1];
+      }
+      if (!urlListarArea && contexto.html) {
+        const mHtml = contexto.html.match(/exibirSubFrm\('([^']*formulario_personalizacao_listar[^']*minuta_area_trabalho[^']*)'/i);
+        if (mHtml && mHtml[1]) urlListarArea = mHtml[1];
+      }
+      if (!urlListarArea) {
+        const h = typeof obterHashAtual === 'function' ? obterHashAtual() : '';
+        if (h) urlListarArea = `controlador.php?acao=formulario_personalizacao_listar&nome_acao=minuta_area_trabalho&acao_origem=minuta_area_trabalho&hash=${h}`;
+      }
+      if (!urlListarArea) return [];
+
+      const fullUrlListar = new URL(urlListarArea.replace(/&amp;/g, '&'), window.location.href).href;
+      const resp = await fetch(fullUrlListar, { credentials: 'same-origin' });
+      if (!resp.ok) return [];
+
+      const html = await lerRespostaTexto(resp);
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      const lista = [];
+      const idsVistos = new Set();
+
+      const extrairLinhas = (d) => {
+        d.querySelectorAll('tr').forEach(tr => {
+          const chk = tr.querySelector('input[id^="chkInfraItem"], input[name^="chkInfraItem"]');
+          const tds = tr.querySelectorAll('td');
+          if (!chk && tds.length < 2) return;
+
+          const id = chk ? (chk.value || '').trim() : '';
+          const linkAlterar = tr.querySelector('a[onclick*="btnAlterarPreferenciaClick"], a[title*="Alterar"], a[href*="formulario_personalizacao_subfrm_salvar_consulta"]');
+          let urlEditar = '';
+          if (linkAlterar) {
+            const onclickVal = linkAlterar.getAttribute('onclick') || '';
+            const mClick = onclickVal.match(/btnAlterarPreferenciaClick\(\s*['"][^'"]*['"]\s*,\s*['"]([^'"]+)['"]/i);
+            if (mClick && mClick[1]) {
+              urlEditar = mClick[1];
+            } else {
+              const hrefVal = linkAlterar.getAttribute('href') || '';
+              if (hrefVal.includes('formulario_personalizacao_subfrm_salvar_consulta')) {
+                urlEditar = hrefVal;
+              }
+            }
+          }
+          if (!urlEditar && tr.innerHTML) {
+            const mTr = tr.innerHTML.match(/controlador\.php\?acao=formulario_personalizacao_subfrm_salvar_consulta[^'"]+/i);
+            if (mTr) urlEditar = mTr[0];
+          }
+
+          let rawNome = '';
+          if (tds.length >= 2) rawNome = tds[1].textContent || '';
+          else if (tds.length >= 1) rawNome = tds[0].textContent || '';
+          const nome = decodificarEntidadesHtml(decodeEntities(rawNome)).trim();
+          const grupo = tds.length >= 6 ? decodificarEntidadesHtml(decodeEntities(tds[5].textContent || '')).trim() : '';
+
+          const idFinal = id || (urlEditar.match(/id_preferencia=(\d+)/i) || [])[1] || '';
+          if (idFinal && nome && urlEditar && !idsVistos.has(idFinal)) {
+            idsVistos.add(idFinal);
+            lista.push({
+              tipo: 'documento',
+              id: idFinal,
+              nome,
+              grupo,
+              urlEditar: new URL(urlEditar.replace(/&amp;/g, '&'), window.location.href).href
+            });
+          }
+        });
+      };
+
+      extrairLinhas(doc);
+
+      const selPag = doc.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+      const frmPag = doc.getElementById('frmFormularioPersonalizacaoLista') || doc.querySelector('form[action*="formulario_personalizacao_listar"]');
+      if (selPag && selPag.options && selPag.options.length > 1 && frmPag) {
+        const actionPag = new URL((frmPag.getAttribute('action') || fullUrlListar).replace(/&amp;/g, '&'), window.location.href).href;
+        for (let p = 1; p < selPag.options.length; p++) {
+          const pairsPag = [];
+          frmPag.querySelectorAll('input[type="hidden"]').forEach(inp => {
+            if (inp.name) pairsPag.push([inp.name, inp.name === 'hdnInfraPaginaAtual' ? selPag.options[p].value : inp.value]);
+          });
+          const respP = await fetch(actionPag, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: encodeWindows1252Body(pairsPag),
+            credentials: 'same-origin'
+          });
+          if (respP.ok) {
+            const htmlP = await lerRespostaTexto(respP);
+            extrairLinhas(new DOMParser().parseFromString(htmlP, 'text/html'));
+          }
+        }
+      }
+
+      window._eprocPrefsDocumentosServidores = lista;
+      return lista;
+    } catch (e) {
+      console.warn('[Servidores] Erro ao obter preferências de Documentos (Área de Minutas):', e);
+      return [];
+    }
+  }
+
+  async function renomearPreferenciaDocumentoEproc(prefItem, novoNome) {
+    if (!prefItem || !prefItem.urlEditar) {
+      throw new Error('URL de edição da preferência de documento indisponível.');
+    }
+
+    const respEdit = await fetch(prefItem.urlEditar, { credentials: 'same-origin' });
+    if (!respEdit.ok) {
+      throw new Error(`Falha ao abrir edição de documento (HTTP ${respEdit.status})`);
+    }
+    const htmlEdit = await lerRespostaTexto(respEdit);
+    const docEdit = new DOMParser().parseFromString(htmlEdit, 'text/html');
+
+    const mUrlGravar = htmlEdit.match(/['"](controlador_ajax\.php\?acao_ajax=gravar_preferencias_subfrm[^'"]*)['"]/i);
+    if (!mUrlGravar || !mUrlGravar[1]) {
+      throw new Error('Endpoint gravar_preferencias_subfrm não encontrado na tela de edição.');
+    }
+    const urlGravarSub = new URL(mUrlGravar[1].replace(/&amp;/g, '&'), window.location.href).href;
+
+    const mUrlVinculo = htmlEdit.match(/['"](controlador_ajax\.php\?acao_ajax=validar_acao_preferencial_vinculo_localizadores[^'"]*)['"]/i);
+    const urlVinculo = (mUrlVinculo && mUrlVinculo[1])
+      ? new URL(mUrlVinculo[1].replace(/&amp;/g, '&'), window.location.href).href
+      : '';
+
+    const getVal = (id, fallback = '') => {
+      const el = docEdit.getElementById(id);
+      return el ? (el.value || '') : fallback;
+    };
+    const isChk = (id) => {
+      const el = docEdit.getElementById(id);
+      return !!(el && el.checked);
+    };
+
+    let hdnId = getVal('hdnNumIdFormPersonalizacao', '');
+    if (!hdnId) {
+      const mId = htmlEdit.match(/var\s+hdnNumIdFormPersonalizacao\s*=\s*['"]([^'"]*)['"]/i);
+      hdnId = (mId && mId[1]) ? mId[1] : String(prefItem.id || '');
+    }
+    const hdnAcaoOrigem = getVal('hdnAcaoOrigem', 'formulario_personalizacao_listar') || 'formulario_personalizacao_listar';
+    const hdnAcaoPreferencia = getVal('hdnAcaoPreferencia', 'minuta_area_trabalho') || 'minuta_area_trabalho';
+
+    const rdIndiv = docEdit.getElementById('rdIndividual');
+    const rdUnid = docEdit.getElementById('rdUnidade');
+    let rdPrefTipo = 'U';
+    if (rdIndiv && rdIndiv.checked) rdPrefTipo = 'I';
+    else if (rdUnid && rdUnid.checked) rdPrefTipo = 'U';
+
+    let selGrupo = 'null';
+    const selGrupoEl = docEdit.getElementById('selFormularioPersonalizacaoGrupo');
+    if (selGrupoEl && rdPrefTipo !== 'I') {
+      if (selGrupoEl.options && selGrupoEl.options.length > 0) {
+        const optSel = Array.from(selGrupoEl.options).find(o => o.selected || o.getAttribute('selected') !== null);
+        if (optSel && optSel.value) selGrupo = optSel.value;
+        else if (selGrupoEl.value) selGrupo = selGrupoEl.value;
+      } else if (selGrupoEl.value) {
+        selGrupo = selGrupoEl.value;
+      }
+    }
+
+    const nomeSeguro = String(novoNome || '').replace(/["']/g, '').trim();
+    const postar = {
+      hdnNumIdFormPersonalizacao: hdnId === 'null' ? '' : hdnId,
+      hdnAcaoOrigem,
+      hdnAcaoPreferencia,
+      chkValorPadrao: isChk('chkValorPadrao') ? 'S' : 'N',
+      chkPainelInicial: isChk('chkPainelInicial') ? 'S' : 'N',
+      txtDescricao: toHtmlEntityDecimal(nomeSeguro),
+      rdPrefTipo,
+      arrSession: '',
+      chkMovPref: isChk('chkMovPref') ? 'S' : 'N',
+      selGrupo: selGrupo || 'null'
+    };
+
+    const paramsSub = new URLSearchParams();
+    Object.entries(postar).forEach(([k, v]) => paramsSub.append(k, v));
+
+    if (urlVinculo) {
+      try {
+        await fetch(urlVinculo, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: paramsSub.toString()
+        });
+      } catch (eV) {}
+    }
+
+    const respSave = await fetch(urlGravarSub, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: paramsSub.toString()
+    });
+    if (!respSave.ok) {
+      throw new Error(`Falha ao gravar preferência de documento (HTTP ${respSave.status})`);
+    }
+
+    const txtSave = await lerRespostaTexto(respSave);
+    let objSave = null;
+    try { objSave = JSON.parse(txtSave); } catch (eJ) {}
+
+    if (objSave) {
+      if (objSave.sucesso !== 'true' && objSave.sucesso !== true) {
+        throw new Error(objSave.msg || 'Erro ao atualizar preferência de documento.');
+      }
+    } else if (!/sucesso["']?\s*:\s*["']?true/i.test(txtSave)) {
+      throw new Error('Resposta inesperada do eproc ao atualizar documento.');
+    }
+
+    prefItem.nome = nomeSeguro;
+    return true;
+  }
+
   // Persistência local (world: MAIN utiliza localStorage) e interface dinâmica de localizadores 👤
   function encontrarGrupoVinculadoAoLocalizador(siglaLoc, grupos = [], fallbackNomeGrupo = '') {
     const siglaLimpa = String(siglaLoc || '').replace(/👤/g, '').trim();
@@ -13227,6 +13846,10 @@
     const nomesOrdenados = Object.values(mapaUsuarios).map(u => u.nome).sort((a, b) => a.localeCompare(b));
     const gruposCarregados = Array.isArray(window._eprocGruposUnidade) && window._eprocGruposUnidade.length > 0;
     const locsCarregados = Array.isArray(window._eprocLocalizadoresUnidade) && window._eprocLocalizadoresUnidade.some(l => (l.nomeCompleto || '').includes('👤'));
+    const prefsRelCarregadas = Array.isArray(window._eprocPrefsRelatorioServidores);
+    const prefsDocCarregadas = Array.isArray(window._eprocPrefsDocumentosServidores);
+    const listaPrefsRel = prefsRelCarregadas ? window._eprocPrefsRelatorioServidores : [];
+    const listaPrefsDoc = prefsDocCarregadas ? window._eprocPrefsDocumentosServidores : [];
 
     const listaSlots = (Array.isArray(slotsExistentes) && slotsExistentes.length > 0)
       ? slotsExistentes
@@ -13280,6 +13903,15 @@
         grupoHtml = `<span style="color:#b45309; font-weight:600;">⚠️ Grupo ausente: ${nomeGrupoBaseAtual}</span>`;
       }
 
+      let prefsVincHtml = '';
+      if (prefsRelCarregadas || prefsDocCarregadas) {
+        const siglaSlotAtual = String(nomeBaseAtual || '').replace(/👤/g, '').trim();
+        const qtdRelSlot = prefsRelCarregadas ? filtrarPreferenciasParaSlot(listaPrefsRel, [siglaSlotAtual]).length : 0;
+        const qtdDocSlot = prefsDocCarregadas ? filtrarPreferenciasParaSlot(listaPrefsDoc, [siglaSlotAtual]).length : 0;
+        const corPrefs = (qtdRelSlot > 0 || qtdDocSlot > 0) ? '#0f766e' : '#94a3b8';
+        prefsVincHtml = `<div id="srv-prefs-info-${i}" style="font-size:9.5px; color:${corPrefs}; line-height:1.2; padding-left:2px;" title="Preferências encontradas no eproc vinculadas a ${nomeBaseAtual}">📊 ${qtdRelSlot} relatório(s) • 📄 ${qtdDocSlot} doc(s)</div>`;
+      }
+
       html += `
         <div class="rito-srv-card" data-slot="${i}" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:3px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -13295,6 +13927,7 @@
           <div id="srv-grupo-info-${i}" style="font-size:9.5px; line-height:1.2; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Grupo de preferência vinculado no eproc">
             ${grupoHtml}
           </div>
+          ${prefsVincHtml}
           <div style="display:grid; grid-template-columns: 1fr 110px; gap:6px;">
             <select id="srv-select-user-${i}" class="srv-select-usuario" style="font-size:11px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:4px; outline:none; background:#ffffff; color:#0f172a; max-width:100%;">
               ${optionsUsuarios}
@@ -13334,7 +13967,7 @@
       banner.style.display = 'block';
       banner.style.background = '#e0f2fe';
       banner.style.color = '#0369a1';
-      banner.innerHTML = '🔄 Consultando usuários ativos, localizadores 👤 e grupos no eproc...';
+      banner.innerHTML = '🔄 Consultando usuários ativos, localizadores 👤, grupos e preferências no eproc...';
     }
 
     addLog('🔄 [Ler eproc] Consultando usuários ativos do órgão (usuario_listar_todos)...');
@@ -13347,10 +13980,16 @@
     addLog('🔄 [Ler eproc] Consultando grupos de preferência (listar_formulario_personalizacao_grupo)...');
     const grupos = await obterGruposPreferenciaEproc();
 
+    addLog('🔄 [Ler eproc] Consultando preferências de Relatórios e Documentos...');
+    const [prefsRel, prefsDoc] = await Promise.all([
+      obterPreferenciasRelatorioParaServidores(),
+      obterPreferenciasDocumentosParaServidores()
+    ]);
+
     const slotsDinamicos = construirSlotsDinamicosDoEproc(localizadores, grupos, obterDadosServidoresDosInputs());
     const qtdLocsUsuario = localizadores.filter(l => (l.nomeCompleto || '').includes('👤')).length;
 
-    addLog(`ℹ️ eproc: ${totalUsuarios} usuário(s) único(s), ${qtdLocsUsuario} localizador(es) 👤 (de ${localizadores.length} totais) e ${grupos.length} grupo(s) encontrado(s).`);
+    addLog(`ℹ️ eproc: ${totalUsuarios} usuário(s), ${qtdLocsUsuario} localizador(es) 👤 (de ${localizadores.length}), ${grupos.length} grupo(s), ${prefsRel.length} relatório(s) e ${prefsDoc.length} doc(s).`);
 
     renderizarTabelaServidores(slotsDinamicos);
     salvarServidoresStorage(false);
@@ -13360,11 +13999,11 @@
       if (totalUsuarios === 0 || localizadores.length === 0 || errs) {
         banner.style.background = '#fef3c7';
         banner.style.color = '#92400e';
-        banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${totalUsuarios} usuários e ${qtdLocsUsuario} localizadores 👤 (${localizadores.length} totais, ${grupos.length} grupos). ${errs || 'Verifique permissões ou abra uma tela do eproc com o menu lateral.'}`;
+        banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${totalUsuarios} usuários, ${qtdLocsUsuario} localizadores 👤, ${prefsRel.length} relatórios e ${prefsDoc.length} docs. ${errs || 'Verifique permissões ou abra uma tela do eproc com o menu lateral.'}`;
       } else {
         banner.style.background = '#dcfce7';
         banner.style.color = '#15803d';
-        banner.innerHTML = `✅ <strong>Pronto:</strong> ${totalUsuarios} usuários ativos, ${qtdLocsUsuario} localizador(es) 👤 e ${grupos.length} grupos carregados do eproc.`;
+        banner.innerHTML = `✅ <strong>Pronto:</strong> ${totalUsuarios} usuários, ${qtdLocsUsuario} localizador(es) 👤, ${grupos.length} grupos, ${prefsRel.length} relatórios e ${prefsDoc.length} docs carregados.`;
         setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
       }
     }
@@ -13702,12 +14341,19 @@
 
     let localizadoresSucesso = 0;
     let gruposSucesso = 0;
+    let relatoriosSucesso = 0;
+    let documentosSucesso = 0;
     const gruposNaoEncontrados = [];
     const localizadoresNaoEncontrados = [];
     const usuariosNovosVinculados = [];
     const usuariosJaConstavam = [];
     const pendentesSemUsuario = [];
     const slotsBloqueados = [];
+    const preferenciasIgnoradasDuplicadas = [];
+    const preferenciasComErro = [];
+
+    const chkRenomearPrefs = document.getElementById('srv-chk-renomear-preferencias');
+    const deveRenomearPrefs = chkRenomearPrefs ? !!chkRenomearPrefs.checked : true;
 
     try {
       if (!window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0) {
@@ -13728,6 +14374,52 @@
       addLog('🔍 Consultando grupos de preferência da unidade...');
       const grupos = await obterGruposPreferenciaEproc();
       addLog(`ℹ️ ${grupos.length} grupo(s) de preferência encontrado(s).`);
+
+      let prefsRelatorioUnidade = [];
+      let prefsDocumentosUnidade = [];
+      if (deveRenomearPrefs) {
+        addLog('🔍 Consultando preferências de Relatórios e Documentos da unidade...');
+        [prefsRelatorioUnidade, prefsDocumentosUnidade] = await Promise.all([
+          obterPreferenciasRelatorioParaServidores(),
+          obterPreferenciasDocumentosParaServidores()
+        ]);
+        addLog(`ℹ️ ${prefsRelatorioUnidade.length} relatório(s) e ${prefsDocumentosUnidade.length} documento(s) carregado(s) para verificação.`);
+      }
+
+      const idsPrefsRenomeadasNoLote = new Set();
+
+      const renomearListaPrefsParaSlot = async (listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla) => {
+        let renomeadas = 0;
+        if (!Array.isArray(listaPrefs) || listaPrefs.length === 0 || !siglasOrigemSlot.length) return 0;
+
+        for (const pref of listaPrefs) {
+          if (window._eprocPararLote) break;
+          const chaveDedup = `${tipoLabel}:${pref.id}`;
+          if (idsPrefsRenomeadasNoLote.has(chaveDedup)) continue;
+
+          const sub = substituirSiglaEmPreferencia(pref.nome, siglasOrigemSlot, novaSigla);
+          if (!sub.alterado) continue;
+
+          const colisao = listaPrefs.find(outro => outro.id !== pref.id && normalizar(outro.nome) === normalizar(sub.novoNome));
+          if (colisao) {
+            addLog(`  ⚠️ [${tipoLabel}] Mantido "${pref.nome}" porque "${sub.novoNome}" já existe no eproc.`, 'warn');
+            preferenciasIgnoradasDuplicadas.push({ slot: slotNum, tipo: tipoLabel, original: pref.nome, destino: sub.novoNome });
+            continue;
+          }
+
+          try {
+            await fnRenomear(pref, sub.novoNome);
+            idsPrefsRenomeadasNoLote.add(chaveDedup);
+            renomeadas++;
+            addLog(`  ✅ [${tipoLabel}] Renomeado: "${sub.novoNome}"`);
+            await sleep(80);
+          } catch (ePref) {
+            addLog(`  ⚠️ [${tipoLabel}] Erro ao renomear "${pref.nome}": ${ePref.message}`, 'warn');
+            preferenciasComErro.push({ slot: slotNum, tipo: tipoLabel, nome: pref.nome, erro: ePref.message });
+          }
+        }
+        return renomeadas;
+      };
 
       // Recalcula colisões considerando os localizadores reais da unidade
       const slotsFinais = resolverColisoesSiglas(slots, localizadores);
@@ -13821,8 +14513,15 @@
           continue;
         }
 
-        // EXECUÇÃO CONJUNTA (1. Localizador -> 2. Grupo de Trabalho + Usuários -> 3. Gestão)
+        const siglaLocOriginal = decodeEntities(locMatch.nomeCurto || '').replace(/👤/g, '').trim();
+        const siglaSlotOriginal = String(item.nomeBase || '').replace(/👤/g, '').trim();
+        const siglasOrigemSlot = [siglaLocOriginal, siglaSlotOriginal].filter((v, idxS, arrS) =>
+          v && normalizar(v) !== normalizar(item.sigla) && arrS.findIndex(x => normalizar(x) === normalizar(v)) === idxS
+        );
+
+        // EXECUÇÃO CONJUNTA (1. Localizador -> 2. Grupo de Trabalho + Usuários -> 3. Gestão -> 4. Relatórios e Documentos)
         let localizadorOk = false;
+        let grupoOk = false;
         const jaIgualLoc = decodeEntities(locMatch.nomeCompleto).trim() === novoLocalizadorNome &&
                            decodeEntities(locMatch.nomeCurto).trim() === novoLocalizadorCurto;
         if (jaIgualLoc) {
@@ -13860,6 +14559,7 @@
           const idsParaVincular = perfisParaVincular.map(p => p.id);
           const resSave = await renomearGrupoEprocPreservandoTudo(detGrupo, novoGrupoNome, idsParaVincular);
           gruposSucesso++;
+          grupoOk = true;
           addLog(`  ✅ Grupo de trabalho salvo como "${novoGrupoNome}" (vínculos e preferências anteriores preservados).`);
 
           const badge = document.getElementById(`srv-badge-base-${slotNum}`);
@@ -13919,24 +14619,59 @@
           }
         }
 
+        // D. Preferências de Relatórios e Documentos vinculadas ao slot (preservando filtros e grupos)
+        if (deveRenomearPrefs && localizadorOk && grupoOk && siglasOrigemSlot.length > 0 && !window._eprocPararLote) {
+          const qtdRelSlot = await renomearListaPrefsParaSlot(
+            prefsRelatorioUnidade,
+            'Relatório',
+            renomearPreferenciaRelatorioEproc,
+            slotNum,
+            siglasOrigemSlot,
+            item.sigla
+          );
+          relatoriosSucesso += qtdRelSlot;
+
+          const qtdDocSlot = await renomearListaPrefsParaSlot(
+            prefsDocumentosUnidade,
+            'Documento',
+            renomearPreferenciaDocumentoEproc,
+            slotNum,
+            siglasOrigemSlot,
+            item.sigla
+          );
+          documentosSucesso += qtdDocSlot;
+
+          const infoPrefsEl = document.getElementById(`srv-prefs-info-${slotNum}`);
+          if (infoPrefsEl) {
+            const totRelAt = filtrarPreferenciasParaSlot(prefsRelatorioUnidade, [item.sigla]).length;
+            const totDocAt = filtrarPreferenciasParaSlot(prefsDocumentosUnidade, [item.sigla]).length;
+            infoPrefsEl.style.color = (totRelAt > 0 || totDocAt > 0) ? '#0f766e' : '#94a3b8';
+            infoPrefsEl.textContent = `📊 ${totRelAt} relatório(s) • 📄 ${totDocAt} doc(s)`;
+          }
+        }
+
         await sleep(300);
       }
 
       salvarServidoresStorage(false);
 
       addLog('🏁 PERSONALIZAÇÃO DE SERVIDORES CONCLUÍDA!', 'info');
-      addLog(`📊 Localizadores: ${localizadoresSucesso} | Grupos: ${gruposSucesso} | Novos Vínculos: ${usuariosNovosVinculados.length} | Já Constavam: ${usuariosJaConstavam.length} | Não Alterados: ${slotsBloqueados.length}`);
+      addLog(`📊 Localizadores: ${localizadoresSucesso} | Grupos: ${gruposSucesso} | Relatórios: ${relatoriosSucesso} | Docs: ${documentosSucesso} | Novos Vínculos: ${usuariosNovosVinculados.length} | Já Constavam: ${usuariosJaConstavam.length} | Não Alterados: ${slotsBloqueados.length}`);
 
       renderizarModalConclusaoServidores({
         total: slotsFinais.length,
         localizadoresSucesso,
         gruposSucesso,
+        relatoriosSucesso,
+        documentosSucesso,
         gruposNaoEncontrados,
         localizadoresNaoEncontrados,
         usuariosNovosVinculados,
         usuariosJaConstavam,
         pendentesSemUsuario,
-        slotsBloqueados
+        slotsBloqueados,
+        preferenciasIgnoradasDuplicadas,
+        preferenciasComErro
       });
 
     } catch (e) {
@@ -13971,6 +14706,23 @@
       `;
     }
 
+    let avisosPrefsHtml = '';
+    const dupPrefs = rel.preferenciasIgnoradasDuplicadas || [];
+    const errPrefs = rel.preferenciasComErro || [];
+    if (dupPrefs.length > 0 || errPrefs.length > 0) {
+      avisosPrefsHtml = `
+        <div style="background:#fefce8; border:1px solid #fef08a; border-radius:8px; padding:10px; margin-top:10px;">
+          <div style="font-size:11.5px; font-weight:700; color:#854d0e; margin-bottom:4px;">
+            ⚠️ Avisos ao renomear Relatórios / Documentos:
+          </div>
+          <ul style="margin:0; padding-left:18px; font-size:10.5px; color:#713f12;">
+            ${dupPrefs.map(d => `<li>[Slot ${d.slot} • ${d.tipo}] Mantido "${d.original}" (destino "${d.destino}" já existia)</li>`).join('')}
+            ${errPrefs.map(e => `<li>[Slot ${e.slot} • ${e.tipo}] Falha em "${e.nome}": ${e.erro}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
     let jaConstavamHtml = '';
     if (rel.usuariosJaConstavam && rel.usuariosJaConstavam.length > 0) {
       jaConstavamHtml = `
@@ -13985,8 +14737,11 @@
       `;
     }
 
+    const relatoriosQtd = rel.relatoriosSucesso || 0;
+    const documentosQtd = rel.documentosSucesso || 0;
+
     overlay.innerHTML = `
-      <div style="background:#ffffff; border-radius:12px; width:540px; max-width:92vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); overflow:hidden; font-family:system-ui, -apple-system, sans-serif;">
+      <div style="background:#ffffff; border-radius:12px; width:560px; max-width:92vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); overflow:hidden; font-family:system-ui, -apple-system, sans-serif;">
         <div style="background:linear-gradient(135deg, #15803d 0%, #166534 100%); color:#ffffff; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:18px;">👤</span>
@@ -13996,7 +14751,7 @@
         </div>
 
         <div style="padding:16px; overflow-y:auto; flex:1;">
-          <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; margin-bottom:12px;">
+          <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; margin-bottom:12px;">
             <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 4px; text-align:center;">
               <div style="font-size:17px; font-weight:800; color:#15803d;">${rel.localizadoresSucesso}</div>
               <div style="font-size:10px; color:#166534; font-weight:600;">Localizadores</div>
@@ -14009,6 +14764,14 @@
               <div style="font-size:17px; font-weight:800; color:#15803d;">${rel.usuariosNovosVinculados.length}</div>
               <div style="font-size:10px; color:#166534; font-weight:600;">Novos Vínculos</div>
             </div>
+            <div style="background:#ecfeff; border:1px solid #a5f3fc; border-radius:8px; padding:8px 4px; text-align:center;">
+              <div style="font-size:17px; font-weight:800; color:#0e7490;">${relatoriosQtd}</div>
+              <div style="font-size:10px; color:#155e75; font-weight:600;">Relatórios Renom.</div>
+            </div>
+            <div style="background:#ecfeff; border:1px solid #a5f3fc; border-radius:8px; padding:8px 4px; text-align:center;">
+              <div style="font-size:17px; font-weight:800; color:#0e7490;">${documentosQtd}</div>
+              <div style="font-size:10px; color:#155e75; font-weight:600;">Docs Renom.</div>
+            </div>
             <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:8px 4px; text-align:center;">
               <div style="font-size:17px; font-weight:800; color:#475569;">${rel.usuariosJaConstavam.length}</div>
               <div style="font-size:10px; color:#475569; font-weight:600;">Já Constavam</div>
@@ -14016,10 +14779,11 @@
           </div>
 
           <div style="font-size:11.5px; color:#334155; line-height:1.45;">
-            Nos slots válidos, o localizador, o grupo de trabalho e os perfis ativos do servidor foram atualizados em conjunto, preservando integralmente preferências e membros anteriores. Slots com qualquer pendência foram mantidos intactos.
+            Nos slots válidos, localizador, grupo de trabalho, perfis ativos e títulos de relatórios/documentos vinculados foram atualizados mantendo filtros, flags e membros anteriores intactos. Slots com qualquer pendência foram preservados.
           </div>
 
           ${bloqueadosHtml}
+          ${avisosPrefsHtml}
           ${jaConstavamHtml}
         </div>
 
@@ -14043,6 +14807,21 @@
   async function inicializarModuloServidores() {
     const slotsSalvos = carregarServidoresStorage();
     renderizarTabelaServidores(slotsSalvos);
+
+    const chkRenPrefs = document.getElementById('srv-chk-renomear-preferencias');
+    if (chkRenPrefs) {
+      try {
+        const prefSalva = localStorage.getItem('eproc_servidores_renomear_prefs');
+        if (prefSalva !== null) {
+          chkRenPrefs.checked = prefSalva === 'true';
+        }
+      } catch (e) {}
+      chkRenPrefs.addEventListener('change', () => {
+        try {
+          localStorage.setItem('eproc_servidores_renomear_prefs', chkRenPrefs.checked ? 'true' : 'false');
+        } catch (e) {}
+      });
+    }
 
     const btnExec = document.getElementById('btn-servidores-executar');
     if (btnExec) btnExec.onclick = executarPersonalizacaoServidores;
@@ -14090,7 +14869,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.6.1</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.7.0</span></span>
 
         </div>
 
@@ -14175,14 +14954,19 @@
             <div id="srv-status-info" style="display:none; font-size:10.5px; padding:5px 8px; border-radius:6px; margin-bottom:8px; line-height:1.35;"></div>
 
             <!-- Barra de Ações do Módulo Servidores -->
-            <div style="display:flex; gap:6px; margin-bottom:8px;">
-              <button type="button" id="btn-servidores-ler-eproc" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Consulta usuários ativos, localizadores 👤 e grupos de preferência da unidade no eproc">
+            <div style="display:flex; gap:6px; margin-bottom:6px;">
+              <button type="button" id="btn-servidores-ler-eproc" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Consulta usuários ativos, localizadores 👤, grupos e preferências (Relatórios e Documentos) da unidade no eproc">
                 <span>🔄</span> Ler eproc
               </button>
               <button type="button" id="btn-servidores-importar-planilha" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Carrega ou importa da aba 'Servidores' da planilha Excel">
                 <span>📋</span> Da Planilha
               </button>
             </div>
+
+            <label style="display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:600; color:#334155; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; margin-bottom:8px; cursor:pointer;" title="Ao personalizar um slot, renomeia também os títulos das preferências de Relatório Geral e Documentos (Área de Minutas) vinculadas, preservando filtros e grupos">
+              <input type="checkbox" id="srv-chk-renomear-preferencias" checked style="cursor:pointer;">
+              <span>Renomear também Relatórios e Documentos vinculados</span>
+            </label>
 
             <!-- Tabela dos 9 Slots -->
             <div id="rito-servidores-slots-lista" style="display:flex; flex-direction:column; gap:6px; max-height:330px; overflow-y:auto; padding-right:2px;">
@@ -14525,6 +15309,7 @@
         sessionStorage.removeItem(SESSION_KEY_LOGS);
         sessionStorage.removeItem('eproc_pref_2g_modulo_ativo');
         localStorage.removeItem('eproc_servidores_personalizados');
+        localStorage.removeItem('eproc_servidores_renomear_prefs');
       } catch (e) {}
 
       window._eprocPararLote = true;
@@ -14532,6 +15317,8 @@
       window._eprocUsuariosUnidade = null;
       window._eprocLocalizadoresUnidade = null;
       window._eprocGruposUnidade = null;
+      window._eprocPrefsRelatorioServidores = null;
+      window._eprocPrefsDocumentosServidores = null;
       window._eprocServidoresArquivoImportadoRef = null;
       window._eprocServidoresVerificadosNaoEncontrados = null;
 
@@ -19180,7 +19967,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.6.1</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.7.0</span>
 
           </h3>
 

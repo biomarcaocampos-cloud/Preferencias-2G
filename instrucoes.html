@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Instruções — Criar Preferências em Lote 2G v3.6.1 (Segundo Grau TJSP)</title>
+  <title>Instruções — Criar Preferências em Lote 2G v3.7.0 (Segundo Grau TJSP)</title>
   <style>
     :root {
       --primary: #15803d;
@@ -196,22 +196,23 @@
     <div class="header">
       <h1><span class="badge-icon-p">P</span> Criar Preferências em Lote 2G (eproc TJSP - Segundo Grau)</h1>
       <p>Guia Completo de Operação, Auditoria Prévia e Arquitetura de Segurança de Dados.</p>
-      <div class="badge-version">Versão 3.6.1 - 10/11/2026</div>
+      <div class="badge-version">Versão 3.7.0 - 10/11/2026</div>
     </div>
 
     
     <div class="card" style="border-left: 4px solid #16a34a;">
       <h2>👤 Módulo: Personalização de Servidores da Unidade (Onboarding)</h2>
-      <p>Permite substituir os localizadores genéricos (<code>👤Servidor 1👤</code> a <code>👤Servidor 9👤</code>) e grupos de preferência (<code>Trabalho - Servidor 1</code> a <code>9</code>) pelos nomes reais dos servidores da unidade com apenas 1 clique.</p>
+      <p>Permite substituir os localizadores genéricos (<code>👤Servidor 1👤</code> a <code>👤Servidor 9👤</code>), grupos de preferência (<code>Trabalho - Servidor 1</code> a <code>9</code>) e os títulos dos relatórios e documentos vinculados pelos nomes reais dos servidores da unidade com apenas 1 clique.</p>
       
       <h3>Regras de Padronização, Segurança e Vínculo Automático de Perfis:</h3>
       <ul>
-        <li><strong>Leitura Automática do eproc (<code>🔄 Ler eproc</code>):</strong> Consulta os usuários cadastrados ativos do órgão (exibindo um nome único por servidor no menu de cada slot), todos os localizadores da unidade iniciados por <code>👤</code> (inclusive sem processos, tanto os originais <code>👤Servidor 1..9👤</code> quanto os já personalizados em rodadas anteriores) e os respectivos grupos de preferências vinculados.</li>
+        <li><strong>Leitura Automática do eproc (<code>🔄 Ler eproc</code>):</strong> Consulta os usuários cadastrados ativos do órgão (exibindo um nome único por servidor no menu de cada slot), todos os localizadores da unidade iniciados por <code>👤</code> (inclusive sem processos, tanto os originais <code>👤Servidor 1..9👤</code> quanto os já personalizados em rodadas anteriores), os respectivos grupos de preferências e a contagem prévia de <strong>Relatórios</strong> e <strong>Documentos</strong> vinculados a cada slot.</li>
         <li><strong>Importação Direta da Planilha (<code>📋 Da Planilha</code>):</strong> Permite carregar o arquivo Excel (<code>.xlsx</code>) e preencher automaticamente os slots a partir da aba <code>Servidores</code> (colunas de usuário e flag de Gestão do Gabinete).</li>
         <li><strong>Sigla do Localizador:</strong> Primeiro Nome em formato padrão (ex: <code>Maria</code>) + <code>.</code> + Iniciais maiúsculas dos sobrenomes, ignorando preposições (<code>de</code>, <code>da</code>, <code>do</code>, <code>dos</code>, <code>das</code>, <code>e</code>). Exemplo: <em>Maria de Lourdes Almeida de Campos</em> &rarr; <code>👤Maria.LAC👤</code>.</li>
         <li><strong>Tratamento de Homônimos / Colisões:</strong> Caso duas pessoas gerem a mesma sigla ou o localizador já exista no eproc, o sistema acrescenta automaticamente <code>.2</code>, <code>.3</code> (ex: <code>👤Maria.LAC.2👤</code>).</li>
         <li><strong>Vínculo Automático de Todos os Tipos/Perfis:</strong> Ao selecionar o servidor no menu do slot e clicar em personalizar, todos os perfis/tipos ativos vinculados àquele usuário no órgão são incluídos automaticamente no grupo de trabalho (sem janelas extras).</li>
-        <li><strong>Trava de Execução Conjunta (Proteção contra Alteração Parcial):</strong> Antes de gravar qualquer mudança em um slot, o script valida simultaneamente a existência do <em>localizador base</em> (incluindo localizadores sem processos), do <em>grupo de preferências</em> e do <em>usuário ativo na unidade</em>. Se o servidor não existir na unidade ou faltar algum vínculo, <strong>nem o localizador nem o grupo daquele slot são alterados</strong>.</li>
+        <li><strong>Trava de Execução Conjunta (Proteção contra Alteração Parcial):</strong> Antes de gravar qualquer mudança em um slot, o script valida simultaneamente a existência do <em>localizador base</em> (incluindo localizadores sem processos), do <em>grupo de preferências</em> e do <em>usuário ativo na unidade</em>. Se o servidor não existir na unidade ou faltar algum vínculo, <strong>nem o localizador, nem o grupo, nem os relatórios/documentos daquele slot são alterados</strong>.</li>
+        <li><strong>Renomeação Automática de Relatórios e Documentos (v3.7.0):</strong> Com a opção <em>"Renomear também Relatórios e Documentos vinculados"</em> marcada, o script atualiza em segundo plano os títulos das preferências de <strong>Relatório Geral</strong> (ex.: <code>🟨Petição🟨👤Servidor 8👤</code>) e da <strong>Área de Trabalho de Minutas</strong> (ex.: <code>🔎Total de Votos -👤Servidor 5🔎</code>), inclusive trocas em 2ª+ rodadas, preservando 100% os filtros, grupos e marcações originais (com proteção anti-colisão de nomes).</li>
         <li><strong>Preservação Rigorosa de Vínculos e Preferências Existentes:</strong> Nenhuma preferência, automatização ou usuário já existente no grupo é removido. Todos os dados originais são 100% mantidos.</li>
         <li><strong>Detecção de Usuários Já Cadastrados:</strong> Se algum perfil do usuário selecionado já constar no grupo, o sistema o mantém sem duplicar e registra no relatório final que ele já constava na lista de membros.</li>
         <li><strong>Regra de Grupos Inexistentes:</strong> Se o grupo de trabalho não existir no eproc, <strong>nenhum grupo novo é criado</strong>. O sistema preserva o ambiente e reporta no relatório final.</li>
@@ -600,7 +601,7 @@
 
     <div class="footer">
       <div>Tribunal de Justiça do Estado de São Paulo • eproc 2G (Segundo Grau)</div>
-      <div>Extensão 2G • Versão 3.6.1 - 10/11/2026</div>
+      <div>Extensão 2G • Versão 3.7.0 - 10/11/2026</div>
     </div>
   </div>
 
