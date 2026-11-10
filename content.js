@@ -4,7 +4,7 @@
 
 //  Arquivo: content.js
 
-//  Versão: 3.6.0 (atualizada em 10/11/2026)
+//  Versão: 3.6.1 (atualizada em 10/11/2026)
 
 // ============================================================
 
@@ -716,6 +716,13 @@
       if (cardInfo) cardInfo.style.display = 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = 'none';
       if (btnIniciar) btnIniciar.style.display = 'none';
+      if (!pularRecargaPlanilha && (!window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0)) {
+        carregarUsuariosAtivosDoOrgao().then(mapa => {
+          if (mapa && Object.keys(mapa).length > 0) {
+            renderizarTabelaServidores(obterDadosServidoresDosInputs());
+          }
+        });
+      }
     } else {
       if (containerSrv) containerSrv.style.display = 'none';
       if (dropzone) dropzone.style.display = temPlanilha ? 'none' : 'block';
@@ -12143,7 +12150,7 @@
 
   
       /* ==========================================================================
-     MÓDULO SERVIDORES: PERSONALIZAÇÃO DA UNIDADE (v3.6.0)
+     MÓDULO SERVIDORES: PERSONALIZAÇÃO DA UNIDADE (v3.6.1)
      Seleção por menu de usuários ativos da unidade, inclusão de todos os perfis,
      preservação estrita de grupos existentes e execução direta sem telas extras.
      ========================================================================== */
@@ -12994,32 +13001,169 @@
     return { novosAdicionados, jaExistiam };
   }
 
-  // Persistência local (world: MAIN utiliza localStorage) e interface
+  // Persistência local (world: MAIN utiliza localStorage) e interface dinâmica de localizadores 👤
+  function encontrarGrupoVinculadoAoLocalizador(siglaLoc, grupos = [], fallbackNomeGrupo = '') {
+    const siglaLimpa = String(siglaLoc || '').replace(/👤/g, '').trim();
+    if (Array.isArray(grupos) && grupos.length > 0) {
+      if (siglaLimpa) {
+        const alvoExato = normalizar(`Trabalho - ${siglaLimpa}`);
+        let g = grupos.find(x => normalizar(x.nome) === alvoExato);
+        if (g) return { nomeGrupo: g.nome, encontrado: true };
+
+        const mServ = siglaLimpa.match(/^Servidor\s*(\d+)$/i);
+        if (mServ) {
+          const n = mServ[1];
+          g = grupos.find(x => {
+            const gn = normalizar(x.nome);
+            return gn === `servidor ${n}` || gn.endsWith(` servidor ${n}`) || gn.includes(`trabalho servidor ${n}`);
+          });
+          if (g) return { nomeGrupo: g.nome, encontrado: true };
+        }
+      }
+
+      if (fallbackNomeGrupo) {
+        const gFb = grupos.find(x => normalizar(x.nome) === normalizar(fallbackNomeGrupo));
+        if (gFb) return { nomeGrupo: gFb.nome, encontrado: true };
+      }
+    }
+    return {
+      nomeGrupo: siglaLimpa ? `Trabalho - ${siglaLimpa}` : (fallbackNomeGrupo || 'Trabalho - Servidor'),
+      encontrado: false
+    };
+  }
+
+  function construirSlotsDinamicosDoEproc(localizadores = [], grupos = [], slotsAtuais = []) {
+    const locsUsuario = (localizadores || []).filter(l => {
+      const comp = decodeEntities(l.nomeCompleto || '').trim();
+      return comp.startsWith('👤') || comp.includes('👤');
+    });
+
+    if (locsUsuario.length === 0) {
+      const base = (slotsAtuais && slotsAtuais.length > 0) ? slotsAtuais : Array.from({ length: 9 }, (_, idx) => ({
+        slot: idx + 1,
+        locId: '',
+        nomeBase: `👤Servidor ${idx + 1}👤`,
+        nomeGrupoBase: `Trabalho - Servidor ${idx + 1}`,
+        nomeServidor: '',
+        perfis: [],
+        sigla: '',
+        gestao: false
+      }));
+      return base.map(s => {
+        const siglaLoc = String(s.nomeBase || '').replace(/👤/g, '').trim();
+        const vinc = encontrarGrupoVinculadoAoLocalizador(siglaLoc, grupos, s.nomeGrupoBase);
+        return {
+          ...s,
+          nomeGrupoBase: (grupos && grupos.length > 0) ? vinc.nomeGrupo : s.nomeGrupoBase,
+          grupoEncontrado: vinc.encontrado
+        };
+      });
+    }
+
+    // Separa personalizados e genéricos ("Servidor N") para ordenação previsível e limpa
+    const enriquecidos = locsUsuario.map(loc => {
+      const nomeComp = decodeEntities(loc.nomeCompleto || '').trim();
+      const nomeCurto = decodeEntities(loc.nomeCurto || '').trim() || nomeComp.replace(/👤/g, '').trim();
+      const mNum = nomeCurto.match(/^Servidor\s*(\d+)$/i);
+      return {
+        loc,
+        locId: loc.id || '',
+        nomeComp,
+        nomeCurto,
+        ehGenerico: !!mNum,
+        numGen: mNum ? parseInt(mNum[1], 10) : 999999
+      };
+    });
+
+    enriquecidos.sort((a, b) => {
+      if (a.ehGenerico !== b.ehGenerico) return a.ehGenerico ? 1 : -1;
+      if (a.ehGenerico && b.ehGenerico) return a.numGen - b.numGen;
+      return a.nomeCurto.localeCompare(b.nomeCurto, 'pt-BR');
+    });
+
+    const usadosSalvos = new Set();
+    const resultado = enriquecidos.map((itemLoc, idx) => {
+      const slotNum = idx + 1;
+      let matchSalvo = null;
+
+      if (Array.isArray(slotsAtuais) && slotsAtuais.length > 0) {
+        const acharIdx = slotsAtuais.findIndex((sa, sIdx) => {
+          if (usadosSalvos.has(sIdx)) return false;
+          if (sa.locId && itemLoc.locId && String(sa.locId) === String(itemLoc.locId)) return true;
+          if (sa.nomeBase && normalizar(sa.nomeBase) === normalizar(itemLoc.nomeComp)) return true;
+          if (itemLoc.ehGenerico && sa.slot === itemLoc.numGen && (!sa.nomeBase || normalizar(sa.nomeBase) === normalizar(`Servidor ${itemLoc.numGen}`))) return true;
+          return false;
+        });
+        if (acharIdx !== -1) {
+          usadosSalvos.add(acharIdx);
+          matchSalvo = slotsAtuais[acharIdx];
+        }
+      }
+
+      const fallbackGrupo = matchSalvo ? matchSalvo.nomeGrupoBase : '';
+      const vinc = encontrarGrupoVinculadoAoLocalizador(itemLoc.nomeCurto, grupos, fallbackGrupo);
+
+      return {
+        slot: slotNum,
+        locId: itemLoc.locId,
+        nomeBase: itemLoc.nomeComp,
+        nomeGrupoBase: vinc.nomeGrupo,
+        grupoEncontrado: vinc.encontrado,
+        nomeServidor: matchSalvo ? (matchSalvo.nomeServidor || '') : '',
+        perfis: matchSalvo ? (matchSalvo.perfis || []) : [],
+        gestao: matchSalvo ? !!matchSalvo.gestao : false
+      };
+    });
+
+    return resolverColisoesSiglas(resultado, localizadores);
+  }
+
   function obterDadosServidoresDosInputs() {
     const slots = [];
     const mapaUsuarios = window._eprocUsuariosUnidade || {};
+    const cards = Array.from(document.querySelectorAll('#rito-servidores-slots-lista .rito-srv-card[data-slot]'));
 
-    for (let i = 1; i <= 9; i++) {
-      const selUser = document.getElementById(`srv-select-user-${i}`);
-      const chkGestao = document.getElementById(`srv-gestao-${i}`);
-      const badgeAtual = document.getElementById(`srv-badge-base-${i}`);
+    if (cards.length > 0) {
+      cards.forEach((card, idx) => {
+        const slotNum = parseInt(card.getAttribute('data-slot'), 10) || (idx + 1);
+        const selUser = document.getElementById(`srv-select-user-${slotNum}`);
+        const chkGestao = document.getElementById(`srv-gestao-${slotNum}`);
+        const badgeAtual = document.getElementById(`srv-badge-base-${slotNum}`);
 
-      const nomeServidor = selUser ? selUser.value.trim() : '';
-      const gestao = chkGestao ? chkGestao.checked : false;
-      const nomeBase = badgeAtual ? badgeAtual.getAttribute('data-base') || `👤Servidor ${i}👤` : `👤Servidor ${i}👤`;
-      const nomeGrupoBase = badgeAtual ? badgeAtual.getAttribute('data-grupo-base') || `Trabalho - Servidor ${i}` : `Trabalho - Servidor ${i}`;
+        const nomeServidor = selUser ? selUser.value.trim() : '';
+        const gestao = chkGestao ? chkGestao.checked : false;
+        const locId = badgeAtual ? (badgeAtual.getAttribute('data-loc-id') || '') : '';
+        const nomeBase = badgeAtual ? (badgeAtual.getAttribute('data-base') || `👤Servidor ${slotNum}👤`) : `👤Servidor ${slotNum}👤`;
+        const nomeGrupoBase = badgeAtual ? (badgeAtual.getAttribute('data-grupo-base') || `Trabalho - Servidor ${slotNum}`) : `Trabalho - Servidor ${slotNum}`;
+        const grupoEncontrado = badgeAtual ? badgeAtual.getAttribute('data-grupo-encontrado') === 'true' : false;
 
-      const normNome = normalizar(nomeServidor);
-      const perfis = (mapaUsuarios[normNome] && mapaUsuarios[normNome].perfis) ? mapaUsuarios[normNome].perfis : [];
+        const normNome = normalizar(nomeServidor);
+        const perfis = (mapaUsuarios[normNome] && mapaUsuarios[normNome].perfis) ? mapaUsuarios[normNome].perfis : [];
 
-      slots.push({
-        slot: i,
-        nomeBase,
-        nomeGrupoBase,
-        nomeServidor,
-        perfis,
-        gestao
+        slots.push({
+          slot: slotNum,
+          locId,
+          nomeBase,
+          nomeGrupoBase,
+          grupoEncontrado,
+          nomeServidor,
+          perfis,
+          gestao
+        });
       });
+    } else {
+      for (let i = 1; i <= 9; i++) {
+        slots.push({
+          slot: i,
+          locId: '',
+          nomeBase: `👤Servidor ${i}👤`,
+          nomeGrupoBase: `Trabalho - Servidor ${i}`,
+          grupoEncontrado: false,
+          nomeServidor: '',
+          perfis: [],
+          gestao: false
+        });
+      }
     }
     return resolverColisoesSiglas(slots, window._eprocLocalizadoresUnidade || []);
   }
@@ -13056,7 +13200,7 @@
     });
   }
 
-  function salvarServidoresStorage(notificar = true) {
+  function salvarServidoresStorage(notificar = false) {
     const slots = obterDadosServidoresDosInputs();
     try {
       localStorage.setItem('eproc_servidores_personalizados', JSON.stringify(slots));
@@ -13081,61 +13225,91 @@
 
     const mapaUsuarios = window._eprocUsuariosUnidade || {};
     const nomesOrdenados = Object.values(mapaUsuarios).map(u => u.nome).sort((a, b) => a.localeCompare(b));
+    const gruposCarregados = Array.isArray(window._eprocGruposUnidade) && window._eprocGruposUnidade.length > 0;
+    const locsCarregados = Array.isArray(window._eprocLocalizadoresUnidade) && window._eprocLocalizadoresUnidade.some(l => (l.nomeCompleto || '').includes('👤'));
+
+    const listaSlots = (Array.isArray(slotsExistentes) && slotsExistentes.length > 0)
+      ? slotsExistentes
+      : Array.from({ length: 9 }, (_, idx) => ({
+          slot: idx + 1,
+          locId: '',
+          nomeBase: `👤Servidor ${idx + 1}👤`,
+          nomeGrupoBase: `Trabalho - Servidor ${idx + 1}`,
+          grupoEncontrado: false,
+          nomeServidor: '',
+          sigla: '',
+          gestao: false
+        }));
+
+    const contadorEl = document.getElementById('srv-slots-contador');
+    if (contadorEl) {
+      contadorEl.textContent = locsCarregados
+        ? `${listaSlots.length} Localizador(es) 👤`
+        : `${listaSlots.length} Slots (Servidor 1 a ${listaSlots.length})`;
+    }
 
     let html = '';
-    for (let i = 1; i <= 9; i++) {
-      const s = (slotsExistentes && slotsExistentes.find(item => item.slot === i)) || {
-        slot: i,
-        nomeBase: `👤Servidor ${i}👤`,
-        nomeGrupoBase: `Trabalho - Servidor ${i}`,
-        nomeServidor: '',
-        sigla: '',
-        gestao: false
-      };
+    listaSlots.forEach((sRaw, idx) => {
+      const i = sRaw.slot || (idx + 1);
+      const nomeBaseAtual = sRaw.nomeBase || `👤Servidor ${i}👤`;
+      const nomeGrupoBaseAtual = sRaw.nomeGrupoBase || `Trabalho - Servidor ${i}`;
+      const locIdAtual = sRaw.locId || '';
+      const ehPersonalizado = !/^👤?Servidor\s*\d+👤?$/i.test(nomeBaseAtual.trim());
 
-      const nomeBaseAtual = s.nomeBase || `👤Servidor ${i}👤`;
-      const nomeGrupoBaseAtual = s.nomeGrupoBase || `Trabalho - Servidor ${i}`;
+      let optionsUsuarios = ehPersonalizado
+        ? `<option value="">-- Manter atual (${nomeBaseAtual.replace(/👤/g, '')}) ou trocar --</option>`
+        : `<option value="">-- Selecione o servidor da unidade --</option>`;
 
-      let optionsUsuarios = `<option value="">-- Selecione o servidor da unidade --</option>`;
       nomesOrdenados.forEach(nomeU => {
         const normU = normalizar(nomeU);
         const objU = mapaUsuarios[normU];
         const qtdPerfis = objU ? objU.perfis.length : 1;
-        const isSelected = normalizar(s.nomeServidor) === normU;
+        const isSelected = normalizar(sRaw.nomeServidor) === normU;
         const sufixoQtd = qtdPerfis > 1 ? ` (${qtdPerfis} perfis)` : '';
         optionsUsuarios += `<option value="${nomeU}" ${isSelected ? 'selected' : ''}>${nomeU}${sufixoQtd}</option>`;
       });
 
-      if (s.nomeServidor && !nomesOrdenados.some(n => normalizar(n) === normalizar(s.nomeServidor))) {
-        optionsUsuarios += `<option value="${s.nomeServidor}" selected>${s.nomeServidor} (Planilha / Manual)</option>`;
+      if (sRaw.nomeServidor && !nomesOrdenados.some(n => normalizar(n) === normalizar(sRaw.nomeServidor))) {
+        optionsUsuarios += `<option value="${sRaw.nomeServidor}" selected>${sRaw.nomeServidor} (Planilha / Manual)</option>`;
+      }
+
+      let grupoHtml = `<span style="color:#64748b;">📁 ${nomeGrupoBaseAtual}</span>`;
+      if (sRaw.grupoEncontrado) {
+        grupoHtml = `<span style="color:#0369a1; font-weight:600;">📁 ${nomeGrupoBaseAtual}</span>`;
+      } else if (gruposCarregados) {
+        grupoHtml = `<span style="color:#b45309; font-weight:600;">⚠️ Grupo ausente: ${nomeGrupoBaseAtual}</span>`;
       }
 
       html += `
-        <div class="rito-srv-card" data-slot="${i}" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:4px;">
+        <div class="rito-srv-card" data-slot="${i}" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:3px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-weight:700; font-size:10.5px; background:#e0f2fe; color:#0369a1; padding:1px 6px; border-radius:4px;">Slot ${i}</span>
-              <span id="srv-badge-base-${i}" data-base="${nomeBaseAtual}" data-grupo-base="${nomeGrupoBaseAtual}" style="font-size:10px; color:#64748b; font-weight:600;" title="Localizador atual no eproc">${nomeBaseAtual}</span>
+            <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+              <span style="font-weight:700; font-size:10.5px; background:#e0f2fe; color:#0369a1; padding:1px 6px; border-radius:4px; flex-shrink:0;">Slot ${i}</span>
+              <span id="srv-badge-base-${i}" data-loc-id="${locIdAtual}" data-base="${nomeBaseAtual}" data-grupo-base="${nomeGrupoBaseAtual}" data-grupo-encontrado="${sRaw.grupoEncontrado ? 'true' : 'false'}" style="font-size:10.5px; color:${ehPersonalizado ? '#0f766e' : '#475569'}; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Localizador atual no eproc: ${nomeBaseAtual}">${nomeBaseAtual}</span>
             </div>
-            <label style="font-size:10.5px; font-weight:600; color:#334155; display:flex; align-items:center; gap:4px; cursor:pointer;">
-              <input type="checkbox" id="srv-gestao-${i}" class="srv-chk-gestao" ${s.gestao ? 'checked' : ''} style="cursor:pointer;">
+            <label style="font-size:10.5px; font-weight:600; color:#334155; display:flex; align-items:center; gap:4px; cursor:pointer; flex-shrink:0;">
+              <input type="checkbox" id="srv-gestao-${i}" class="srv-chk-gestao" ${sRaw.gestao ? 'checked' : ''} style="cursor:pointer;">
               Gestão
             </label>
+          </div>
+          <div id="srv-grupo-info-${i}" style="font-size:9.5px; line-height:1.2; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Grupo de preferência vinculado no eproc">
+            ${grupoHtml}
           </div>
           <div style="display:grid; grid-template-columns: 1fr 110px; gap:6px;">
             <select id="srv-select-user-${i}" class="srv-select-usuario" style="font-size:11px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:4px; outline:none; background:#ffffff; color:#0f172a; max-width:100%;">
               ${optionsUsuarios}
             </select>
-            <input type="text" id="srv-sigla-${i}" class="srv-input-sigla" readonly placeholder="👤Sigla👤" style="font-size:11px; font-weight:700; padding:4px 6px; border:1px solid #e2e8f0; background:#f1f5f9; border-radius:4px; color:#0f766e; text-align:center;" value="${s.sigla ? `👤${s.sigla}👤` : ''}">
+            <input type="text" id="srv-sigla-${i}" class="srv-input-sigla" readonly placeholder="👤Sigla👤" style="font-size:11px; font-weight:700; padding:4px 6px; border:1px solid #e2e8f0; background:#f1f5f9; border-radius:4px; color:#0f766e; text-align:center;" value="${sRaw.sigla ? `👤${sRaw.sigla}👤` : ''}">
           </div>
           <div id="srv-perfis-info-${i}" style="font-size:10px; line-height:1.2; display:none; padding-left:2px;"></div>
         </div>
       `;
-    }
+    });
 
     container.innerHTML = html;
 
-    for (let i = 1; i <= 9; i++) {
+    listaSlots.forEach((sRaw, idx) => {
+      const i = sRaw.slot || (idx + 1);
       const sel = document.getElementById(`srv-select-user-${i}`);
       const chk = document.getElementById(`srv-gestao-${i}`);
       if (sel) {
@@ -13149,7 +13323,7 @@
           salvarServidoresStorage(false);
         });
       }
-    }
+    });
 
     atualizarSiglasEmTempoReal();
   }
@@ -13160,7 +13334,7 @@
       banner.style.display = 'block';
       banner.style.background = '#e0f2fe';
       banner.style.color = '#0369a1';
-      banner.innerHTML = '🔄 Consultando usuários ativos, localizadores e grupos no eproc...';
+      banner.innerHTML = '🔄 Consultando usuários ativos, localizadores 👤 e grupos no eproc...';
     }
 
     addLog('🔄 [Ler eproc] Consultando usuários ativos do órgão (usuario_listar_todos)...');
@@ -13173,36 +13347,12 @@
     addLog('🔄 [Ler eproc] Consultando grupos de preferência (listar_formulario_personalizacao_grupo)...');
     const grupos = await obterGruposPreferenciaEproc();
 
-    addLog(`ℹ️ eproc: ${totalUsuarios} usuário(s) único(s), ${localizadores.length} localizador(es) e ${grupos.length} grupo(s) encontrado(s).`);
+    const slotsDinamicos = construirSlotsDinamicosDoEproc(localizadores, grupos, obterDadosServidoresDosInputs());
+    const qtdLocsUsuario = localizadores.filter(l => (l.nomeCompleto || '').includes('👤')).length;
 
-    // Atualiza os selects mantendo seleções atuais
-    const slotsAtuais = obterDadosServidoresDosInputs();
-    renderizarTabelaServidores(slotsAtuais);
+    addLog(`ℹ️ eproc: ${totalUsuarios} usuário(s) único(s), ${qtdLocsUsuario} localizador(es) 👤 (de ${localizadores.length} totais) e ${grupos.length} grupo(s) encontrado(s).`);
 
-    for (let i = 1; i <= 9; i++) {
-      const badge = document.getElementById(`srv-badge-base-${i}`);
-      if (!badge) continue;
-
-      let match = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(`Servidor ${i}`) || normalizar(l.nomeCurto) === normalizar(`Servidor ${i}`));
-      if (match) {
-        badge.textContent = match.nomeCompleto;
-        badge.setAttribute('data-base', match.nomeCompleto);
-        badge.setAttribute('data-grupo-base', `Trabalho - Servidor ${i}`);
-      } else {
-        const inpSigla = document.getElementById(`srv-sigla-${i}`);
-        const siglaAtual = inpSigla ? inpSigla.value.replace(/👤/g, '').trim() : '';
-        if (siglaAtual) {
-          match = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(`👤${siglaAtual}👤`) || normalizar(l.nomeCurto) === normalizar(siglaAtual));
-          if (match) {
-            badge.textContent = match.nomeCompleto;
-            badge.setAttribute('data-base', match.nomeCompleto);
-            badge.setAttribute('data-grupo-base', `Trabalho - ${siglaAtual}`);
-          }
-        }
-      }
-    }
-
-    atualizarSiglasEmTempoReal();
+    renderizarTabelaServidores(slotsDinamicos);
     salvarServidoresStorage(false);
 
     if (banner) {
@@ -13210,11 +13360,11 @@
       if (totalUsuarios === 0 || localizadores.length === 0 || errs) {
         banner.style.background = '#fef3c7';
         banner.style.color = '#92400e';
-        banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${totalUsuarios} usuários e ${localizadores.length} localizadores carregados (${grupos.length} grupos). ${errs || 'Verifique permissões ou abra uma tela do eproc com o menu lateral.'}`;
+        banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${totalUsuarios} usuários e ${qtdLocsUsuario} localizadores 👤 (${localizadores.length} totais, ${grupos.length} grupos). ${errs || 'Verifique permissões ou abra uma tela do eproc com o menu lateral.'}`;
       } else {
         banner.style.background = '#dcfce7';
         banner.style.color = '#15803d';
-        banner.innerHTML = `✅ <strong>Pronto:</strong> ${totalUsuarios} usuários ativos, ${localizadores.length} localizadores e ${grupos.length} grupos carregados do eproc.`;
+        banner.innerHTML = `✅ <strong>Pronto:</strong> ${totalUsuarios} usuários ativos, ${qtdLocsUsuario} localizador(es) 👤 e ${grupos.length} grupos carregados do eproc.`;
         setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
       }
     }
@@ -13377,17 +13527,47 @@
         window._eprocServidoresVerificadosNaoEncontrados = new Set();
       }
       const slotsAtuais = obterDadosServidoresDosInputs();
+      const baseSlots = (slotsAtuais && slotsAtuais.length > 0) ? slotsAtuais : Array.from({ length: 9 }, (_, idx) => ({
+        slot: idx + 1,
+        locId: '',
+        nomeBase: `👤Servidor ${idx + 1}👤`,
+        nomeGrupoBase: `Trabalho - Servidor ${idx + 1}`,
+        grupoEncontrado: false
+      }));
       const slotsNovos = [];
+      const impUsados = new Set();
+      const impPorSlot = new Map();
+      // Passo 1: casa explicitamente localizadores genéricos ("Servidor N") com sua linha correspondente na planilha
+      for (const atual of baseSlots) {
+        const mGen = String(atual.nomeBase || '').replace(/👤/g, '').trim().match(/^Servidor\s*(\d+)$/i);
+        if (mGen) {
+          const n = parseInt(mGen[1], 10);
+          const imp = servidoresSlots.find(x => !impUsados.has(x.slot) && x.slot === n);
+          if (imp) {
+            impPorSlot.set(atual.slot, imp);
+            impUsados.add(imp.slot);
+          }
+        }
+      }
+      // Passo 2: preenche slots já personalizados na unidade pela posição disponível
+      for (const atual of baseSlots) {
+        if (impPorSlot.has(atual.slot)) continue;
+        const imp = servidoresSlots.find(x => !impUsados.has(x.slot) && x.slot === atual.slot) ||
+                    servidoresSlots.find(x => !impUsados.has(x.slot));
+        if (imp) {
+          impPorSlot.set(atual.slot, imp);
+          impUsados.add(imp.slot);
+        }
+      }
+
       let qtdImportados = 0;
       let qtdNaoEncontradosUnidade = 0;
 
-      for (let i = 1; i <= 9; i++) {
-        const atual = slotsAtuais.find(x => x.slot === i) || {
-          slot: i,
-          nomeBase: `👤Servidor ${i}👤`,
-          nomeGrupoBase: `Trabalho - Servidor ${i}`
-        };
-        const imp = servidoresSlots.find(x => x.slot === i);
+      for (const atual of baseSlots) {
+        const i = atual.slot;
+        const mGen = String(atual.nomeBase || '').replace(/👤/g, '').trim().match(/^Servidor\s*(\d+)$/i);
+        const numAlvoPlanilha = mGen ? parseInt(mGen[1], 10) : i;
+        const imp = impPorSlot.get(i);
 
         let nomeSelecionado = '';
         let perfisSelecionados = [];
@@ -13427,11 +13607,13 @@
           }
         }
 
-        const ehGrupoPadrao = !atual.nomeGrupoBase || normalizar(atual.nomeGrupoBase) === normalizar(`Trabalho - Servidor ${i}`);
+        const ehGrupoPadrao = !atual.nomeGrupoBase || normalizar(atual.nomeGrupoBase) === normalizar(`Trabalho - Servidor ${numAlvoPlanilha}`);
         slotsNovos.push({
           slot: i,
+          locId: atual.locId || '',
           nomeBase: atual.nomeBase,
           nomeGrupoBase: (ehGrupoPadrao && imp && imp.nomeGrupoOriginal) ? imp.nomeGrupoOriginal : atual.nomeGrupoBase,
+          grupoEncontrado: atual.grupoEncontrado,
           nomeServidor: nomeSelecionado,
           perfis: perfisSelecionados,
           gestao
@@ -13552,7 +13734,10 @@
 
       const localizarLocDoSlot = (item, slotNum, novoLocalizadorNome, novoLocalizadorCurto) => {
         const siglaBaseAntiga = String(item.nomeBase || '').replace(/👤/g, '').trim();
-        let m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(item.nomeBase) || (siglaBaseAntiga && normalizar(l.nomeCurto) === normalizar(siglaBaseAntiga)));
+        let m = item.locId ? localizadores.find(l => l.id && String(l.id) === String(item.locId)) : null;
+        if (!m) {
+          m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(item.nomeBase) || (siglaBaseAntiga && normalizar(l.nomeCurto) === normalizar(siglaBaseAntiga)));
+        }
         if (!m) {
           m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(`Servidor ${slotNum}`) || normalizar(l.nomeCurto) === normalizar(`Servidor ${slotNum}`));
         }
@@ -13680,6 +13865,11 @@
           const badge = document.getElementById(`srv-badge-base-${slotNum}`);
           if (badge) {
             badge.setAttribute('data-grupo-base', novoGrupoNome);
+            badge.setAttribute('data-grupo-encontrado', 'true');
+          }
+          const grpInfo = document.getElementById(`srv-grupo-info-${slotNum}`);
+          if (grpInfo) {
+            grpInfo.innerHTML = `<span style="color:#0369a1; font-weight:600;">📁 ${novoGrupoNome}</span>`;
           }
 
           perfisParaVincular.forEach(p => {
@@ -13863,28 +14053,16 @@
     const btnImp = document.getElementById('btn-servidores-importar-planilha');
     if (btnImp) btnImp.onclick = importarServidoresDaPlanilha;
 
-    const btnSalvar = document.getElementById('btn-servidores-salvar-rascunho');
-    if (btnSalvar) btnSalvar.onclick = () => salvarServidoresStorage(true);
-
-    const btnLimpar = document.getElementById('btn-servidores-limpar');
-    if (btnLimpar) {
-      btnLimpar.onclick = () => {
-        if (confirm('Deseja limpar as seleções de servidores nos 9 slots?')) {
-          try { localStorage.removeItem('eproc_servidores_personalizados'); } catch (e) {}
-          renderizarTabelaServidores(null);
-          addLog('🗑️ Seleções de servidores limpas.');
+    // Carrega usuários da unidade em background somente se a aba Servidores estiver ativa
+    if (moduloAtivo === 'servidores') {
+      carregarUsuariosAtivosDoOrgao().then(mapa => {
+        if (mapa && Object.keys(mapa).length > 0) {
+          const slotsAtuais = obterDadosServidoresDosInputs();
+          const temSelecaoUi = slotsAtuais.some(s => s.nomeServidor && s.nomeServidor.trim());
+          renderizarTabelaServidores(temSelecaoUi ? slotsAtuais : (carregarServidoresStorage() || slotsAtuais));
         }
-      };
+      });
     }
-
-    // Carrega usuários da unidade em background sem apagar seleções em andamento
-    carregarUsuariosAtivosDoOrgao().then(mapa => {
-      if (mapa && Object.keys(mapa).length > 0) {
-        const slotsAtuais = obterDadosServidoresDosInputs();
-        const temSelecaoUi = slotsAtuais.some(s => s.nomeServidor && s.nomeServidor.trim());
-        renderizarTabelaServidores(temSelecaoUi ? slotsAtuais : (carregarServidoresStorage() || slotsAtuais));
-      }
-    });
   }
 
 
@@ -13912,7 +14090,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.6.0</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.6.1</span></span>
 
         </div>
 
@@ -13988,27 +14166,21 @@
           <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:10px 10px 8px 10px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
               <span style="font-size:11.5px; font-weight:700; color:#1e293b;">👤 Servidores da Unidade</span>
-              <span style="font-size:10px; color:#64748b; font-weight:600;">9 Slots (Servidor 1 a 9)</span>
+              <span id="srv-slots-contador" style="font-size:10px; color:#64748b; font-weight:600;">9 Slots (Servidor 1 a 9)</span>
             </div>
             <div style="font-size:10.5px; color:#475569; line-height:1.35; margin-bottom:8px;">
-              Escolha os servidores ativos da unidade diretamente nas opções de cada slot. Ao selecionar, todos os perfis e vínculos do servidor são associados automaticamente.
+              Clique em <strong>Ler eproc</strong> para listar todos os localizadores 👤 e grupos da unidade (originais ou já personalizados) e escolha os servidores para associar ou substituir.
             </div>
 
             <div id="srv-status-info" style="display:none; font-size:10.5px; padding:5px 8px; border-radius:6px; margin-bottom:8px; line-height:1.35;"></div>
 
             <!-- Barra de Ações do Módulo Servidores -->
-            <div style="display:flex; gap:5px; margin-bottom:8px;">
-              <button type="button" id="btn-servidores-ler-eproc" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Consulta usuários ativos e localizadores da unidade no eproc">
+            <div style="display:flex; gap:6px; margin-bottom:8px;">
+              <button type="button" id="btn-servidores-ler-eproc" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Consulta usuários ativos, localizadores 👤 e grupos de preferência da unidade no eproc">
                 <span>🔄</span> Ler eproc
               </button>
               <button type="button" id="btn-servidores-importar-planilha" class="rito-btn rito-btn-secondary" style="flex:1; font-size:10.5px; padding:5px 6px;" title="Carrega ou importa da aba 'Servidores' da planilha Excel">
                 <span>📋</span> Da Planilha
-              </button>
-              <button type="button" id="btn-servidores-salvar-rascunho" class="rito-btn rito-btn-secondary" style="font-size:10.5px; padding:5px 8px;" title="Salva as escolhas na memória da extensão">
-                <span>💾</span>
-              </button>
-              <button type="button" id="btn-servidores-limpar" class="rito-btn rito-btn-secondary" style="font-size:10.5px; padding:5px 6px; color:#dc2626;" title="Limpa todas as seleções dos slots">
-                <span>🗑️</span>
               </button>
             </div>
 
@@ -14349,15 +14521,25 @@
 
     document.getElementById('btn-rito-limpar').onclick = () => {
 
-      try { sessionStorage.removeItem(SESSION_KEY_LOGS); } catch (e) {}
+      try {
+        sessionStorage.removeItem(SESSION_KEY_LOGS);
+        sessionStorage.removeItem('eproc_pref_2g_modulo_ativo');
+        localStorage.removeItem('eproc_servidores_personalizados');
+      } catch (e) {}
 
       window._eprocPararLote = true;
+      window._eprocUltimoArquivoPlanilha = null;
+      window._eprocUsuariosUnidade = null;
+      window._eprocLocalizadoresUnidade = null;
+      window._eprocGruposUnidade = null;
+      window._eprocServidoresArquivoImportadoRef = null;
+      window._eprocServidoresVerificadosNaoEncontrados = null;
 
       execucaoLoteAtiva = false;
 
       gravacaoEmAndamento = false;
 
-    clearState();
+      clearState();
 
       location.reload();
 
@@ -18998,7 +19180,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.6.0</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.6.1</span>
 
           </h3>
 

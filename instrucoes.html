@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Instruções — Criar Preferências em Lote 2G v3.6.0 (Segundo Grau TJSP)</title>
+  <title>Instruções — Criar Preferências em Lote 2G v3.6.1 (Segundo Grau TJSP)</title>
   <style>
     :root {
       --primary: #15803d;
@@ -196,7 +196,7 @@
     <div class="header">
       <h1><span class="badge-icon-p">P</span> Criar Preferências em Lote 2G (eproc TJSP - Segundo Grau)</h1>
       <p>Guia Completo de Operação, Auditoria Prévia e Arquitetura de Segurança de Dados.</p>
-      <div class="badge-version">Versão 3.6.0 - 10/11/2026</div>
+      <div class="badge-version">Versão 3.6.1 - 10/11/2026</div>
     </div>
 
     
@@ -206,8 +206,8 @@
       
       <h3>Regras de Padronização, Segurança e Vínculo Automático de Perfis:</h3>
       <ul>
-        <li><strong>Leitura Automática do eproc (<code>🔄 Ler eproc</code>):</strong> Consulta os usuários cadastrados ativos do órgão (exibindo um nome único por servidor no menu de cada slot), os localizadores e os grupos de preferências já existentes na unidade.</li>
-        <li><strong>Importação Direta da Planilha (<code>📋 Da Planilha</code>):</strong> Permite carregar o arquivo Excel (<code>.xlsx</code>) e preencher automaticamente os slots 1 a 9 a partir da aba <code>Servidores</code> (colunas de usuário e flag de Gestão do Gabinete).</li>
+        <li><strong>Leitura Automática do eproc (<code>🔄 Ler eproc</code>):</strong> Consulta os usuários cadastrados ativos do órgão (exibindo um nome único por servidor no menu de cada slot), todos os localizadores da unidade iniciados por <code>👤</code> (inclusive sem processos, tanto os originais <code>👤Servidor 1..9👤</code> quanto os já personalizados em rodadas anteriores) e os respectivos grupos de preferências vinculados.</li>
+        <li><strong>Importação Direta da Planilha (<code>📋 Da Planilha</code>):</strong> Permite carregar o arquivo Excel (<code>.xlsx</code>) e preencher automaticamente os slots a partir da aba <code>Servidores</code> (colunas de usuário e flag de Gestão do Gabinete).</li>
         <li><strong>Sigla do Localizador:</strong> Primeiro Nome em formato padrão (ex: <code>Maria</code>) + <code>.</code> + Iniciais maiúsculas dos sobrenomes, ignorando preposições (<code>de</code>, <code>da</code>, <code>do</code>, <code>dos</code>, <code>das</code>, <code>e</code>). Exemplo: <em>Maria de Lourdes Almeida de Campos</em> &rarr; <code>👤Maria.LAC👤</code>.</li>
         <li><strong>Tratamento de Homônimos / Colisões:</strong> Caso duas pessoas gerem a mesma sigla ou o localizador já exista no eproc, o sistema acrescenta automaticamente <code>.2</code>, <code>.3</code> (ex: <code>👤Maria.LAC.2👤</code>).</li>
         <li><strong>Vínculo Automático de Todos os Tipos/Perfis:</strong> Ao selecionar o servidor no menu do slot e clicar em personalizar, todos os perfis/tipos ativos vinculados àquele usuário no órgão são incluídos automaticamente no grupo de trabalho (sem janelas extras).</li>
@@ -216,7 +216,7 @@
         <li><strong>Detecção de Usuários Já Cadastrados:</strong> Se algum perfil do usuário selecionado já constar no grupo, o sistema o mantém sem duplicar e registra no relatório final que ele já constava na lista de membros.</li>
         <li><strong>Regra de Grupos Inexistentes:</strong> Se o grupo de trabalho não existir no eproc, <strong>nenhum grupo novo é criado</strong>. O sistema preserva o ambiente e reporta no relatório final.</li>
         <li><strong>Gestão do Gabinete:</strong> Marcando o checkbox <em>"Gestão"</em>, todos os perfis do servidor selecionado são vinculados também ao grupo <code>Gestão do Gabinete</code> (preservando todos os membros anteriores).</li>
-        <li><strong>Alterações Contínuas:</strong> A qualquer momento, novos servidores podem ser selecionados para os mesmos slots, renomeando os localizadores e grupos novamente.</li>
+        <li><strong>Alterações Contínuas (2ª Rodada) e Cache Unificado:</strong> Em usos posteriores, todos os localizadores <code>👤...👤</code> e seus grupos vinculados aparecem automaticamente nos slots ao clicar em <code>🔄 Ler eproc</code>, permitindo trocar servidores a qualquer momento. As escolhas são salvas automaticamente durante o uso e podem ser zeradas por completo pelo botão <code>🗑️ Limpar cache</code>.</li>
       </ul>
     </div>
 <div class="content">
@@ -600,7 +600,7 @@
 
     <div class="footer">
       <div>Tribunal de Justiça do Estado de São Paulo • eproc 2G (Segundo Grau)</div>
-      <div>Extensão 2G • Versão 3.6.0 - 10/11/2026</div>
+      <div>Extensão 2G • Versão 3.6.1 - 10/11/2026</div>
     </div>
   </div>
 
