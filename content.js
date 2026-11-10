@@ -1801,7 +1801,7 @@
 
     let colNome = -1, colEvento = -1, colEventoCod = -1, colModeloNome = -1, colModeloCod = -1, colModeloGenerico = -1;
 
-    let colLoc = -1, colLocSecundarios = -1, colClassif = -1, colDesc = -1, colFerramenta = -1, colComoSalvarLoc = -1;
+    let colLoc = -1, colLocSecundarios = -1, colComportamentoLoc = -1, colLocDesativar = -1, colClassif = -1, colDesc = -1, colFerramenta = -1, colComoSalvarLoc = -1;
 
     let colEventoComplementar = -1, colDadosComplementares = -1;
 
@@ -1828,18 +1828,15 @@
 
       // Localizadores (suporte a coluna única ou colunas separadas: Principal e Secundários)
 
-      if (n.includes('localizador principal') || n.includes('novo localizador') || n.includes('localizador de saida')) {
-
-        colLoc = c;
-
-      } else if (n.includes('localizadores secundarios') || n.includes('outros localizadores')) {
-
+      // Comportamento do Localizador e Localizadores (Principal, Secundários, Remover) - [v3.5.6]
+      if (colComportamentoLoc === -1 && (n.includes('comportamento') || n.includes('comportamento do localizador'))) {
+        colComportamentoLoc = c;
+      } else if (colLocDesativar === -1 && (n.includes('remover localizador') || n.includes('desativar') || n.includes('remover') || n.includes('localizador a remover') || n.includes('localizadores a desativar'))) {
+        colLocDesativar = c;
+      } else if (colLocSecundarios === -1 && (n.includes('secundari') || n.includes('outros localizadores'))) {
         colLocSecundarios = c;
-
-      } else if (colLoc === -1 && n.includes('localizador') && !n.includes('como salvar')) {
-
+      } else if (colLoc === -1 && (n.includes('localizador principal') || n.includes('principal') || n.includes('novo localizador') || n.includes('localizador de saida') || (n.includes('localizador') && !n.includes('como salvar') && !n.includes('opcao')))) {
         colLoc = c;
-
       }
 
 
@@ -1946,51 +1943,32 @@
 
     // Posições padrões 2G se cabeçalho não reconhecido:
 
+    // Posições padrões 2G se cabeçalho não reconhecido (Atualizado v3.5.6 com Col H: Comportamento e Col I: Remover):
     if (colFerramenta === -1) colFerramenta = 2;
-
     if (colNome === -1) colNome = 3;
-
     if (colComoSalvarLoc === -1) colComoSalvarLoc = 4;
-
     if (colLoc === -1) colLoc = 5;
-
     if (colLocSecundarios === -1) colLocSecundarios = 6;
-
-    if (colModeloNome === -1) colModeloNome = 7;
-
-    if (colModeloCod === -1) colModeloCod = 8;
-
-    if (colModeloGenerico === -1) colModeloGenerico = 9;
-
-    if (colEvento === -1) colEvento = 10;
-
-    if (colEventoCod === -1) colEventoCod = 11;
-
-    if (colEventoComplementar === -1) colEventoComplementar = 12;
-
-    if (colDadosComplementares === -1) colDadosComplementares = 13;
-
-    if (colIntimar === -1) colIntimar = 14;
-
-    if (colEvIntimar === -1) colEvIntimar = 15;
-
-    if (colPzEsp === -1) colPzEsp = 16;
-
-    if (colPzSimp === -1) colPzSimp = 17;
-
-    if (colPzPartes === -1) colPzPartes = 18;
-
-    if (colPzDPU === -1) colPzDPU = 19;
-
-    if (colRemeter === -1) colRemeter = 20;
-
-    if (colEvRemessa === -1) colEvRemessa = 21;
-
-    if (colOrgaoRemessa === -1) colOrgaoRemessa = 22;
-
-    if (colClassif === -1) colClassif = 23;
-
-    if (colDesc === -1) colDesc = 24;
+    if (colComportamentoLoc === -1) colComportamentoLoc = 7;
+    if (colLocDesativar === -1) colLocDesativar = 8;
+    if (colModeloNome === -1) colModeloNome = 9;
+    if (colModeloCod === -1) colModeloCod = 10;
+    if (colModeloGenerico === -1) colModeloGenerico = 11;
+    if (colEvento === -1) colEvento = 12;
+    if (colEventoCod === -1) colEventoCod = 13;
+    if (colEventoComplementar === -1) colEventoComplementar = 14;
+    if (colDadosComplementares === -1) colDadosComplementares = 15;
+    if (colIntimar === -1) colIntimar = 16;
+    if (colEvIntimar === -1) colEvIntimar = 17;
+    if (colPzEsp === -1) colPzEsp = 18;
+    if (colPzSimp === -1) colPzSimp = 19;
+    if (colPzPartes === -1) colPzPartes = 20;
+    if (colPzDPU === -1) colPzDPU = 21;
+    if (colRemeter === -1) colRemeter = 22;
+    if (colEvRemessa === -1) colEvRemessa = 23;
+    if (colOrgaoRemessa === -1) colOrgaoRemessa = 24;
+    if (colClassif === -1) colClassif = 25;
+    if (colDesc === -1) colDesc = 26;
 
 
 
@@ -2042,6 +2020,24 @@
 
         localizadores.push(...partesS);
 
+      }
+
+      // [v3.5.6] Comportamento do Localizador e Localizadores a Desativar
+      let compLocRaw = colComportamentoLoc !== -1 ? String(r[colComportamentoLoc] || '').trim() : '';
+      let locDesativarRaw = colLocDesativar !== -1 ? String(r[colLocDesativar] || '').trim() : '';
+      let localizadoresDesativar = [];
+      if (locDesativarRaw && locDesativarRaw !== '-' && !normalizar(locDesativarRaw).includes('nao remover') && !normalizar(locDesativarRaw).includes('nenhum')) {
+        localizadoresDesativar = locDesativarRaw.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+      }
+      // [v3.5.6] No eproc minuta_cadastrar: '0' = Remover informado(s), '1' = Todos, '2' = Todos exceto sistema, '3' = Não remover
+      let comportamentoCodigo = '3';
+      const cNorm = normalizar(compLocRaw);
+      if (cNorm.includes('todos') || cNorm === '1') {
+        comportamentoCodigo = '1';
+      } else if (cNorm.includes('selecionado') || cNorm.includes('remover') || cNorm === '0' || cNorm === '2' || localizadoresDesativar.length > 0) {
+        comportamentoCodigo = '0';
+      } else if (cNorm.includes('nao remover') || cNorm.includes('manter') || cNorm === '3') {
+        comportamentoCodigo = '3';
       }
 
 
@@ -2171,7 +2167,11 @@
 
         classificacao: classificacao,
 
-        descricao: descricao
+        descricao: descricao,
+        comportamentoLocalizador: comportamentoCodigo,
+        comportamentoLocalizadorTexto: compLocRaw,
+        localizadoresDesativar: localizadoresDesativar,
+        locDesativarRaw: locDesativarRaw,
 
       });
 
@@ -2715,6 +2715,22 @@
 
         selNovo.value = 'null';
 
+
+      // [v3.5.6] Reset de Comportamento de Localizador e Localizadores a Desativar
+      const selOpcaoLocReset = document.getElementById('selOpcaoLocalizador');
+      if (selOpcaoLocReset) {
+        selOpcaoLocReset.value = '3';
+        dispararEventos(selOpcaoLocReset, ['change']);
+      }
+      const selDesativarReset = document.getElementById('selLocalizadorDesativar');
+      if (selDesativarReset) {
+        Array.from(selDesativarReset.options).forEach(o => { o.selected = false; o.removeAttribute('selected'); });
+        if (window.$) {
+          try { window.$('#selLocalizadorDesativar option').prop('selected', false); } catch (e) {}
+        }
+      }
+      window._eprocMinutaLocsDesativar = null;
+      window._eprocMinutaComportamentoLoc = null;
         dispararEventos(selNovo, ['change']);
 
       }
@@ -9638,31 +9654,99 @@
 
       // Configuração: Comportamento do localizador: NÃO remover de localizador algum (valor 3)
 
+      // [v3.5.6] Configuração: Comportamento do Localizador (0 = Remover informado(s)) e Localizadores a Desativar
+      const selNovoLoc = document.getElementById('selNovoLocalizador');
       const selOpcaoLoc = document.getElementById('selOpcaoLocalizador');
-
+      const selDesativar = document.getElementById('selLocalizadorDesativar');
+      const codComportamento = (item.localizadoresDesativar && item.localizadoresDesativar.length > 0) ? '0' : (item.comportamentoLocalizador || '3');
+      const arrIdsDesativarMinuta = [];
       if (selOpcaoLoc) {
-
-        destacarCampoAtivo(selOpcaoLoc, 'Comportamento', 'NÃO remover de localizador algum (3)');
-
-        selOpcaoLoc.value = '3';
-
+        let textoComp = 'NÃO remover de localizador algum (3)';
+        if (codComportamento === '0') textoComp = 'Remover o processo do(s) localizador(es) informado(s) (0)';
+        else if (codComportamento === '1') textoComp = 'Remover de todos os localizadores atuais (1)';
+        destacarCampoAtivo(selOpcaoLoc, 'Comportamento do Localizador', textoComp);
+        selOpcaoLoc.value = codComportamento;
         dispararEventos(selOpcaoLoc, ['change']);
-
         if (typeof window.comportamentoLocalizadores === 'function') {
-
           try { window.comportamentoLocalizadores(''); } catch (e) {}
-
         }
-
         await sleep(200);
-
+        dados.comportamento = textoComp;
       }
-
+      if (codComportamento === '0' && item.localizadoresDesativar && item.localizadoresDesativar.length > 0) {
+        if (selDesativar) {
+          try {
+            const divDes = document.getElementById('divLocalizadorDesativar') || selDesativar.parentElement;
+            if (divDes) divDes.style.display = 'block';
+          } catch (e) {}
+          Array.from(selDesativar.options).forEach(o => { o.selected = false; o.removeAttribute('selected'); });
+          const catalogoUnidade = await obterOuCarregarCatalogoLocalizadoresUnidade();
+          const desativadosNomes = [];
+          for (const alvo of item.localizadoresDesativar) {
+            let optD = acharOpcaoLocalizador(selDesativar, alvo, false);
+            if (!optD) {
+              let idEncontrado = null;
+              let textoEncontrado = alvo;
+              if (Array.isArray(catalogoUnidade)) {
+                const alvoNorm = normalizar(alvo);
+                const itemCat = catalogoUnidade.find(l => {
+                  const lNorm = normalizar(l.text || l.label || '');
+                  return lNorm === alvoNorm || lNorm.includes(alvoNorm) || alvoNorm.includes(lNorm);
+                });
+                if (itemCat) {
+                  idEncontrado = String(itemCat.value || itemCat.IdLocalizadorOrgao || itemCat.id || '').trim();
+                  textoEncontrado = itemCat.text || itemCat.label || alvo;
+                }
+              }
+              if (!idEncontrado && selNovoLoc) {
+                const optRef = acharOpcaoLocalizador(selNovoLoc, alvo, false);
+                if (optRef && optRef.value && optRef.value !== 'null') {
+                  idEncontrado = optRef.value;
+                  textoEncontrado = optRef.text;
+                }
+              }
+              if (idEncontrado) {
+                optD = document.createElement('option');
+                optD.value = idEncontrado;
+                optD.text = textoEncontrado;
+                selDesativar.appendChild(optD);
+              }
+            }
+            if (optD && optD.value) {
+              optD.selected = true;
+              optD.setAttribute('selected', 'selected');
+              arrIdsDesativarMinuta.push(String(optD.value).trim());
+              desativadosNomes.push(optD.text.trim());
+            } else {
+              addLog(`⚠️ Localizador a remover não localizado no catálogo da Unidade: "${alvo}"`, 'warn');
+            }
+          }
+          if (window.$) {
+            try {
+              window.$('#selLocalizadorDesativar').val(arrIdsDesativarMinuta).trigger('change');
+            } catch (e) {}
+          }
+          if (typeof window.salvaLocalizadoresMarcados === 'function') {
+            try { window.salvaLocalizadoresMarcados('', ''); } catch (e) {}
+          }
+          dados.locDesativar = desativadosNomes.length > 0 ? desativadosNomes.join('; ') : '(Nenhum encontrado)';
+          addLog(`🗑️ Localizador(es) a desativar marcado(s): ${dados.locDesativar} (IDs: ${arrIdsDesativarMinuta.join(', ')})`, 'info');
+        }
+      } else {
+        if (selDesativar) {
+          Array.from(selDesativar.options).forEach(o => { o.selected = false; o.removeAttribute('selected'); });
+          if (window.$) {
+            try { window.$('#selLocalizadorDesativar option').prop('selected', false); } catch (e) {}
+          }
+        }
+        dados.locDesativar = codComportamento === '1' ? 'Remover de todos os localizadores atuais (1)' : '(Nenhum - NÃO remover de localizador algum)';
+      }
+      window._eprocMinutaLocsDesativar = arrIdsDesativarMinuta;
+      window._eprocMinutaComportamentoLoc = codComportamento;
 
 
       // Configuração: Novo localizador (com regras de fallback estritas)
 
-      const selNovoLoc = document.getElementById('selNovoLocalizador');
 
       let achouPrincipal = false;
 
@@ -10329,6 +10413,35 @@
 
       // GRAVAÇÃO DA PREFERÊNCIA: Aciona validação e salvamento
 
+
+      // [v3.5.6] Reafirmação estrita do comportamento e localizadores a desativar antes de validar
+      if (window._eprocMinutaComportamentoLoc) {
+        const selOpRef = document.getElementById('selOpcaoLocalizador');
+        if (selOpRef) {
+          selOpRef.value = window._eprocMinutaComportamentoLoc;
+          dispararEventos(selOpRef, ['change']);
+        }
+      }
+      if (Array.isArray(window._eprocMinutaLocsDesativar) && window._eprocMinutaLocsDesativar.length > 0) {
+        const selDesRef = document.getElementById('selLocalizadorDesativar');
+        if (selDesRef) {
+          selDesRef.disabled = false;
+          Array.from(selDesRef.options).forEach(o => {
+            if (window._eprocMinutaLocsDesativar.includes(String(o.value).trim())) {
+              o.selected = true;
+              o.setAttribute('selected', 'selected');
+            }
+          });
+          if (window.$) {
+            try { window.$('#selLocalizadorDesativar').val(window._eprocMinutaLocsDesativar).trigger('change'); } catch (e) {}
+          }
+          if (typeof window.salvaLocalizadoresMarcados === 'function') {
+            try { window.salvaLocalizadoresMarcados('', ''); } catch (e) {}
+          }
+        }
+      }
+      await sleep(150);
+
       const btnOK = document.getElementById('btnOK');
 
       if (btnOK) {
@@ -10797,6 +10910,9 @@
               setChave('txtPrazoIgual', '');
               addLog(`📤 Payload Intimação confirmado: Evento=${ctxInt.idEventoSelecionado} | sinLoc=${ctxInt.sinLocalizadores || 'L'} | IdNovoLoc=${ctxInt.idNovoLocalizadorSelecionado || 'null'} | Desativar=[${(ctxInt.arrIdsDesativar || []).join(', ')}] | opcoes_avancadas=${ctxInt.modoPolo ? 'porPolo' : 'porTipoDeParte'} | MP=${itInt.prazoMP || '-'} dias`, 'info');
             }
+
+
+
 
             listaDados = partes.join(',');
 
@@ -11931,7 +12047,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.5</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.6</span></span>
 
         </div>
 
@@ -16951,7 +17067,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.5</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.6</span>
 
           </h3>
 
