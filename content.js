@@ -4,7 +4,7 @@
 
 //  Arquivo: content.js
 
-//  Versão: 3.5.3 (atualizada em 09/11/2026)
+//  Versão: 3.5.4 (atualizada em 09/11/2026)
 
 // ============================================================
 
@@ -509,7 +509,7 @@
     return false;
   }
 
-  /* [MÓDULO INTIMAÇÕES - v3.5.3] Detecção da tela de Intimação Eletrônica */
+  /* [MÓDULO INTIMAÇÕES - v3.5.5] Detecção da tela de Intimação Eletrônica */
   function ehTelaDeIntimacao() {
     const params = new URLSearchParams(location.search);
     const acao = (params.get('acao') || '').toLowerCase();
@@ -1395,7 +1395,7 @@
 
   
   /* ========================================================================== */
-  /* [MÓDULO INTIMAÇÕES - v3.5.3] PARSER DA PLANILHA OFICIAL DE INTIMAÇÕES        */
+  /* [MÓDULO INTIMAÇÕES - v3.5.5] PARSER DA PLANILHA OFICIAL DE INTIMAÇÕES        */
   /* ========================================================================== */
   function converterTabelaParaItensIntimacoes(tabela) {
     if (!tabela || tabela.length === 0) return [];
@@ -1437,7 +1437,7 @@
       else if (h.includes('encadeamento') && !h.includes('evento')) colEncIntimacao = c;
     }
 
-    const strVal = v => (v !== undefined && v !== null ? String(v).trim() : '');
+    const strVal = v => (v !== undefined && v !== null ? String(v).replace(/[\u200B-\u200D\uFEFF]/g, '').trim() : '');
 
     for (let r = 1; r < tabela.length; r++) {
       const row = tabela[r];
@@ -7529,6 +7529,86 @@
 
   /* ================== MÓDULO 2: RELATÓRIO GERAL DE PROCESSOS ================== */
 
+  
+  // [v3.5.5] Catálogo Global e Resiliente de Localizadores da Unidade (2G)
+  async function obterOuCarregarCatalogoLocalizadoresUnidade() {
+    if (Array.isArray(window._eprocCatalogoLocalizadores2G) && window._eprocCatalogoLocalizadores2G.length > 0) {
+      return window._eprocCatalogoLocalizadores2G;
+    }
+
+    try {
+      const cached = sessionStorage.getItem('eproc_catalogo_localizadores_2g');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          window._eprocCatalogoLocalizadores2G = parsed;
+          return parsed;
+        }
+      }
+    } catch (e) {}
+
+    // 1. Tenta ler de selects existentes no DOM da página atual
+    const selExisting = document.getElementById('selNovoLocalizador') || document.getElementById('selLocalizador');
+    if (selExisting && selExisting.options && selExisting.options.length > 2) {
+      const list = Array.from(selExisting.options)
+        .filter(o => o.value && o.value !== 'null' && o.value !== '')
+        .map(o => ({ value: String(o.value).trim(), text: o.text.trim() }));
+      if (list.length > 0) {
+        window._eprocCatalogoLocalizadores2G = list;
+        try { sessionStorage.setItem('eproc_catalogo_localizadores_2g', JSON.stringify(list)); } catch (e) {}
+        return list;
+      }
+    }
+
+    // 2. Tenta via obterLocalizadoresRelatorioGeral()
+    try {
+      const listRel = await obterLocalizadoresRelatorioGeral();
+      if (Array.isArray(listRel) && listRel.length > 0) {
+        const parsed = listRel.map(loc => {
+          const id = String(loc.IdLocalizadorOrgao || loc.id || loc.value || '').trim();
+          const sig = String(loc.SigLocalizador || '').trim();
+          const des = String(loc.DesLocalizador || '').trim();
+          const label = (sig && des && sig !== des) ? `${sig} - ${des}` : (sig || des);
+          return { value: id, text: label };
+        }).filter(x => x.value);
+        if (parsed.length > 0) {
+          window._eprocCatalogoLocalizadores2G = parsed;
+          try { sessionStorage.setItem('eproc_catalogo_localizadores_2g', JSON.stringify(parsed)); } catch (e) {}
+          return parsed;
+        }
+      }
+    } catch (eRel) {}
+
+    // 3. Tenta buscar minuta_cadastrar ou relatorio_geral_listar via links do menu na página
+    try {
+      const linksMenu = Array.from(document.querySelectorAll('a[href*="controlador.php?acao="]')).map(a => a.href);
+      const linkMinuta = linksMenu.find(h => h.includes('minuta_cadastrar'));
+      const linkRel = linksMenu.find(h => h.includes('relatorio_geral_listar'));
+      const targetUrl = linkMinuta || linkRel;
+      if (targetUrl) {
+        const resp = await fetch(targetUrl, { credentials: 'same-origin' });
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer();
+          const html = new TextDecoder('iso-8859-1').decode(buf);
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          const docSel = doc.getElementById('selNovoLocalizador') || doc.getElementById('selLocalizador');
+          if (docSel && docSel.options && docSel.options.length > 2) {
+            const list = Array.from(docSel.options)
+              .filter(o => o.value && o.value !== 'null' && o.value !== '')
+              .map(o => ({ value: String(o.value).trim(), text: o.text.trim() }));
+            if (list.length > 0) {
+              window._eprocCatalogoLocalizadores2G = list;
+              try { sessionStorage.setItem('eproc_catalogo_localizadores_2g', JSON.stringify(list)); } catch (e) {}
+              return list;
+            }
+          }
+        }
+      }
+    } catch (eNav) {}
+
+    return [];
+  }
+
   async function obterLocalizadoresRelatorioGeral() {
     if (window._eprocCatalogoLocalizadoresRelatorio && window._eprocCatalogoLocalizadoresRelatorio.length > 0) {
       return window._eprocCatalogoLocalizadoresRelatorio;
@@ -10448,6 +10528,8 @@
       // 3. Limpeza completa dos campos do formulário conforme a tela ativa
       if (ehTelaDeMovimentacao()) {
         resetarFormularioMovimentacao();
+      } else if (ehTelaDeIntimacao()) {
+        resetarFormularioIntimacao();
       } else if (ehTelaDeMinuta()) {
         resetarFormularioCompletamente();
         aplicarClassificacaoNaTela(null);
@@ -10640,6 +10722,82 @@
 
 
 
+            // 4. [v3.5.5] Garantia absoluta de payload para o Módulo de Intimações
+            if (window._eprocItemIntimacaoAtual && window._eprocItemIntimacaoAtual.item) {
+              const ctxInt = window._eprocItemIntimacaoAtual;
+              const itInt = ctxInt.item;
+              const setChave = (chave, valor) => {
+                const prefixo = chave + '|';
+                const idx = partes.findIndex(p => p.startsWith(prefixo));
+                if (idx !== -1) {
+                  partes[idx] = prefixo + valor;
+                } else {
+                  partes.push(prefixo + valor);
+                }
+              };
+
+              if (ctxInt.idEventoSelecionado) {
+                setChave('IdEventoJudicial', ctxInt.idEventoSelecionado);
+              }
+
+              // Garante sinLocalizadores = 'L' (Localizadores selecionados)
+              setChave('sinLocalizadores', ctxInt.sinLocalizadores || 'L');
+
+              // Garante IdNovoLocalizador
+              if (ctxInt.idNovoLocalizadorSelecionado && ctxInt.idNovoLocalizadorSelecionado !== 'null') {
+                setChave('IdNovoLocalizador', ctxInt.idNovoLocalizadorSelecionado);
+              } else {
+                setChave('IdNovoLocalizador', '');
+              }
+
+              // Garante NumIdLocalizadorDesativar para todos os localizadores a remover
+              partes = partes.filter(p => !p.startsWith('NumIdLocalizadorDesativar'));
+              if (Array.isArray(ctxInt.arrIdsDesativar) && ctxInt.arrIdsDesativar.length > 0) {
+                ctxInt.arrIdsDesativar.forEach((idDes, idx) => {
+                  partes.push('NumIdLocalizadorDesativar' + idx + '|' + idDes);
+                });
+              }
+              if (ctxInt.modoPolo) {
+                setChave('opcoes_avancadas', 'porPolo');
+                if (itInt.prazoMP && itInt.prazoMP !== '-') {
+                  setChave('chkSelMPF', 'S');
+                  setChave('txtPrazoMPF', String(itInt.prazoMP).trim());
+                }
+                if (itInt.prazoAutores && itInt.prazoAutores !== '-') {
+                  setChave('chkSelPrazoAutores', 'S');
+                  setChave('txtPrazoAutores', String(itInt.prazoAutores).trim());
+                }
+                if (itInt.prazoReus && itInt.prazoReus !== '-') {
+                  setChave('chkSelPrazoReus', 'S');
+                  setChave('txtPrazoReus', String(itInt.prazoReus).trim());
+                }
+                if (itInt.prazoInteressados && itInt.prazoInteressados !== '-') {
+                  setChave('chkSelPrazoInteressados', 'S');
+                  setChave('txtPrazoInteressados', String(itInt.prazoInteressados).trim());
+                }
+              } else if (ctxInt.modoTipoParte) {
+                setChave('opcoes_avancadas', 'porTipoDeParte');
+                if (itInt.prazoEspEnt && itInt.prazoEspEnt !== '-') {
+                  setChave('chkSelEntPrazoEspecial', 'S');
+                  setChave('txtPrazoEntPrazoEspecial', String(itInt.prazoEspEnt).trim());
+                }
+                if (itInt.prazoSimpEnt && itInt.prazoSimpEnt !== '-') {
+                  setChave('chkSelEntPrazoSimples', 'S');
+                  setChave('txtPrazoEntPrazoSimples', String(itInt.prazoSimpEnt).trim());
+                }
+                if (itInt.prazoSimpDemais && itInt.prazoSimpDemais !== '-') {
+                  setChave('chkSelNaoEntPrazoSimples', 'S');
+                  setChave('txtPrazoNaoEntPrazoSimples', String(itInt.prazoSimpDemais).trim());
+                }
+                if (itInt.prazoDPU && itInt.prazoDPU !== '-') {
+                  setChave('chkSelDPU', 'S');
+                  setChave('txtPrazoDPU', String(itInt.prazoDPU).trim());
+                }
+              }
+              setChave('txtPrazoIgual', '');
+              addLog(`📤 Payload Intimação confirmado: Evento=${ctxInt.idEventoSelecionado} | sinLoc=${ctxInt.sinLocalizadores || 'L'} | IdNovoLoc=${ctxInt.idNovoLocalizadorSelecionado || 'null'} | Desativar=[${(ctxInt.arrIdsDesativar || []).join(', ')}] | opcoes_avancadas=${ctxInt.modoPolo ? 'porPolo' : 'porTipoDeParte'} | MP=${itInt.prazoMP || '-'} dias`, 'info');
+            }
+
             listaDados = partes.join(',');
 
           }
@@ -10702,9 +10860,9 @@
 
         background: #ffffff;
 
-        border: 1px solid #cfd8dc;
+        border: 1px solid #cbd5e1;
 
-        border-radius: 6px;
+        border-radius: 8px;
 
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
@@ -10712,11 +10870,11 @@
 
         line-height: 1.45;
 
-        width: 420px;
+        width: 440px;
 
         max-width: calc(100vw - 24px);
 
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
+        box-shadow: 0 8px 30px rgba(15, 23, 42, 0.22);
 
         color: #1e293b;
 
@@ -10983,46 +11141,59 @@
       }
 
       .rito-module-tabs {
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
         background: #f1f5f9;
-        padding: 4px;
+        padding: 6px;
         border-radius: 8px;
         border: 1px solid #cbd5e1;
         margin-bottom: 8px;
       }
 
+      .rito-module-row-1 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+      }
+
+      .rito-module-row-2 {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 5px;
+      }
+
       .rito-btn-modulo {
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
         justify-content: center;
-        gap: 3px;
-        padding: 5px 2px;
+        gap: 6px;
+        padding: 7px 6px;
         border-radius: 6px;
-        border: 1px solid transparent;
-        background: transparent;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
         color: #475569;
-        font-size: 10.5px;
+        font-size: 11.5px;
         font-weight: 700;
         line-height: 1.2;
         white-space: nowrap;
         cursor: pointer;
         transition: all 0.15s ease;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
       }
 
       .rito-btn-modulo:hover:not(.active) {
-        background: #ffffff;
+        background: #f8fafc;
         color: #15803d;
-        border-color: #cbd5e1;
+        border-color: #94a3b8;
       }
 
       .rito-btn-modulo.active {
         background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
         color: #ffffff;
         border-color: #14532d;
-        box-shadow: 0 2px 5px rgba(21, 128, 61, 0.28);
+        box-shadow: 0 2px 6px rgba(21, 128, 61, 0.3);
       }
 
       .rito-btn-modulo svg {
@@ -11030,7 +11201,7 @@
         height: 15px;
         stroke: currentColor;
         fill: none;
-        stroke-width: 2;
+        stroke-width: 2.2;
         stroke-linecap: round;
         stroke-linejoin: round;
         flex-shrink: 0;
@@ -11760,7 +11931,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.3</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.5.5</span></span>
 
         </div>
 
@@ -11787,32 +11958,33 @@
           </div>
 
           <div class="rito-module-tabs">
+            <div class="rito-module-row-1">
+              <button type="button" id="btn-modulo-minutas" class="rito-btn-modulo ${moduloAtivo === 'minutas' ? 'active' : ''}" title="Módulo de Preferências de Minutas">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+                <span>Minutas</span>
+              </button>
 
-            <button type="button" id="btn-modulo-minutas" class="rito-btn-modulo ${moduloAtivo === 'minutas' ? 'active' : ''}" title="Módulo de Preferências de Minutas">
-              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
-              <span>Minutas</span>
-            </button>
+              <button type="button" id="btn-modulo-relatorios" class="rito-btn-modulo ${moduloAtivo === 'relatorios' ? 'active' : ''}" title="Módulo de Preferências de Relatório Geral">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <span>Relatórios</span>
+              </button>
 
-            <button type="button" id="btn-modulo-relatorios" class="rito-btn-modulo ${moduloAtivo === 'relatorios' ? 'active' : ''}" title="Módulo de Preferências de Relatório Geral">
-              <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-              <span>Relatórios</span>
-            </button>
+              <button type="button" id="btn-modulo-movimentacoes" class="rito-btn-modulo ${moduloAtivo === 'movimentacoes' ? 'active' : ''}" title="Módulo de Preferências de Movimentação Processual">
+                <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span>Movimentações</span>
+              </button>
+            </div>
+            <div class="rito-module-row-2">
+              <button type="button" id="btn-modulo-area-minutas" class="rito-btn-modulo ${moduloAtivo === 'area_minutas' ? 'active' : ''}" title="Módulo de Preferências da Área de Minutas (Documentos)">
+                <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                <span>Documentos</span>
+              </button>
 
-            <button type="button" id="btn-modulo-movimentacoes" class="rito-btn-modulo ${moduloAtivo === 'movimentacoes' ? 'active' : ''}" title="Módulo de Preferências de Movimentação Processual">
-              <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-              <span>Movimentações</span>
-            </button>
-
-            <button type="button" id="btn-modulo-area-minutas" class="rito-btn-modulo ${moduloAtivo === 'area_minutas' ? 'active' : ''}" title="Módulo de Preferências da Área de Minutas (Documentos)">
-              <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-              <span>Documentos</span>
-            </button>
-
-            <button type="button" id="btn-modulo-intimacoes" class="rito-btn-modulo ${moduloAtivo === 'intimacoes' ? 'active' : ''}" title="Módulo de Preferências de Intimação Eletrônica">
-              <svg viewBox="0 0 24 24"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/><line x1="2" y1="3" x2="22" y2="21"/></svg>
-              <span>Intimações</span>
-            </button>
-
+              <button type="button" id="btn-modulo-intimacoes" class="rito-btn-modulo ${moduloAtivo === 'intimacoes' ? 'active' : ''}" title="Módulo de Preferências de Intimação Eletrônica">
+                <svg viewBox="0 0 24 24"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/><line x1="2" y1="3" x2="22" y2="21"/></svg>
+                <span>Intimações</span>
+              </button>
+            </div>
           </div>
 
           <div class="rito-card-value" id="rito-status-tela" style="font-size:11.5px; line-height:1.4;">
@@ -15021,8 +15193,24 @@
       if (chkMovPref) chkMovPref.checked = true;
       const chkUrgente = document.getElementById('chkIntimacaoUrgente');
       if (chkUrgente) chkUrgente.checked = false;
+
+      if (typeof window.limparCamposPreferenciaPorTipoParte === 'function') {
+        try { window.limparCamposPreferenciaPorTipoParte(); } catch (e) {}
+      }
+      if (typeof window.limparCamposPreferenciaPorPolo === 'function') {
+        try { window.limparCamposPreferenciaPorPolo(); } catch (e) {}
+      }
+      if (typeof window.limparCamposPartes === 'function') {
+        try { window.limparCamposPartes(); } catch (e) {}
+      }
+
+      const txtPrazoIgual = document.getElementById('txtPrazoIgual');
+      if (txtPrazoIgual) txtPrazoIgual.value = '';
+      const txtDataIgual = document.getElementById('txtDataIgual');
+      if (txtDataIgual) txtDataIgual.value = '';
+
       const selNovoLoc = document.getElementById('selNovoLocalizador');
-      if (selNovoLoc) selNovoLoc.value = '';
+      if (selNovoLoc) selNovoLoc.value = 'null';
       const selDesativar = document.getElementById('selLocalizadorDesativar');
       if (selDesativar) {
         Array.from(selDesativar.options).forEach(o => { o.selected = false; });
@@ -15030,6 +15218,432 @@
       const chkEnc = document.getElementById('chkEncadeamentoIntimar');
       if (chkEnc) chkEnc.checked = false;
     } catch (e) {}
+  }
+
+  // [v3.5.5] Garante que #fldOpcoesAvancadas e #fldAlterarLocalizadores existam no DOM e tenham opções
+  async function garantirEstruturaDomOpcoesAvancadasELocalizadores() {
+    const form = document.getElementById('frmProcessoCitacao') || document.querySelector('form');
+    if (!form) return;
+
+    const fldAcoes = document.getElementById('fldAcoes');
+    const divAreaDados = document.getElementById('divInfraAreaDados');
+
+    // 1. Garante #fldOpcoesAvancadas com #porTipoDeParte, #porPolo e campos de prazo
+    if (!document.getElementById('fldOpcoesAvancadas') || !document.getElementById('porPolo') || !document.getElementById('txtPrazoMPF')) {
+      const wrapperOp = document.createElement('div');
+      wrapperOp.id = 'divResultado';
+      wrapperOp.style.display = 'block';
+      wrapperOp.innerHTML = `
+        <fieldset id="fldOpcoesAvancadas" class="infraFieldset" style="margin-top: 15px; width: 100%; display: block;">
+          <legend class="infraLegendOpcional">&nbsp;<img src="infra_css/imagens/menos.gif" title="Ocultar/Exibir Opções Avançadas" id="imgStatusConteudoAcoesNoProcesso" onclick="infraAbrirFecharElementoHTML('conteudoAcoesNoProcesso','imgStatusConteudoAcoesNoProcesso')">&nbsp;Opções Avançadas&nbsp;</legend>
+          <div id="conteudoAcoesNoProcesso" style="display: block;">
+            <div style="margin: 8px 0 12px 0;">
+              <label style="margin-right: 40px; cursor: pointer;">
+                <input type="radio" id="porTipoDeParte" name="opcoes_avancadas" value="porTipoDeParte" class="infraRadio" onclick="if(typeof checkTipoDeParte==='function')checkTipoDeParte(true);"> Por Tipo de Parte
+              </label>
+              <label id="lblPorPolo" style="cursor: pointer;">
+                <input type="radio" id="porPolo" name="opcoes_avancadas" value="porPolo" class="infraRadio" onclick="if(typeof checkPorPolo==='function')checkPorPolo(true);"> Por Pólo
+              </label>
+            </div>
+            <hr style="margin: 6px 0 10px 0;">
+            <!-- Container Por Tipo de Parte -->
+            <div class="tipoParte" style="display: none;">
+              <div class="divLinha" style="margin-bottom: 6px;">
+                <input type="checkbox" id="chkSelTodosTipoParte" name="chkSelTodosTipoParte" class="infraCheckbox" onchange="if(typeof onChangeChkSelTodosTipoParte==='function')onChangeChkSelTodosTipoParte();">
+                <label for="chkSelTodosTipoParte"><b><u>Todos</u></b></label>
+                <span style="margin-left: 120px;">Prazo: <input type="text" id="txtPrazoTodos" name="txtPrazoTodos" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoTodos==='function')onKeyUpTxtPrazoTodos();" onchange="if(typeof onChangeTxtPrazoTodos==='function')onChangeTxtPrazoTodos();"> dias</span>
+                <input type="hidden" id="txtDataTodos" name="txtDataTodos" value="">
+                <input type="checkbox" id="chkSelIntimacaoUrgenteTodos" name="chkSelIntimacaoUrgenteTodos" style="margin-left: 15px;"> Intimação Urgente (Todos)
+              </div>
+              <div id="linhaTipoParteEntPrazoEspecial" class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelEntPrazoEspecial" name="chkSelEntPrazoEspecial" class="infraCheckbox" onchange="if(typeof onChangeChkSelEntPrazoEspecial==='function')onChangeChkSelEntPrazoEspecial();">
+                <label for="chkSelEntPrazoEspecial" style="color: #d00; font-weight: bold;"><u>Entidades com prazo especial</u></label>
+                <span style="margin-left: 45px;">Prazo: <input type="text" id="txtPrazoEntPrazoEspecial" name="txtPrazoEntPrazoEspecial" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoEntPrazoEspecial==='function')onKeyUpTxtPrazoEntPrazoEspecial();" onchange="if(typeof onChangeTxtPrazoEntPrazoEspecial==='function')onChangeTxtPrazoEntPrazoEspecial();"> dias</span>
+                <input type="hidden" id="txtDataEntPrazoEspecial" name="txtDataEntPrazoEspecial" value="">
+                <input type="checkbox" id="chkSelParteIntimacaoUrgenteEntPrazoEspecial" name="chkSelParteIntimacaoUrgenteEntPrazoEspecial" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div id="linhaTipoParteEntPrazoSimples" class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelEntPrazoSimples" name="chkSelEntPrazoSimples" class="infraCheckbox" onchange="if(typeof onChangeChkSelEntPrazoSimples==='function')onChangeChkSelEntPrazoSimples();">
+                <label for="chkSelEntPrazoSimples" style="color: #e68a00; font-weight: bold;"><u>Entidades com prazo simples</u></label>
+                <span style="margin-left: 48px;">Prazo: <input type="text" id="txtPrazoEntPrazoSimples" name="txtPrazoEntPrazoSimples" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoEntPrazoSimples==='function')onKeyUpTxtPrazoEntPrazoSimples();" onchange="if(typeof onChangeTxtPrazoEntPrazoSimples==='function')onChangeTxtPrazoEntPrazoSimples();"> dias</span>
+                <input type="hidden" id="txtDataEntPrazoSimples" name="txtDataEntPrazoSimples" value="">
+                <input type="checkbox" id="chkSelParteIntimacaoUrgenteEntPrazoSimples" name="chkSelParteIntimacaoUrgenteEntPrazoSimples" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelNaoEntPrazoSimples" name="chkSelNaoEntPrazoSimples" class="infraCheckbox" onchange="if(typeof onChangeChkSelNaoEntPrazoSimples==='function')onChangeChkSelNaoEntPrazoSimples();">
+                <label for="chkSelNaoEntPrazoSimples" style="color: #0000ee; font-weight: bold;"><u>Partes com prazo simples</u></label>
+                <span style="margin-left: 65px;">Prazo: <input type="text" id="txtPrazoNaoEntPrazoSimples" name="txtPrazoNaoEntPrazoSimples" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoNaoEntPrazoSimples==='function')onKeyUpTxtPrazoNaoEntPrazoSimples();" onchange="if(typeof onChangeTxtPrazoNaoEntPrazoSimples==='function')onChangeTxtPrazoNaoEntPrazoSimples();"> dias</span>
+                <input type="hidden" id="txtDataNaoEntPrazoSimples" name="txtDataNaoEntPrazoSimples" value="">
+                <input type="checkbox" id="chkSelParteIntimacaoUrgenteNaoEntPrazoSimples" name="chkSelParteIntimacaoUrgenteNaoEntPrazoSimples" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelDPU" name="chkSelDPU" class="infraCheckbox" onchange="if(typeof onChangeChkSelDPU==='function')onChangeChkSelDPU();">
+                <label for="chkSelDPU" style="color: #008000; font-weight: bold;"><u>DPU e Escritórios de Prática Jurídica</u></label>
+                <span style="margin-left: 12px;">Prazo: <input type="text" id="txtPrazoDPU" name="txtPrazoDPU" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoDPU==='function')onKeyUpTxtPrazoDPU();" onchange="if(typeof onChangeTxtPrazoDPU==='function')onChangeTxtPrazoDPU();"> dias</span>
+                <input type="hidden" id="txtDataDPU" name="txtDataDPU" value="">
+                <input type="checkbox" id="chkSelParteIntimacaoUrgenteDPU" name="chkSelParteIntimacaoUrgenteDPU" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px;">
+                <input type="checkbox" id="chkSelPeritosECia" name="chkSelPeritosECia" class="infraCheckbox" onchange="if(typeof onChangeChkSelPeritosECia==='function')onChangeChkSelPeritosECia();">
+                <label for="chkSelPeritosECia" style="color: #808080; font-weight: bold;"><u>Peritos, Autoridades Coatoras, Unidades Externas e APS já incluídas</u></label>
+                <span style="margin-left: 12px;">Prazo: <input type="text" id="txtPrazoPeritosECia" name="txtPrazoPeritosECia" class="infraText" style="width: 55px;"> dias</span>
+                <input type="hidden" id="txtDataPeritosECia" name="txtDataPeritosECia" value="">
+                <input type="checkbox" id="chkSelParteIntimacaoUrgentePeritosECia" name="chkSelParteIntimacaoUrgentePeritosECia" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div id="linhaTipoParteEntQQPrazo" class="divLinha" style="display: none;">
+                <input type="checkbox" id="chkSelEntQQPrazo" name="chkSelEntQQPrazo">
+                <input type="text" id="txtPrazoEntQQPrazo" name="txtPrazoEntQQPrazo" value="">
+                <input type="hidden" id="txtDataEntQQPrazo" name="txtDataEntQQPrazo" value="">
+                <input type="checkbox" id="chkSelParteIntimacaoUrgenteEntQQPrazo" name="chkSelParteIntimacaoUrgenteEntQQPrazo">
+              </div>
+            </div>
+            <!-- Container Por Pólo -->
+            <div class="porPolo" style="display: block;">
+              <div class="divLinha" style="margin-bottom: 6px;">
+                <input type="checkbox" id="chkSelTodosPolo" name="chkSelTodosPolo" class="infraCheckbox" onchange="if(typeof onChangeChkSelTodosPolo==='function')onChangeChkSelTodosPolo();">
+                <label for="chkSelTodosPolo"><b><u>Todos</u></b></label>
+                <span style="margin-left: 140px;">Prazo: <input type="text" id="txtPrazoTodosPolo" name="txtPrazoTodosPolo" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoTodosPolo==='function')onKeyUpTxtPrazoTodosPolo();" onchange="if(typeof onChangeTxtPrazoTodosPolo==='function')onChangeTxtPrazoTodosPolo();"> dias</span>
+                <input type="hidden" id="txtDataTodosPolo" name="txtDataTodosPolo" value="">
+                <input type="checkbox" id="chkSelPrazoIntimacaoUrgenteTodos" name="chkSelPrazoIntimacaoUrgenteTodos" style="margin-left: 15px;"> Intimação Urgente (Todos)
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelPrazoAutores" name="chkSelPrazoAutores" class="infraCheckbox" onchange="if(typeof onChangeChkSelPrazoAutores==='function')onChangeChkSelPrazoAutores();">
+                <label for="chkSelPrazoAutores" style="color: #008000; font-weight: bold;"><u>Polo Ativo</u></label>
+                <span style="margin-left: 100px;">Prazo: <input type="text" id="txtPrazoAutores" name="txtPrazoAutores" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoAutores==='function')onKeyUpTxtPrazoAutores();" onchange="if(typeof onChangeTxtPrazoAutores==='function')onChangeTxtPrazoAutores();"> dias</span>
+                <input type="hidden" id="txtDataAutores" name="txtDataAutores" value="">
+                <input type="checkbox" id="chkSelPrazoIntimacaoUrgenteAutores" name="chkSelPrazoIntimacaoUrgenteAutores" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelPrazoReus" name="chkSelPrazoReus" class="infraCheckbox" onchange="if(typeof onChangeChkSelPrazoReus==='function')onChangeChkSelPrazoReus();">
+                <label for="chkSelPrazoReus" style="color: #d00; font-weight: bold;"><u>Polo Passivo</u></label>
+                <span style="margin-left: 86px;">Prazo: <input type="text" id="txtPrazoReus" name="txtPrazoReus" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoReus==='function')onKeyUpTxtPrazoReus();" onchange="if(typeof onChangeTxtPrazoReus==='function')onChangeTxtPrazoReus();"> dias</span>
+                <input type="hidden" id="txtDataReus" name="txtDataReus" value="">
+                <input type="checkbox" id="chkSelPrazoIntimacaoUrgenteReus" name="chkSelPrazoIntimacaoUrgenteReus" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelPrazoInteressados" name="chkSelPrazoInteressados" class="infraCheckbox" onchange="if(typeof onChangeChkSelPrazoInteressados==='function')onChangeChkSelPrazoInteressados();">
+                <label for="chkSelPrazoInteressados" style="color: #cc6600; font-weight: bold;"><u>Terceiro/Interessado</u></label>
+                <span style="margin-left: 38px;">Prazo: <input type="text" id="txtPrazoInteressados" name="txtPrazoInteressados" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoInteressados==='function')onKeyUpTxtPrazoInteressados();" onchange="if(typeof onChangeTxtPrazoInteressados==='function')onChangeTxtPrazoInteressados();"> dias</span>
+                <input type="hidden" id="txtDataInteressados" name="txtDataInteressados" value="">
+                <input type="checkbox" id="chkSelPrazoIntimacaoUrgenteInteressados" name="chkSelPrazoIntimacaoUrgenteInteressados" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelMPF" name="chkSelMPF" class="infraCheckbox" onchange="if(typeof onChangeChkSelMPF==='function')onChangeChkSelMPF();">
+                <label for="chkSelMPF" style="color: #0000ee; font-weight: bold;"><u>MP (Custos iuris)</u></label>
+                <span style="margin-left: 56px;">Prazo: <input type="text" id="txtPrazoMPF" name="txtPrazoMPF" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoMPF==='function')onKeyUpTxtPrazoMPF();" onchange="if(typeof onChangeTxtPrazoMPF==='function')onChangeTxtPrazoMPF();"> dias</span>
+                <input type="hidden" id="txtDataMPF" name="txtDataMPF" value="">
+                <input type="checkbox" id="chkSelPrazoIntimacaoUrgenteMPF" name="chkSelPrazoIntimacaoUrgenteMPF" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px; padding-left: 20px;">
+                <input type="checkbox" id="chkSelOutros" name="chkSelOutros" class="infraCheckbox" onchange="if(typeof onChangeChkSelOutros==='function')onChangeChkSelOutros();">
+                <label for="chkSelOutros" style="color: #666; font-weight: bold;"><u>Outros</u></label>
+                <span style="margin-left: 118px;">Prazo: <input type="text" id="txtPrazoOutros" name="txtPrazoOutros" class="infraText" style="width: 55px;" onkeyup="if(typeof onKeyUpTxtPrazoOutros==='function')onKeyUpTxtPrazoOutros();" onchange="if(typeof onChangeTxtPrazoOutros==='function')onChangeTxtPrazoOutros();"> dias</span>
+                <input type="hidden" id="txtDataOutros" name="txtDataOutros" value="">
+                <input type="checkbox" id="chkSelPrazoIntimacaoUrgenteOutros" name="chkSelPrazoIntimacaoUrgenteOutros" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+              <div class="divLinha" style="margin-bottom: 6px;">
+                <input type="checkbox" id="chkSelPeritosECiaPolo" name="chkSelPeritosECiaPolo" class="infraCheckbox" onchange="if(typeof onChangeChkSelPeritosECiaPolo==='function')onChangeChkSelPeritosECiaPolo();">
+                <label for="chkSelPeritosECiaPolo" style="color: #808080; font-weight: bold;"><u>Peritos, Autoridades Coatoras, Unidades Externas e APS já incluídas</u></label>
+                <span style="margin-left: 12px;">Prazo: <input type="text" id="txtPrazoPeritosECiaPolo" name="txtPrazoPeritosECiaPolo" class="infraText" style="width: 55px;"> dias</span>
+                <input type="hidden" id="txtDataPeritosECiaPolo" name="txtDataPeritosECiaPolo" value="">
+                <input type="checkbox" id="chkSelPrazoIntimacaoUrgentePeritos" name="chkSelPrazoIntimacaoUrgentePeritos" style="margin-left: 15px;"> Intimação Urgente
+              </div>
+            </div>
+          </div>
+        </fieldset>
+      `;
+      if (fldAcoes && fldAcoes.parentNode === form) {
+        form.insertBefore(wrapperOp, fldAcoes);
+      } else if (divAreaDados && divAreaDados.parentNode === form) {
+        divAreaDados.insertAdjacentElement('afterend', wrapperOp);
+      } else {
+        form.appendChild(wrapperOp);
+      }
+    }
+
+    // 2. Garante #fldAlterarLocalizadores com #selNovoLocalizador e #selLocalizadorDesativar
+    if (!document.getElementById('selNovoLocalizador')) {
+      const fldLoc = document.createElement('fieldset');
+      fldLoc.id = 'fldAlterarLocalizadores';
+      fldLoc.className = 'infraFieldset fldAlterarLocalizadoresIntimacao';
+      fldLoc.style.cssText = 'margin-top: 15px; width: 100%; display: block;';
+      fldLoc.innerHTML = `
+        <legend class="infraLegendOpcional">&nbsp;<img src="infra_css/imagens/menos.gif" title="Ocultar/Exibir Localizadores" id="imgStatusConteudoAlterarLocalizadores" onclick="infraAbrirFecharElementoHTML('conteudoAlterarLocalizadores','imgStatusConteudoAlterarLocalizadores')">&nbsp;Gerenciar Localizadores&nbsp;</legend>
+        <div id="conteudoAlterarLocalizadores" style="display: block; padding: 8px;">
+          <input type="hidden" id="hdnExigeLocalizador" name="hdnExigeLocalizador" value="N">
+          <div style="margin-bottom: 10px;">
+            <label for="selLocalizadorDesativar" class="infraLabelOpcional" style="display: block;">Localizadores atuais do processo (selecione para desativar):</label>
+            <select id="selLocalizadorDesativar" name="selLocalizadorDesativar[]" multiple="multiple" class="infraSelect" style="width: 60%; min-height: 60px;"></select>
+          </div>
+          <div>
+            <label for="selNovoLocalizador" class="infraLabelOpcional" style="display: block;">Novo localizador:</label>
+            <select id="selNovoLocalizador" name="selNovoLocalizador" class="infraSelect" style="width: 60%;">
+              <option value="null">MANTER LOCALIZADOR ATUAL</option>
+            </select>
+          </div>
+        </div>
+      `;
+      if (fldAcoes && fldAcoes.parentNode === form) {
+        form.insertBefore(fldLoc, fldAcoes);
+      } else {
+        form.appendChild(fldLoc);
+      }
+    }
+
+    // 3. Popula #selNovoLocalizador e #selLocalizadorDesativar com o catálogo unificado da Unidade
+    const selNovoLoc = document.getElementById('selNovoLocalizador');
+    const selDesativar = document.getElementById('selLocalizadorDesativar');
+    try {
+      const locsUnidade = await obterOuCarregarCatalogoLocalizadoresUnidade();
+      if (Array.isArray(locsUnidade) && locsUnidade.length > 0) {
+        for (const loc of locsUnidade) {
+          const id = String(loc.value || loc.IdLocalizadorOrgao || loc.id || '').trim();
+          const label = String(loc.text || loc.label || '').trim() || id;
+          if (!id) continue;
+          if (selNovoLoc && !Array.from(selNovoLoc.options).some(o => String(o.value) === id)) {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.text = label;
+            selNovoLoc.appendChild(opt);
+          }
+          if (selDesativar && !Array.from(selDesativar.options).some(o => String(o.value) === id)) {
+            const optD = document.createElement('option');
+            optD.value = id;
+            optD.text = label;
+            selDesativar.appendChild(optD);
+          }
+        }
+        if (selNovoLoc) addLog(`✓ ${selNovoLoc.options.length - 1} localizador(es) da Unidade carregado(s) para Intimações.`, 'info');
+      }
+    } catch (eLoc) {
+      console.warn('Erro ao popular localizadores de Intimações via catálogo:', eLoc);
+    }
+  }
+
+  // [v3.5.5] Carrega dinamicamente as seções do Evento de Citação/Intimação (#fldOpcoesAvancadas e #fldAlterarLocalizadores)
+  // sem permitir reload da página (substituindo o form.submit() bloqueado durante o lote).
+  async function carregarSecoesEventoIntimacaoSemReload(idEvento) {
+    if (!idEvento || idEvento === 'null') return false;
+
+    // Desativa o handler nativo de submit automático na mudança da combo #selEventoJudicial
+    if (window.jQuery) {
+      try { window.jQuery('#selEventoJudicial').off('change'); } catch (e) {}
+    }
+
+    const jaCarregadoParaMesmoEvento =
+      window._eprocUltimoEventoIntimacaoCarregado === String(idEvento) &&
+      document.getElementById('fldOpcoesAvancadas') &&
+      document.getElementById('porPolo') &&
+      document.getElementById('txtPrazoMPF') &&
+      document.getElementById('selNovoLocalizador') &&
+      document.getElementById('selNovoLocalizador').options.length >= 2;
+
+    if (!jaCarregadoParaMesmoEvento) {
+      const form = document.getElementById('frmProcessoCitacao');
+      if (form) {
+        try {
+          addLog(`🔄 Carregando Opções Avançadas e Localizadores para o evento [${idEvento}]...`, 'info');
+          const actionAttr = form.getAttribute('action') || window.location.href;
+          const actionUrl = new URL(actionAttr.replace(/&amp;/g, '&'), window.location.href).href;
+
+          const formData = new FormData(form);
+          formData.set('selEventoJudicial', String(idEvento));
+          const hdnPrefVal = (document.getElementById('hdnPreferencia') && document.getElementById('hdnPreferencia').value) || '';
+          formData.set('hdnNumIdValorSelecionadoCombo', hdnPrefVal);
+          formData.set('isChangePreferencia', '1');
+          // Garante que o POST ao controlador apenas renderize os campos do evento, sem tentar gravar preferência incompleta
+          formData.set('txtDescricaoCadastro', '');
+          formData.set('hdnAcaoPreferencia', '');
+
+          let resp = await fetch(actionUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: formData
+          });
+
+          if (resp.ok) {
+            const buf = await resp.arrayBuffer();
+            const html = new TextDecoder('iso-8859-1').decode(buf);
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const docForm = doc.getElementById('frmProcessoCitacao');
+            const docOpcoes = doc.getElementById('fldOpcoesAvancadas') || doc.getElementById('porPolo');
+            const docLoc = doc.getElementById('fldAlterarLocalizadores') || doc.getElementById('selNovoLocalizador');
+
+            if (docForm && (docOpcoes || docLoc)) {
+              const curArea = document.getElementById('divInfraAreaDados');
+              const curAcoes = document.getElementById('fldAcoes');
+              const docArea = docForm.querySelector('#divInfraAreaDados');
+              const docAcoes = docForm.querySelector('#fldAcoes');
+
+              if (curArea && curAcoes && docArea && docAcoes && curArea.parentNode === form && curAcoes.parentNode === form) {
+                const nodesToRemove = [];
+                let ptr = curArea;
+                while (ptr && ptr !== curAcoes) {
+                  nodesToRemove.push(ptr);
+                  ptr = ptr.nextSibling;
+                }
+
+                const nodesToInsert = [];
+                let dPtr = docArea;
+                while (dPtr && dPtr !== docAcoes) {
+                  nodesToInsert.push(dPtr);
+                  dPtr = dPtr.nextSibling;
+                }
+
+                const scriptsParaExecutar = [];
+                for (const node of nodesToInsert) {
+                  const imported = document.importNode(node, true);
+                  if (imported.tagName === 'SCRIPT') {
+                    scriptsParaExecutar.push(imported.textContent || '');
+                  } else if (imported.querySelectorAll) {
+                    imported.querySelectorAll('script').forEach(s => {
+                      scriptsParaExecutar.push(s.textContent || '');
+                      s.remove();
+                    });
+                  }
+                  form.insertBefore(imported, curAcoes);
+                }
+
+                for (const oldNode of nodesToRemove) {
+                  oldNode.remove();
+                }
+
+                for (const code of scriptsParaExecutar) {
+                  if (!code || !code.trim()) continue;
+                  if (/executarJS\d+/i.test(code) || /form\.submit\s*\(/i.test(code)) continue;
+                  try { window.eval(code); } catch (eEval) {}
+                }
+              } else {
+                // Injeção pontual caso a estrutura de irmãos difira
+                const refNode = curAcoes || null;
+                ['divResultado', 'fldOpcoesAvancadas', 'fldAlterarLocalizadores'].forEach(idSec => {
+                  const secDoc = doc.getElementById(idSec);
+                  if (secDoc && !document.getElementById(idSec)) {
+                    const imp = document.importNode(secDoc, true);
+                    if (imp.querySelectorAll) imp.querySelectorAll('script').forEach(s => s.remove());
+                    if (refNode && refNode.parentNode === form) {
+                      form.insertBefore(imp, refNode);
+                    } else {
+                      form.appendChild(imp);
+                    }
+                  }
+                });
+              }
+
+              window._eprocUltimoEventoIntimacaoCarregado = String(idEvento);
+              addLog(`✓ Opções Avançadas e Gerenciar Localizadores carregados do servidor.`, 'info');
+            }
+          }
+        } catch (errFetch) {
+          console.warn('[eproc Intimações] Aviso ao buscar seções do evento via fetch:', errFetch);
+        }
+      }
+    }
+
+    // Garante 100% que #fldOpcoesAvancadas e #fldAlterarLocalizadores existam no DOM e tenham opções
+    await garantirEstruturaDomOpcoesAvancadasELocalizadores();
+
+    // Desativa novamente qualquer listener change que tenha vindo no novo #selEventoJudicial
+    const selEvNovo = document.getElementById('selEventoJudicial');
+    if (selEvNovo) {
+      selEvNovo.value = String(idEvento);
+      Array.from(selEvNovo.options).forEach(o => { o.selected = (String(o.value) === String(idEvento)); });
+      if (window.jQuery) {
+        try { window.jQuery(selEvNovo).off('change'); } catch (e) {}
+      }
+    }
+
+    // Garante visibilidade plena de Opções Avançadas e Gerenciar Localizadores
+    ['divResultado', 'fldOpcoesAvancadas', 'conteudoAcoesNoProcesso', 'fldAlterarLocalizadores', 'conteudoAlterarLocalizadores'].forEach(idVis => {
+      const elVis = document.getElementById(idVis);
+      if (elVis) {
+        elVis.style.display = 'block';
+        elVis.style.visibility = 'visible';
+      }
+    });
+    const divAguardando = document.getElementById('divAguardandoIntimacaoBloco');
+    if (divAguardando) divAguardando.style.display = 'none';
+
+    const hdnCrim = document.getElementById('hdnOrgaoCompetenciaCriminal');
+    if (hdnCrim && hdnCrim.value === 'S') {
+      if (typeof window.habilitarCamposTipoParteCriminal === 'function') {
+        try { window.habilitarCamposTipoParteCriminal(); } catch (e) {}
+      }
+    } else {
+      if (typeof window.habilitarCamposTipoParteNaoCriminal === 'function') {
+        try { window.habilitarCamposTipoParteNaoCriminal(); } catch (e) {}
+      }
+    }
+
+    window._eprocUltimoEventoIntimacaoCarregado = String(idEvento);
+    return true;
+  }
+
+  // [v3.5.5] Preenche prazo e marca checkbox de parte/polo sem usar .trigger('click') (que desmarcaria o checkbox e limparia o prazo!)
+  function preencherPrazoParteIntimacao(txtId, chkId, fnKeyUp, fnChangeTxt, fnChangeChk, labelLog, valorPrazo) {
+    if (!valorPrazo || String(valorPrazo).trim() === '' || String(valorPrazo).trim() === '-') return false;
+    const valStr = String(valorPrazo).trim();
+    const txtEl = document.getElementById(txtId);
+    const chkEl = document.getElementById(chkId);
+
+    // 1. Marca o checkbox PRIMEIRO para que onChangeChkSel* nunca veja o checkbox desmarcado e apague o texto
+    if (chkEl) {
+      chkEl.disabled = false;
+      chkEl.checked = true;
+      chkEl.setAttribute('checked', 'checked');
+      if (window.jQuery) {
+        try { window.jQuery(chkEl).prop('disabled', false).prop('checked', true); } catch (e) {}
+      }
+    }
+
+    // 2. Preenche o campo de prazo em dias
+    if (txtEl) {
+      destacarCampoAtivo(txtEl, `Prazo ${labelLog}`, `${valStr} dias`);
+      txtEl.disabled = false;
+      txtEl.readOnly = false;
+      txtEl.value = valStr;
+      txtEl.setAttribute('value', valStr);
+      if (window.jQuery) {
+        try {
+          window.jQuery(txtEl).prop('disabled', false).prop('readonly', false).val(valStr).trigger('input').trigger('keyup').trigger('change');
+        } catch (e) {}
+      } else {
+        dispararEventos(txtEl, ['input', 'keyup', 'change', 'blur']);
+      }
+      if (fnKeyUp && typeof window[fnKeyUp] === 'function') {
+        try { window[fnKeyUp](); } catch (e) {}
+      }
+      if (fnChangeTxt && typeof window[fnChangeTxt] === 'function') {
+        try { window[fnChangeTxt](); } catch (e) {}
+      }
+    }
+
+    // 3. Confirma o checkbox marcado e dispara apenas 'change' (NUNCA 'click')
+    if (chkEl) {
+      destacarCampoAtivo(chkEl, `Marcar ${labelLog}`, 'Marcado');
+      chkEl.disabled = false;
+      chkEl.checked = true;
+      chkEl.setAttribute('checked', 'checked');
+      if (window.jQuery) {
+        try {
+          window.jQuery(chkEl).prop('disabled', false).prop('checked', true).trigger('change');
+        } catch (e) {}
+      } else {
+        dispararEventos(chkEl, ['change']);
+      }
+      if (fnChangeChk && typeof window[fnChangeChk] === 'function') {
+        try { window[fnChangeChk](); } catch (e) {}
+      }
+      // Garantia final pós-handlers do eproc
+      chkEl.checked = true;
+    }
+
+    if (txtEl && txtEl.value !== valStr) {
+      txtEl.value = valStr;
+    }
+
+    addLog(`✓ ${labelLog}: Prazo preenchido com ${valStr} dias e opção marcada.`, 'info');
+    return true;
   }
 
   async function executarDiagnosticoPreVooIntimacoes() {
@@ -15049,18 +15663,22 @@
 
     const eventosDisponiveis = Array.from(selEvento.options)
       .filter(o => o.value && o.value !== 'null')
-      .map(o => ({ value: o.value, texto: o.text.trim(), norm: normalizar(o.text) }));
+      .map(o => ({ value: String(o.value).trim(), texto: o.text.trim(), norm: normalizar(o.text) }));
 
     addLog(`✓ ${eventosDisponiveis.length} evento(s) judicial(is) mapeado(s) na combo.`, 'info');
 
     const itens = itensCarregados || [];
     let faltantes = 0;
     for (const item of itens) {
+      const codEv = String(item.codigoEvento || '').trim();
       const normEv = normalizar(item.evento);
-      const match = eventosDisponiveis.find(e => e.norm === normEv || e.norm.includes(normEv) || normEv.includes(e.norm));
+      const match = (codEv && eventosDisponiveis.find(e => e.value === codEv)) ||
+                    eventosDisponiveis.find(e => e.norm === normEv || e.norm.includes(normEv) || normEv.includes(e.norm));
       if (!match) {
-        addLog(`⚠️ Item #${item.num} ("${item.nome}"): Evento "${item.evento}" não encontrado no catálogo da tela!`, 'warn');
+        addLog(`⚠️ Item #${item.num} ("${item.nome}"): Evento "${item.evento}" (${codEv || 'sem cód.'}) não encontrado no catálogo da tela!`, 'warn');
         faltantes++;
+      } else {
+        addLog(`✓ Item #${item.num} ("${item.nome}"): Evento [${match.value}] "${match.texto}" validado.`, 'info');
       }
     }
 
@@ -15070,6 +15688,25 @@
       addLog(`⚠️ Atenção: ${faltantes} evento(s) da planilha não foram localizados no catálogo nativo.`, 'warn');
     }
 
+    // Validação de Localizadores contra o catálogo da Unidade
+    try {
+      const catLocs = await obterOuCarregarCatalogoLocalizadoresUnidade();
+      addLog(`✓ ${catLocs.length} localizador(es) da Unidade mapeados para auditoria.`, 'info');
+      for (const item of itens) {
+        if (item.novoLocalizador && item.novoLocalizador !== '-' && !normalizar(item.novoLocalizador).includes('manter')) {
+          const matchLoc = catLocs.find(c => normalizar(c.text).includes(normalizar(item.novoLocalizador)) || normalizar(item.novoLocalizador).includes(normalizar(c.text)));
+          if (matchLoc) {
+            addLog(`✓ Item #${item.num} ("${item.nome}"): Novo localizador "${matchLoc.text}" (ID: ${matchLoc.value}) validado.`, 'info');
+          } else {
+            addLog(`⚠️ Item #${item.num} ("${item.nome}"): Novo localizador "${item.novoLocalizador}" não encontrado no catálogo da Unidade.`, 'warn');
+          }
+        }
+        if (item.locDesativar && item.locDesativar !== '-' && !normalizar(item.locDesativar).includes('nao remover')) {
+          addLog(`ℹ️ Item #${item.num} ("${item.nome}"): Localizador(es) a desativar: "${item.locDesativar}".`, 'info');
+        }
+      }
+    } catch (eLocDiag) {}
+
     return true;
   }
 
@@ -15078,6 +15715,8 @@
 
     ultimoAvisoEproc = '';
     gravacaoEmAndamento = true;
+    window._eprocItemAtual = null;
+    window._eprocItemIntimacaoAtual = null;
 
     resetarFormularioIntimacao();
     await sleep(150);
@@ -15089,6 +15728,7 @@
       grupo: item.grupo || '(Nenhum)',
       acaoPref: item.acaoPreferencial ? 'Marcada' : 'Não marcada',
       evento: item.evento,
+      codigoEvento: item.codigoEvento || '',
       modoPrazos: item.modoPrazos || 'Por Polo',
       prazoMP: item.prazoMP || '',
       prazoAutores: item.prazoAutores || '',
@@ -15103,8 +15743,7 @@
       sucesso: false
     };
 
-    try {
-      // 1. Abre subformulário de Preferências (#divPrefOpcoes)
+    const aplicarCamposCabecalhoPreferenciaIntimacao = () => {
       if (typeof window.exibirFormPreferencias === 'function') {
         try { window.exibirFormPreferencias('salvar'); } catch (e) {}
       } else {
@@ -15120,9 +15759,8 @@
       if (hdnAcao) hdnAcao.value = 'salvar';
       const hdnPref = document.getElementById('hdnPreferencia');
       if (hdnPref) hdnPref.value = '';
-      await sleep(200);
 
-      // 2. Nome da Preferência (#txtDescricaoCadastro)
+      // Nome da Preferência (#txtDescricaoCadastro)
       const txtDescricaoCadastro = document.getElementById('txtDescricaoCadastro');
       if (!txtDescricaoCadastro) throw new Error('Campo txtDescricaoCadastro não encontrado na tela de Intimação Eletrônica.');
       destacarCampoAtivo(txtDescricaoCadastro, 'Nome da Preferência', item.nome);
@@ -15130,25 +15768,26 @@
       txtDescricaoCadastro.value = item.nome;
       dispararEventos(txtDescricaoCadastro, ['input', 'change', 'blur']);
 
-      // 3. Tipo de Preferência (#rdUnidade / #rdIndividual)
+      // Tipo de Preferência (#rdUnidade / #rdIndividual)
       if (window.jQuery) {
         window.jQuery('input[name=rdPrefTipo]').prop('disabled', false);
       }
       const usarIndividual = normalizar(item.tipo) === 'individual';
       const rdTipoAlvo = document.getElementById(usarIndividual ? 'rdIndividual' : 'rdUnidade');
       if (rdTipoAlvo) {
-        destacarCampoAtivo(rdTipoAlvo, 'Tipo de Preferência', usarIndividual ? 'Individual' : 'Unidade');
+        rdTipoAlvo.disabled = false;
         rdTipoAlvo.checked = true;
         dispararEventos(rdTipoAlvo, ['change', 'click']);
       }
 
-      // 4. Grupo de Preferência (#selFormularioPersonalizacaoGrupo)
+      // Grupo de Preferência (#selFormularioPersonalizacaoGrupo)
       const selGrupoEl = document.getElementById('selFormularioPersonalizacaoGrupo');
       const temGrupoDefinido = !!(item.grupo && String(item.grupo).trim() !== '' && String(item.grupo).trim() !== '-' && normalizar(item.grupo) !== 'nenhum');
       if (selGrupoEl) {
         if (temGrupoDefinido) {
           const optMatch = Array.from(selGrupoEl.options).find(o => normalizar(o.text) === normalizar(item.grupo));
           if (optMatch) {
+            selGrupoEl.disabled = false;
             selGrupoEl.value = optMatch.value;
             optMatch.selected = true;
           }
@@ -15161,7 +15800,7 @@
         }
       }
 
-      // 5. Radio "Como salvar seleção de localizadores": (#rdIndividuais, #rdMarcarTodos, #rdDesmarcarTodos)
+      // Radio "Como salvar seleção de localizadores": (#rdIndividuais, #rdMarcarTodos, #rdDesmarcarTodos)
       if (window.jQuery) {
         window.jQuery('input[name=rdPrefLocalizadores]').prop('disabled', false);
       }
@@ -15173,7 +15812,7 @@
         dispararEventos(rdLoc, ['change', 'click']);
       }
 
-      // 6. Opções padrão: Ação Preferencial e Marcar como Padrão
+      // Opções: Ação Preferencial e Marcar como Padrão
       const chkMovPref = document.getElementById('chkMovPreferencial');
       if (chkMovPref) {
         chkMovPref.disabled = false;
@@ -15186,15 +15825,25 @@
         chkPadrao.checked = !!item.padrao;
         dispararEventos(chkPadrao, ['change']);
       }
+    };
 
-      // 7. Evento Judicial (#selEventoJudicial)
-      const selEvento = document.getElementById('selEventoJudicial');
+    try {
+      // PASSOS 1 e 2: Abre Preferências e marca Unidade, Localizadores selecionados, Ação Preferencial e Descrição
+      aplicarCamposCabecalhoPreferenciaIntimacao();
+      await sleep(150);
+
+      // PASSO 3: Selecionar Evento de citação/intimação (#selEventoJudicial) e carregar Opções Avançadas + Localizadores
+      let selEvento = document.getElementById('selEventoJudicial');
       let idEventoSelecionado = '';
       if (selEvento) {
+        if (window.jQuery) {
+          try { window.jQuery(selEvento).off('change'); } catch (e) {}
+        }
+
         let optEvento = null;
 
         // 1ª Prioridade Absoluta: Busca pelo Código do Evento se informado na planilha
-        if (item.codigoEvento && /^\d+$/.test(item.codigoEvento)) {
+        if (item.codigoEvento && /^\d+$/.test(String(item.codigoEvento).trim())) {
           optEvento = Array.from(selEvento.options).find(o => String(o.value).trim() === String(item.codigoEvento).trim());
         }
 
@@ -15202,13 +15851,11 @@
         if (!optEvento && item.evento && item.evento !== '-' && item.evento.length >= 4) {
           const normEvento = normalizar(item.evento);
 
-          // Correspondência exata
           optEvento = Array.from(selEvento.options).find(o => {
             if (!o.value || o.value === 'null') return false;
             return normalizar(o.text) === normEvento;
           });
 
-          // Opção contém o evento ou vice-versa
           if (!optEvento) {
             optEvento = Array.from(selEvento.options).find(o => {
               if (!o.value || o.value === 'null') return false;
@@ -15217,7 +15864,6 @@
             });
           }
 
-          // Fallback por palavra-chave crítica (ex.: "vista ao mp para parecer")
           if (!optEvento && (normEvento.includes('vista ao mp') || normEvento.includes('parecer'))) {
             optEvento = Array.from(selEvento.options).find(o => {
               if (!o.value || o.value === 'null') return false;
@@ -15230,18 +15876,26 @@
         if (optEvento) {
           selEvento.value = optEvento.value;
           optEvento.selected = true;
-          idEventoSelecionado = optEvento.value;
-          dados.evento = optEvento.text;
-          dados.codigoEvento = optEvento.value;
-          destacarCampoAtivo(selEvento, 'Evento Judicial', `[${optEvento.value}] ${optEvento.text}`);
-          dispararEventos(selEvento, ['change']);
-          addLog(`✓ Evento Judicial selecionado com precisão: [${optEvento.value}] ${optEvento.text}`, 'info');
+          idEventoSelecionado = String(optEvento.value).trim();
+          dados.evento = optEvento.text.trim();
+          dados.codigoEvento = idEventoSelecionado;
+          destacarCampoAtivo(selEvento, 'Evento Judicial', `[${idEventoSelecionado}] ${dados.evento}`);
+          addLog(`✓ Passo 3: Evento de citação/intimação selecionado: [${idEventoSelecionado}] ${dados.evento}`, 'info');
+
+          // Carrega #fldOpcoesAvancadas e #fldAlterarLocalizadores sem recarregar a página
+          await carregarSecoesEventoIntimacaoSemReload(idEventoSelecionado);
+          await sleep(250);
+
+          // Reafirma os campos do cabeçalho de Preferências após a injeção das seções
+          aplicarCamposCabecalhoPreferenciaIntimacao();
         } else {
-          addLog(`⚠️ Evento "${item.evento || item.codigoEvento}" não encontrado na combo selEventoJudicial!`, 'warn');
+          throw new Error(`Evento "${item.evento || item.codigoEvento}" não encontrado na combo selEventoJudicial.`);
         }
+      } else {
+        throw new Error('Combo #selEventoJudicial não encontrada na tela.');
       }
 
-      // [v3.5.3] Sincronização rigorosa pós-seleção do Evento: aguarda os spin/ajax do eproc
+      // Aguarda qualquer indicador de carregamento do eproc finalizar
       await esperarCond(() => {
         const sp1 = document.getElementById('aguardandoCarregandoEventosDoc');
         const sp2 = document.getElementById('imgLoadingEventoEncadeadoCitacaoIntimacao');
@@ -15250,442 +15904,244 @@
         const ok2 = !sp2 || sp2.style.display === 'none' || !sp2.offsetParent;
         const ok3 = !sp3 || sp3.style.visibility === 'hidden' || sp3.style.display === 'none' || !sp3.offsetParent;
         return ok1 && ok2 && ok3;
-      }, 8000);
+      }, 4000);
 
-      // Aguarda os elementos das Opções Avançadas de Prazo estarem presentes no DOM
-      await esperarCond(() => {
-        return document.getElementById('porPolo') ||
-               document.getElementById('lblPorPolo') ||
-               document.getElementById('porTipoDeParte') ||
-               document.querySelector('input[type="radio"][value="porPolo"]');
-      }, 10000);
-      await sleep(400); // Pausa para garantir que qualquer inicializarIntimacao() do eproc tenha concluído
+      // PASSO 4: Garantir Opções Avançadas aberto e selecionar "Por Pólo" ou "Por Tipo de Parte"
+      const fldOpAv = document.getElementById('fldOpcoesAvancadas');
+      const contOpAv = document.getElementById('conteudoAcoesNoProcesso');
+      if (fldOpAv) fldOpAv.style.display = 'block';
+      if (contOpAv && contOpAv.style.display === 'none') {
+        if (typeof window.infraAbrirFecharElementoHTML === 'function') {
+          try { window.infraAbrirFecharElementoHTML('conteudoAcoesNoProcesso', 'imgStatusConteudoAcoesNoProcesso'); } catch (e) {}
+        }
+        contOpAv.style.display = 'block';
+      }
 
-      // 8. Modo de Prazos e Preenchimento dos Prazos [v3.5.3: Acionamento multi-camada e garantia ativa de Por Pólo]
-      const modoPolo = item.normModoPrazos.includes('polo');
-      const modoTipoParte = item.normModoPrazos.includes('tipo') || item.normModoPrazos.includes('parte');
+      const modoPolo = item.normModoPrazos.includes('polo') || (!item.normModoPrazos.includes('tipo') && !item.normModoPrazos.includes('parte'));
+      const modoTipoParte = !modoPolo;
 
       if (modoPolo) {
-        const ativarModoPoloNativo = () => {
-          // 1. Link / Âncora nativa
-          const lblPolo = document.getElementById('lblPorPolo') || document.querySelector('a[onclick*="checkPorPolo"]');
-          if (lblPolo) { try { lblPolo.click(); } catch (e) {} }
-
-          // 2. Função interna do eproc
-          if (typeof window.checkPorPolo === 'function') {
-            try { window.checkPorPolo(true); } catch (e) {}
-          }
-
-          // 3. jQuery nativo da página
-          if (window.jQuery) {
-            try {
-              window.jQuery('#porTipoDeParte').prop('checked', false);
-              window.jQuery('#porPolo').prop('checked', true).trigger('click').trigger('change');
-              window.jQuery('.tipoParte').css('display', 'none');
-              window.jQuery('.porPolo').css('display', 'block');
-            } catch (e) {}
-          }
-
-          // 4. Elemento DOM direto
-          const rdPolo = document.getElementById('porPolo') || document.querySelector('input[type="radio"][value="porPolo"]');
-          const rdTipo = document.getElementById('porTipoDeParte') || document.querySelector('input[type="radio"][value="porTipoDeParte"]');
-          if (rdTipo) rdTipo.checked = false;
-          if (rdPolo) {
-            rdPolo.checked = true;
-            try { rdPolo.click(); } catch (e) {}
-            dispararEventos(rdPolo, ['change', 'click']);
-          }
-
-          if (typeof window.alterarCoresPartes === 'function') try { window.alterarCoresPartes(false); } catch (e) {}
-          if (typeof window.alterarCoresPolo === 'function') try { window.alterarCoresPolo(true); } catch (e) {}
-        };
-
-        // Aciona ativação inicial
-        ativarModoPoloNativo();
-        await sleep(350);
-
-        // Laço de confirmação ativa: garante que Por Pólo permaneceu selecionado
-        for (let retry = 0; retry < 5; retry++) {
-          const rdCheck = document.getElementById('porPolo') || document.querySelector('input[type="radio"][value="porPolo"]');
-          if (rdCheck && rdCheck.checked) break;
-          ativarModoPoloNativo();
-          await sleep(250);
+        // Ativa "Por Pólo" antes de preencher os prazos (evita que limparCamposPreferenciaPorPolo apague os prazos depois)
+        if (typeof window.checkPorPolo === 'function') {
+          try { window.checkPorPolo(true); } catch (e) {}
         }
-
-        const rdPoloFinal = document.getElementById('porPolo') || document.querySelector('input[type="radio"][value="porPolo"]');
-        if (rdPoloFinal) {
-          destacarCampoAtivo(rdPoloFinal, 'Modo de Prazos', 'Por Pólo');
+        const rdPolo = document.getElementById('porPolo');
+        const rdTipo = document.getElementById('porTipoDeParte');
+        if (rdTipo) {
+          rdTipo.checked = false;
+          rdTipo.removeAttribute('checked');
         }
-
-        // Aguarda os inputs do container .porPolo estarem montados e visíveis
-        await esperarCond(() => {
-          const el = document.getElementById('txtPrazoMPF');
-          return el && (el.offsetParent !== null || window.getComputedStyle(el).display !== 'none');
-        }, 5000);
+        if (rdPolo) {
+          rdPolo.disabled = false;
+          rdPolo.checked = true;
+          rdPolo.setAttribute('checked', 'checked');
+          destacarCampoAtivo(rdPolo, 'Opções Avançadas', 'Por Pólo');
+        }
+        if (window.jQuery) {
+          try {
+            window.jQuery('#porTipoDeParte').prop('checked', false);
+            window.jQuery('#porPolo').prop('checked', true);
+            window.jQuery('.tipoParte').css('display', 'none');
+            window.jQuery('.porPolo').css('display', 'block');
+          } catch (e) {}
+        } else {
+          document.querySelectorAll('.tipoParte').forEach(el => { el.style.display = 'none'; });
+          document.querySelectorAll('.porPolo').forEach(el => { el.style.display = 'block'; });
+        }
+        addLog('✓ Passo 4: Opções Avançadas aberto e modo "Por Pólo" selecionado.', 'info');
         await sleep(200);
 
-        // Preenchimento de Prazo MP (Custos Legis / Custos Iuris)
-        if (item.prazoMP && item.prazoMP !== '-') {
-          const txtMP = document.getElementById('txtPrazoMPF');
-          const chkMP = document.getElementById('chkSelMPF');
-          if (txtMP) {
-            destacarCampoAtivo(txtMP, 'Prazo MP', item.prazoMP);
-            txtMP.disabled = false;
-            txtMP.value = item.prazoMP;
-            if (window.jQuery) {
-              window.jQuery(txtMP).val(item.prazoMP).trigger('input').trigger('change').trigger('keyup').trigger('blur');
-            } else {
-              dispararEventos(txtMP, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoMPF === 'function') {
-              try { window.onKeyUpTxtPrazoMPF(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoMPF === 'function') {
-              try { window.onChangeTxtPrazoMPF(); } catch (e) {}
-            }
-          }
-          if (chkMP) {
-            destacarCampoAtivo(chkMP, 'Marcar MP', 'true');
-            chkMP.disabled = false;
-            chkMP.checked = true;
-            try { chkMP.click(); } catch (e) {}
-            if (!chkMP.checked) chkMP.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkMP).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkMP, ['change', 'click']);
-            }
-            if (typeof window.onChangeChkSelMPF === 'function') {
-              try { window.onChangeChkSelMPF(); } catch (e) {}
-            }
-          }
-          addLog(`✓ Intimação MP configurada: Prazo de ${item.prazoMP} dias com caixa de seleção marcada.`, 'info');
-        }
-
-        // Preenchimento de Prazo Polo Ativo / Autores
-        if (item.prazoAutores && item.prazoAutores !== '-') {
-          const txtAutores = document.getElementById('txtPrazoAutores');
-          const chkAutores = document.getElementById('chkSelPrazoAutores');
-          if (txtAutores) {
-            destacarCampoAtivo(txtAutores, 'Prazo Autores', item.prazoAutores);
-            txtAutores.disabled = false;
-            txtAutores.value = item.prazoAutores;
-            if (window.jQuery) {
-              window.jQuery(txtAutores).val(item.prazoAutores).trigger('input').trigger('change').trigger('keyup');
-            } else {
-              dispararEventos(txtAutores, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoAutores === 'function') {
-              try { window.onKeyUpTxtPrazoAutores(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoAutores === 'function') {
-              try { window.onChangeTxtPrazoAutores(); } catch (e) {}
-            }
-          }
-          if (chkAutores) {
-            destacarCampoAtivo(chkAutores, 'Marcar Autores', 'true');
-            chkAutores.disabled = false;
-            chkAutores.checked = true;
-            try { chkAutores.click(); } catch (e) {}
-            if (!chkAutores.checked) chkAutores.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkAutores).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkAutores, ['change', 'click']);
-            }
-            if (typeof window.onChangeChkSelPrazoAutores === 'function') {
-              try { window.onChangeChkSelPrazoAutores(); } catch (e) {}
-            }
-          }
-        }
-
-        // Preenchimento de Prazo Polo Passivo / Réus
-        if (item.prazoReus && item.prazoReus !== '-') {
-          const txtReus = document.getElementById('txtPrazoReus');
-          const chkReus = document.getElementById('chkSelPrazoReus');
-          if (txtReus) {
-            destacarCampoAtivo(txtReus, 'Prazo Réus', item.prazoReus);
-            txtReus.disabled = false;
-            txtReus.value = item.prazoReus;
-            if (window.jQuery) {
-              window.jQuery(txtReus).val(item.prazoReus).trigger('input').trigger('change').trigger('keyup');
-            } else {
-              dispararEventos(txtReus, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoReus === 'function') {
-              try { window.onKeyUpTxtPrazoReus(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoReus === 'function') {
-              try { window.onChangeTxtPrazoReus(); } catch (e) {}
-            }
-          }
-          if (chkReus) {
-            destacarCampoAtivo(chkReus, 'Marcar Réus', 'true');
-            chkReus.disabled = false;
-            chkReus.checked = true;
-            try { chkReus.click(); } catch (e) {}
-            if (!chkReus.checked) chkReus.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkReus).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkReus, ['change', 'click']);
-            }
-            if (typeof window.onChangeChkSelPrazoReus === 'function') {
-              try { window.onChangeChkSelPrazoReus(); } catch (e) {}
-            }
-          }
-        }
-
-        // Preenchimento de Prazo Interessados / Terceiros
-        if (item.prazoInteressados && item.prazoInteressados !== '-') {
-          const txtInter = document.getElementById('txtPrazoInteressados');
-          const chkInter = document.getElementById('chkSelPrazoInteressados');
-          if (txtInter) {
-            destacarCampoAtivo(txtInter, 'Prazo Interessados', item.prazoInteressados);
-            txtInter.disabled = false;
-            txtInter.value = item.prazoInteressados;
-            if (window.jQuery) {
-              window.jQuery(txtInter).val(item.prazoInteressados).trigger('input').trigger('change').trigger('keyup');
-            } else {
-              dispararEventos(txtInter, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoInteressados === 'function') {
-              try { window.onKeyUpTxtPrazoInteressados(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoInteressados === 'function') {
-              try { window.onChangeTxtPrazoInteressados(); } catch (e) {}
-            }
-          }
-          if (chkInter) {
-            destacarCampoAtivo(chkInter, 'Marcar Interessados', 'true');
-            chkInter.disabled = false;
-            chkInter.checked = true;
-            try { chkInter.click(); } catch (e) {}
-            if (!chkInter.checked) chkInter.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkInter).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkInter, ['change', 'click']);
-            }
-            if (typeof window.onChangeChkSelPrazoInteressados === 'function') {
-              try { window.onChangeChkSelPrazoInteressados(); } catch (e) {}
-            }
-          }
-        }
+        // PASSO 5: Preencher os prazos de acordo com a parte (Por Pólo)
+        preencherPrazoParteIntimacao('txtPrazoMPF', 'chkSelMPF', 'onKeyUpTxtPrazoMPF', 'onChangeTxtPrazoMPF', 'onChangeChkSelMPF', 'MP (Custos iuris)', item.prazoMP);
+        preencherPrazoParteIntimacao('txtPrazoAutores', 'chkSelPrazoAutores', 'onKeyUpTxtPrazoAutores', 'onChangeTxtPrazoAutores', 'onChangeChkSelPrazoAutores', 'Polo Ativo (Autores)', item.prazoAutores);
+        preencherPrazoParteIntimacao('txtPrazoReus', 'chkSelPrazoReus', 'onKeyUpTxtPrazoReus', 'onChangeTxtPrazoReus', 'onChangeChkSelPrazoReus', 'Polo Passivo (Réus)', item.prazoReus);
+        preencherPrazoParteIntimacao('txtPrazoInteressados', 'chkSelPrazoInteressados', 'onKeyUpTxtPrazoInteressados', 'onChangeTxtPrazoInteressados', 'onChangeChkSelPrazoInteressados', 'Terceiro/Interessado', item.prazoInteressados);
       } else if (modoTipoParte) {
-        // Ativação robusta do rádio "Por Tipo de Parte" no eproc
         if (typeof window.checkTipoDeParte === 'function') {
-          try { window.checkTipoDeParte(true); } catch (e) { console.warn('Erro ao chamar checkTipoDeParte:', e); }
+          try { window.checkTipoDeParte(true); } catch (e) {}
+        }
+        const rdTipo = document.getElementById('porTipoDeParte');
+        const rdPolo = document.getElementById('porPolo');
+        if (rdPolo) {
+          rdPolo.checked = false;
+          rdPolo.removeAttribute('checked');
+        }
+        if (rdTipo) {
+          rdTipo.disabled = false;
+          rdTipo.checked = true;
+          rdTipo.setAttribute('checked', 'checked');
+          destacarCampoAtivo(rdTipo, 'Opções Avançadas', 'Por Tipo de Parte');
         }
         if (window.jQuery) {
           try {
             window.jQuery('#porPolo').prop('checked', false);
-            window.jQuery('#porTipoDeParte').prop('checked', true).trigger('click').trigger('change');
-            window.jQuery('.tipoParte').css('display', 'block');
+            window.jQuery('#porTipoDeParte').prop('checked', true);
             window.jQuery('.porPolo').css('display', 'none');
+            window.jQuery('.tipoParte').css('display', 'block');
           } catch (e) {}
+        } else {
+          document.querySelectorAll('.porPolo').forEach(el => { el.style.display = 'none'; });
+          document.querySelectorAll('.tipoParte').forEach(el => { el.style.display = 'block'; });
         }
-        const rdTipoParte = document.getElementById('porTipoDeParte');
-        const rdPolo = document.getElementById('porPolo');
-        if (rdPolo) rdPolo.checked = false;
-        if (rdTipoParte) {
-          destacarCampoAtivo(rdTipoParte, 'Modo de Prazos', 'Por Tipo de Parte');
-          rdTipoParte.checked = true;
-          try { rdTipoParte.click(); } catch (e) {}
-          dispararEventos(rdTipoParte, ['change', 'click']);
-        }
-        if (typeof window.alterarCoresPartes === 'function') {
-          try { window.alterarCoresPartes(true); } catch (e) {}
-        }
-        if (typeof window.alterarCoresPolo === 'function') {
-          try { window.alterarCoresPolo(false); } catch (e) {}
-        }
-        await sleep(250);
+        addLog('✓ Passo 4: Opções Avançadas aberto e modo "Por Tipo de Parte" selecionado.', 'info');
+        await sleep(200);
 
-        if (item.prazoEspEnt && item.prazoEspEnt !== '-') {
-          const txtEsp = document.getElementById('txtPrazoEntPrazoEspecial');
-          const chkEsp = document.getElementById('chkSelEntPrazoEspecial');
-          if (txtEsp) {
-            destacarCampoAtivo(txtEsp, 'Prazo Especial Ent.', item.prazoEspEnt);
-            txtEsp.value = item.prazoEspEnt;
-            if (window.jQuery) {
-              window.jQuery(txtEsp).val(item.prazoEspEnt).trigger('input').trigger('change').trigger('keyup');
-            } else {
-              dispararEventos(txtEsp, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoEntPrazoEspecial === 'function') {
-              try { window.onKeyUpTxtPrazoEntPrazoEspecial(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoEntPrazoEspecial === 'function') {
-              try { window.onChangeTxtPrazoEntPrazoEspecial(); } catch (e) {}
-            }
-          }
-          if (chkEsp) {
-            destacarCampoAtivo(chkEsp, 'Marcar Especial Ent.', 'true');
-            chkEsp.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkEsp).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkEsp, ['change', 'click']);
-            }
-          }
-        }
-        if (item.prazoSimpEnt && item.prazoSimpEnt !== '-') {
-          const txtSimp = document.getElementById('txtPrazoEntPrazoSimples');
-          const chkSimp = document.getElementById('chkSelEntPrazoSimples');
-          if (txtSimp) {
-            destacarCampoAtivo(txtSimp, 'Prazo Simples Ent.', item.prazoSimpEnt);
-            txtSimp.value = item.prazoSimpEnt;
-            if (window.jQuery) {
-              window.jQuery(txtSimp).val(item.prazoSimpEnt).trigger('input').trigger('change').trigger('keyup');
-            } else {
-              dispararEventos(txtSimp, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoEntPrazoSimples === 'function') {
-              try { window.onKeyUpTxtPrazoEntPrazoSimples(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoEntPrazoSimples === 'function') {
-              try { window.onChangeTxtPrazoEntPrazoSimples(); } catch (e) {}
-            }
-          }
-          if (chkSimp) {
-            destacarCampoAtivo(chkSimp, 'Marcar Simples Ent.', 'true');
-            chkSimp.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkSimp).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkSimp, ['change', 'click']);
-            }
-          }
-        }
-        if (item.prazoSimpDemais && item.prazoSimpDemais !== '-') {
-          const txtDemais = document.getElementById('txtPrazoNaoEntPrazoSimples');
-          const chkDemais = document.getElementById('chkSelNaoEntPrazoSimples');
-          if (txtDemais) {
-            destacarCampoAtivo(txtDemais, 'Prazo Demais Partes', item.prazoSimpDemais);
-            txtDemais.value = item.prazoSimpDemais;
-            if (window.jQuery) {
-              window.jQuery(txtDemais).val(item.prazoSimpDemais).trigger('input').trigger('change').trigger('keyup');
-            } else {
-              dispararEventos(txtDemais, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoNaoEntPrazoSimples === 'function') {
-              try { window.onKeyUpTxtPrazoNaoEntPrazoSimples(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoNaoEntPrazoSimples === 'function') {
-              try { window.onChangeTxtPrazoNaoEntPrazoSimples(); } catch (e) {}
-            }
-          }
-          if (chkDemais) {
-            destacarCampoAtivo(chkDemais, 'Marcar Demais Partes', 'true');
-            chkDemais.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkDemais).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkDemais, ['change', 'click']);
-            }
-          }
-        }
-        if (item.prazoDPU && item.prazoDPU !== '-') {
-          const txtDPU = document.getElementById('txtPrazoDPU');
-          const chkDPU = document.getElementById('chkSelDPU');
-          if (txtDPU) {
-            destacarCampoAtivo(txtDPU, 'Prazo DPU', item.prazoDPU);
-            txtDPU.value = item.prazoDPU;
-            if (window.jQuery) {
-              window.jQuery(txtDPU).val(item.prazoDPU).trigger('input').trigger('change').trigger('keyup');
-            } else {
-              dispararEventos(txtDPU, ['input', 'change', 'keyup', 'blur']);
-            }
-            if (typeof window.onKeyUpTxtPrazoDPU === 'function') {
-              try { window.onKeyUpTxtPrazoDPU(); } catch (e) {}
-            }
-            if (typeof window.onChangeTxtPrazoDPU === 'function') {
-              try { window.onChangeTxtPrazoDPU(); } catch (e) {}
-            }
-          }
-          if (chkDPU) {
-            destacarCampoAtivo(chkDPU, 'Marcar DPU', 'true');
-            chkDPU.checked = true;
-            if (window.jQuery) {
-              window.jQuery(chkDPU).prop('checked', true).trigger('change').trigger('click');
-            } else {
-              dispararEventos(chkDPU, ['change', 'click']);
-            }
-          }
-        }
+        // PASSO 5: Preencher os prazos de acordo com a parte (Por Tipo de Parte)
+        preencherPrazoParteIntimacao('txtPrazoEntPrazoEspecial', 'chkSelEntPrazoEspecial', 'onKeyUpTxtPrazoEntPrazoEspecial', 'onChangeTxtPrazoEntPrazoEspecial', 'onChangeChkSelEntPrazoEspecial', 'Entidades c/ Prazo Especial', item.prazoEspEnt);
+        preencherPrazoParteIntimacao('txtPrazoEntPrazoSimples', 'chkSelEntPrazoSimples', 'onKeyUpTxtPrazoEntPrazoSimples', 'onChangeTxtPrazoEntPrazoSimples', 'onChangeChkSelEntPrazoSimples', 'Entidades c/ Prazo Simples', item.prazoSimpEnt);
+        preencherPrazoParteIntimacao('txtPrazoNaoEntPrazoSimples', 'chkSelNaoEntPrazoSimples', 'onKeyUpTxtPrazoNaoEntPrazoSimples', 'onChangeTxtPrazoNaoEntPrazoSimples', 'onChangeChkSelNaoEntPrazoSimples', 'Partes c/ Prazo Simples', item.prazoSimpDemais);
+        preencherPrazoParteIntimacao('txtPrazoDPU', 'chkSelDPU', 'onKeyUpTxtPrazoDPU', 'onChangeTxtPrazoDPU', 'onChangeChkSelDPU', 'DPU', item.prazoDPU);
       }
 
-      // Reafirmação defensiva do rádio Por Pólo antes de prosseguir
-      if (modoPolo) {
-        if (window.jQuery) {
-          window.jQuery('#porTipoDeParte').prop('checked', false);
-          window.jQuery('#porPolo').prop('checked', true);
-        }
-        const rdPoloReforco = document.getElementById('porPolo');
-        const rdTipoReforco = document.getElementById('porTipoDeParte');
-        if (rdTipoReforco) rdTipoReforco.checked = false;
-        if (rdPoloReforco) rdPoloReforco.checked = true;
-      }
+      // Garante que txtPrazoIgual fique vazio para não sobrescrever todas as partes ao carregar a preferência
+      const txtPrazoIgual = document.getElementById('txtPrazoIgual');
+      if (txtPrazoIgual) txtPrazoIgual.value = '';
 
-      // Prazo Geral / Igual para todos
-      if (item.prazoSimpDemais || item.prazoMP) {
-        const pVal = item.prazoMP || item.prazoSimpDemais;
-        const txtPrazoIgual = document.getElementById('txtPrazoIgual');
-        if (txtPrazoIgual) { txtPrazoIgual.value = pVal; dispararEventos(txtPrazoIgual, ['input', 'change', 'keyup']); }
-      }
-
-      // 9. Intimação Urgente
+      // Intimação Urgente
       const chkUrg = document.getElementById('chkIntimacaoUrgente');
       if (chkUrg) {
         chkUrg.checked = !!item.urgente;
         dispararEventos(chkUrg, ['change']);
       }
 
-      // 10. Novo Localizador (Destino)
+      // PASSO 6: Preencher Localizador Destino (Novo localizador: #selNovoLocalizador) e Localizadores a Desativar
+      const fldLoc = document.getElementById('fldAlterarLocalizadores');
+      const contLoc = document.getElementById('conteudoAlterarLocalizadores');
+      if (fldLoc) fldLoc.style.display = 'block';
+      if (contLoc) contLoc.style.display = 'block';
+
+      let idNovoLocalizadorSelecionado = '';
       const selNovoLoc = document.getElementById('selNovoLocalizador');
-      if (selNovoLoc && item.novoLocalizador && item.novoLocalizador !== '-') {
-        const normLoc = normalizar(item.novoLocalizador);
-        const optLoc = Array.from(selNovoLoc.options).find(o => {
-          if (!o.value || o.value === 'null') return false;
-          const oNorm = normalizar(o.text);
-          return oNorm === normLoc || oNorm.includes(normLoc) || normLoc.includes(oNorm);
-        });
-        if (optLoc) {
-          selNovoLoc.value = optLoc.value;
-          optLoc.selected = true;
-          destacarCampoAtivo(selNovoLoc, 'Novo Localizador', optLoc.text);
-          dispararEventos(selNovoLoc, ['change']);
+      const querNovoLoc = !!(item.novoLocalizador && item.novoLocalizador !== '-' && !normalizar(item.novoLocalizador).includes('manter'));
+
+      if (selNovoLoc) {
+        if (querNovoLoc) {
+          let optLoc = acharOpcaoLocalizador(selNovoLoc, item.novoLocalizador, false) ||
+                       acharOpcaoLocalizador(selNovoLoc, item.novoLocalizador, true);
+
+          if (!optLoc) {
+            // Tenta buscar no catálogo geral e injetar a option caso não existisse ainda
+            const cat = await obterOuCarregarCatalogoLocalizadoresUnidade();
+            const matchCat = cat.find(c => normalizar(c.text).includes(normalizar(item.novoLocalizador)) || normalizar(item.novoLocalizador).includes(normalizar(c.text)));
+            if (matchCat) {
+              optLoc = document.createElement('option');
+              optLoc.value = matchCat.value;
+              optLoc.text = matchCat.text;
+              selNovoLoc.appendChild(optLoc);
+            }
+          }
+
+          if (optLoc && optLoc.value && optLoc.value !== 'null') {
+            Array.from(selNovoLoc.options).forEach(o => { o.selected = (o === optLoc); });
+            selNovoLoc.value = optLoc.value;
+            optLoc.selected = true;
+            idNovoLocalizadorSelecionado = String(optLoc.value).trim();
+            dados.locPrincipal = optLoc.text.trim();
+            destacarCampoAtivo(selNovoLoc, 'Novo Localizador (Destino)', optLoc.text.trim());
+            dispararEventos(selNovoLoc, ['change']);
+            addLog(`✓ Passo 6: Novo localizador selecionado: "${optLoc.text.trim()}" (ID: ${idNovoLocalizadorSelecionado})`, 'info');
+          } else {
+            dados.locPrincipal = `⚠️ "${item.novoLocalizador}" não encontrado no catálogo da Unidade`;
+            dados.locPrincipalFallback = true;
+            addLog(`⚠️ Localizador destino "${item.novoLocalizador}" não encontrado na Unidade.`, 'warn');
+          }
         } else {
-          addLog(`⚠️ Localizador destino "${item.novoLocalizador}" não encontrado no selNovoLocalizador da unidade.`, 'warn');
+          selNovoLoc.value = 'null';
+          Array.from(selNovoLoc.options).forEach(o => { o.selected = (o.value === 'null'); });
+          idNovoLocalizadorSelecionado = '';
+          dados.locPrincipal = 'MANTER LOCALIZADOR ATUAL';
         }
       }
 
-      // 11. Localizadores a Desativar
+      // Localizadores a Desativar (#selLocalizadorDesativar)
       const selDesativar = document.getElementById('selLocalizadorDesativar');
+      const arrIdsDesativar = [];
       if (selDesativar) {
-        if (!item.locDesativar || item.locDesativar === '-' || normalizar(item.locDesativar).includes('nao remover')) {
-          Array.from(selDesativar.options).forEach(o => { o.selected = false; });
+        Array.from(selDesativar.options).forEach(o => {
+          o.selected = false;
+          o.removeAttribute('selected');
+        });
+        if (window.$) {
+          try { window.$('#selLocalizadorDesativar option').prop('selected', false); } catch (e) {}
+        }
+
+        const querDesativar = !!(item.locDesativar && item.locDesativar !== '-' && !normalizar(item.locDesativar).includes('nao remover') && !normalizar(item.locDesativar).includes('nenhum'));
+        if (querDesativar) {
+          const alvos = item.locDesativar.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+          const desativadosNomes = [];
+
+          for (const alvo of alvos) {
+            let optD = acharOpcaoLocalizador(selDesativar, alvo, false) || acharOpcaoLocalizador(selDesativar, alvo, true);
+            if (!optD && selNovoLoc) {
+              const optRef = acharOpcaoLocalizador(selNovoLoc, alvo, false) || acharOpcaoLocalizador(selNovoLoc, alvo, true);
+              if (optRef && optRef.value && optRef.value !== 'null') {
+                optD = document.createElement('option');
+                optD.value = optRef.value;
+                optD.text = optRef.text;
+                selDesativar.appendChild(optD);
+              }
+            }
+            if (optD && optD.value && optD.value !== 'null') {
+              optD.selected = true;
+              optD.setAttribute('selected', 'selected');
+              if (!arrIdsDesativar.includes(String(optD.value).trim())) {
+                arrIdsDesativar.push(String(optD.value).trim());
+                desativadosNomes.push(optD.text.trim());
+              }
+            }
+          }
+
+          if (window.$) {
+            try {
+              window.$('#selLocalizadorDesativar').val(arrIdsDesativar);
+              window.$('#selLocalizadorDesativar').trigger('change');
+            } catch (e) {}
+          }
+
+          dados.locDesativar = desativadosNomes.length > 0 ? desativadosNomes.join('; ') : '(Nenhum encontrado)';
+          addLog(`✓ Passo 6: Localizador(es) a desativar marcado(s): ${dados.locDesativar} (IDs: ${arrIdsDesativar.join(', ')})`, 'info');
         } else {
-          const alvos = item.locDesativar.split(/[;,]/).map(s => normalizar(s)).filter(Boolean);
-          Array.from(selDesativar.options).forEach(o => {
-            const oNorm = normalizar(o.text);
-            o.selected = alvos.some(a => oNorm === a || oNorm.includes(a));
-          });
+          dados.locDesativar = '(Nenhum - NÃO remover de localizador algum)';
         }
       }
 
-      // 12. Encadeamento
+      // Encadeamento
       const chkEnc = document.getElementById('chkEncadeamentoIntimar');
       if (chkEnc) {
         chkEnc.checked = !!item.encadeamentoIntimacao;
         dispararEventos(chkEnc, ['change']);
       }
 
-      instalarHookGravarPreferencias();
-      await sleep(150);
+      // Reafirmação final de todos os campos antes de clicar em #btnOK
+      aplicarCamposCabecalhoPreferenciaIntimacao();
+      if (modoPolo) {
+        const rdPoloFim = document.getElementById('porPolo');
+        const rdTipoFim = document.getElementById('porTipoDeParte');
+        if (rdTipoFim) rdTipoFim.checked = false;
+        if (rdPoloFim) rdPoloFim.checked = true;
+        if (item.prazoMP && item.prazoMP !== '-') {
+          const txtMP = document.getElementById('txtPrazoMPF');
+          const chkMP = document.getElementById('chkSelMPF');
+          if (txtMP) txtMP.value = String(item.prazoMP).trim();
+          if (chkMP) chkMP.checked = true;
+        }
+      }
 
-      // 13. Gravação da Preferência (#btnOK / validarPreferencias)
+      // Contexto ativo para garantia absoluta no hook gravarPreferencias(listaDados)
+      window._eprocItemIntimacaoAtual = {
+        item,
+        idEventoSelecionado,
+        idNovoLocalizadorSelecionado,
+        arrIdsDesativar,
+        sinLocalizadores: 'L',
+        modoPolo,
+        modoTipoParte
+      };
+
+      instalarHookGravarPreferencias();
+      await sleep(200);
+
+      // PASSO 7: Gravação da Preferência (#btnOK / validarPreferencias)
       const btnOK = document.getElementById('btnOK');
       if (btnOK) {
         btnOK.disabled = false;
@@ -15728,6 +16184,7 @@
       dados.sucesso = true;
       return dados;
     } finally {
+      window._eprocItemIntimacaoAtual = null;
       removerDestaqueCampo();
       gravacaoEmAndamento = false;
     }
@@ -16494,7 +16951,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.3</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.5.5</span>
 
           </h3>
 
