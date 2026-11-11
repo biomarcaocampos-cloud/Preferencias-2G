@@ -736,7 +736,7 @@
         btnGerenciador.innerHTML = '<span>👥</span> Abrir Localizadores do Órgão';
         btnGerenciador.title = 'Abre a tela oficial de Localizadores do Órgão no eproc';
       } else {
-        btnGerenciador.innerHTML = '<span>📋</span> Abrir Gerenciador de Preferências (Minutas)';
+        btnGerenciador.innerHTML = '<span>⚙️</span> Gerenciador de Preferências';
         btnGerenciador.title = 'Abre a tela oficial do eproc para visualizar ou editar preferências de minutas';
       }
     }
@@ -15894,7 +15894,7 @@
 
         <button type="button" class="rito-btn rito-btn-primary" id="btn-rito-iniciar" style="display:none;">
 
-          <span>🚀</span> Iniciar Criação em Lote
+          <span>▶️</span> Iniciar Criação em Lote
 
         </button>
 
@@ -15904,7 +15904,7 @@
 
         <button type="button" class="rito-btn rito-btn-danger" id="btn-rito-parar" style="display:none;">
 
-          <span>🛑</span> !Parar execução
+          <span>⏹️</span> Parar execução
 
         </button>
 
@@ -15930,12 +15930,12 @@
 
         <div style="margin-top:8px; border-top:1px solid #e2e8f0; padding-top:6px;">
           <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-visualizar-preferencias" style="width:100%; font-size:11.5px; margin-bottom:6px; background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; font-weight:700; display:${moduloAtivo === 'minutas' ? 'flex' : 'none'};" title="Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo">
-            <span>📊</span> Visualizar Preferências em Tabela (Minutas)
+            <span>🗓️</span> Tabela de Preferências
           </button>
 
           <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-abrir-gerenciador" style="width:100%; font-size:11.5px;" title="Abre a tela oficial do eproc para visualizar ou editar preferências">
 
-            <span>📋</span> Abrir Gerenciador de Preferências do eproc
+            <span>⚙️</span> Gerenciador de Preferências
 
           </button>
 
@@ -17796,7 +17796,7 @@
 
       btnParar.disabled = false;
 
-      btnParar.innerHTML = '<span>🛑</span> !Parar execução';
+      btnParar.innerHTML = '<span>⏹️</span> Parar execução';
 
       btnParar.style.display = 'none';
 
@@ -24431,6 +24431,251 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     return `<span title="${escapeHtmlViewer(texto)}">${escapeHtmlViewer(texto)}</span>`;
   }
 
+  function compararTextoVisualizador(a, b) {
+    const sa = String(a === null || a === undefined ? '' : a).trim();
+    const sb = String(b === null || b === undefined ? '' : b).trim();
+    const strip = (s) => s.replace(/^[^\p{L}\p{N}]+/u, '').trim() || s;
+    const ka = strip(sa);
+    const kb = strip(sb);
+    const cmp = ka.localeCompare(kb, 'pt-BR', { sensitivity: 'base', numeric: true });
+    if (cmp !== 0) return cmp;
+    return sa.localeCompare(sb, 'pt-BR', { sensitivity: 'base', numeric: true });
+  }
+
+  function elementoContemViewer(container, target) {
+    let cur = target;
+    while (cur) {
+      if (cur === container) return true;
+      cur = cur.parentNode;
+    }
+    return false;
+  }
+
+  function ehColunaBasicaViewer(colKey) {
+    return ['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial'].includes(colKey);
+  }
+
+  function coletarLocalizadoresToolbarViewer(linhas) {
+    const incluirSet = new Set();
+    const removerSet = new Set();
+    (linhas || []).forEach(r => {
+      const princ = String(r.localizadorPrincipal || '').trim();
+      if (princ) incluirSet.add(princ);
+      if (Array.isArray(r.localizadoresSecundarios)) {
+        r.localizadoresSecundarios.forEach(s => {
+          const v = String(s || '').trim();
+          if (v) incluirSet.add(v);
+        });
+      }
+      if (Array.isArray(r.localizadoresRemover)) {
+        r.localizadoresRemover.forEach(s => {
+          const v = String(s || '').trim();
+          if (v) removerSet.add(v);
+        });
+      }
+    });
+    return {
+      incluir: Array.from(incluirSet).sort(compararTextoVisualizador),
+      remover: Array.from(removerSet).sort(compararTextoVisualizador)
+    };
+  }
+
+  function obterValoresDistintosColunaViewer(linhas, col) {
+    const qtdPorValor = new Map();
+    let qtdVazios = 0;
+    const colKey = col.key;
+    const basica = ehColunaBasicaViewer(colKey);
+
+    (linhas || []).forEach(r => {
+      if (!r.detalhado && !basica) return;
+      const bruto = r[colKey];
+      if (Array.isArray(bruto)) {
+        const unicosLinha = Array.from(new Set(bruto.map(v => String(v || '').trim()).filter(Boolean)));
+        if (unicosLinha.length === 0) {
+          qtdVazios++;
+        } else {
+          unicosLinha.forEach(v => qtdPorValor.set(v, (qtdPorValor.get(v) || 0) + 1));
+        }
+        return;
+      }
+      const txt = resolverTextoCelulaViewer(r, col).trim();
+      if (!txt) {
+        qtdVazios++;
+      } else {
+        qtdPorValor.set(txt, (qtdPorValor.get(txt) || 0) + 1);
+      }
+    });
+
+    return {
+      valores: Array.from(qtdPorValor.keys()).sort(compararTextoVisualizador),
+      qtdPorValor,
+      qtdVazios
+    };
+  }
+
+  function filtrarEOrdenarLinhasViewer(linhas, colunas, opcoes = {}) {
+    const termoBusca = normalizar(opcoes.termoBusca || '');
+    const locIncluir = String(opcoes.locIncluir || '').trim();
+    const locRemover = String(opcoes.locRemover || '').trim();
+    const filtrosColuna = opcoes.filtrosColuna || {};
+    const ordenacaoColuna = opcoes.ordenacaoColuna || {};
+    const entradasCol = Object.entries(filtrosColuna).filter(([, f]) => f && (f.modo === 'vazio' || String(f.valor || '').trim() !== ''));
+
+    const filtradas = (linhas || []).filter(r => {
+      if (locIncluir) {
+        const batePrinc = String(r.localizadorPrincipal || '').trim() === locIncluir;
+        const bateSec = Array.isArray(r.localizadoresSecundarios) && r.localizadoresSecundarios.some(s => String(s || '').trim() === locIncluir);
+        if (!batePrinc && !bateSec) return false;
+      }
+      if (locRemover) {
+        const bateRem = Array.isArray(r.localizadoresRemover) && r.localizadoresRemover.some(s => String(s || '').trim() === locRemover);
+        if (!bateRem) return false;
+      }
+
+      for (let i = 0; i < entradasCol.length; i++) {
+        const [colKey, filtro] = entradasCol[i];
+        const col = colunas.find(c => c.key === colKey);
+        if (!col) continue;
+        const bruto = r[colKey];
+        const txt = resolverTextoCelulaViewer(r, col).trim();
+        if (filtro.modo === 'vazio') {
+          if (!r.detalhado && !ehColunaBasicaViewer(colKey)) return false;
+          const ehVazio = Array.isArray(bruto) ? bruto.length === 0 : txt === '';
+          if (!ehVazio) return false;
+        } else if (filtro.modo === 'exato') {
+          const alvoNorm = normalizar(filtro.valor || '');
+          const bate = Array.isArray(bruto)
+            ? bruto.some(v => normalizar(String(v || '').trim()) === alvoNorm)
+            : normalizar(txt) === alvoNorm;
+          if (!bate) return false;
+        } else {
+          const termoCol = normalizar(filtro.valor || '');
+          if (termoCol && !normalizar(txt).includes(termoCol)) return false;
+        }
+      }
+
+      if (termoBusca) {
+        const textoConcat = colunas
+          .map(c => c.key === '_indice' ? '' : resolverTextoCelulaViewer(r, c))
+          .join(' ');
+        if (!normalizar(textoConcat).includes(termoBusca)) return false;
+      }
+      return true;
+    });
+
+    if (ordenacaoColuna && ordenacaoColuna.key && (ordenacaoColuna.dir === 'asc' || ordenacaoColuna.dir === 'desc')) {
+      const colOrd = colunas.find(c => c.key === ordenacaoColuna.key);
+      if (colOrd) {
+        filtradas.sort((a, b) => {
+          const va = resolverTextoCelulaViewer(a, colOrd).trim();
+          const vb = resolverTextoCelulaViewer(b, colOrd).trim();
+          if (!va && !vb) return 0;
+          if (!va) return 1;
+          if (!vb) return -1;
+          const cmp = compararTextoVisualizador(va, vb);
+          return ordenacaoColuna.dir === 'desc' ? -cmp : cmp;
+        });
+      }
+    }
+
+    return filtradas;
+  }
+
+  function calcularMetadadosColapsavelViewer(row, col, modo = 'tabela') {
+    if (!row.detalhado && !ehColunaBasicaViewer(col.key)) {
+      return { ehListaPills: false, totalItens: 0, fallbackOverflow: false };
+    }
+    const bruto = row[col.key];
+    if (Array.isArray(bruto)) {
+      const limiteItens = modo === 'ficha' ? 4 : 2;
+      return {
+        ehListaPills: bruto.length > 0,
+        totalItens: bruto.length,
+        fallbackOverflow: bruto.length > limiteItens
+      };
+    }
+    const texto = bruto === null || bruto === undefined ? '' : String(bruto).trim();
+    const maxChars = modo === 'ficha' ? 140 : 68;
+    const maxQuebras = modo === 'ficha' ? 4 : 2;
+    const quebras = (texto.match(/\n/g) || []).length;
+    return {
+      ehListaPills: Boolean(col.pillType && texto),
+      totalItens: 0,
+      fallbackOverflow: texto.length > maxChars || quebras >= maxQuebras
+    };
+  }
+
+  function renderizarBlocoRecolhivelViewer(innerHtml, opcoes = {}) {
+    const key = String(opcoes.key || '');
+    const expandido = Boolean(opcoes.expandido);
+    const ehListaPills = Boolean(opcoes.ehListaPills);
+    const totalItens = Number(opcoes.totalItens || 0);
+    const fallbackOverflow = Boolean(opcoes.fallbackOverflow);
+    const modo = opcoes.modo === 'ficha' ? 'ficha' : 'tabela';
+    const extraInnerClass = opcoes.extraInnerClass ? ` ${opcoes.extraInnerClass}` : '';
+    const labelBtn = expandido
+      ? '▴ Recolher'
+      : (totalItens > 0 ? `▾ Expandir (${totalItens})` : '▾ Expandir');
+
+    return `
+      <div class="eproc-v-cell-collapsible${modo === 'ficha' ? ' eproc-v-detail-collapsible' : ''}${expandido ? ' eproc-v-expanded' : ''}" data-expand-key="${escapeHtmlViewer(key)}" data-expand-total="${totalItens}" data-overflow-fallback="${fallbackOverflow ? '1' : '0'}">
+        <div class="eproc-v-cell-inner${ehListaPills ? ' eproc-v-cell-pills' : ''}${extraInnerClass}">${innerHtml}</div>
+        <button type="button" class="eproc-v-expand-btn" data-expand-btn="${escapeHtmlViewer(key)}" style="display:${(expandido || fallbackOverflow) ? 'inline-flex' : 'none'};">${labelBtn}</button>
+      </div>
+    `;
+  }
+
+  function atualizarEstadoBlocoRecolhivelViewer(wrap) {
+    if (!wrap) return;
+    const inner = wrap.querySelector('.eproc-v-cell-inner');
+    const btn = wrap.querySelector('.eproc-v-expand-btn');
+    if (!inner || !btn) return;
+    const expandido = wrap.classList.contains('eproc-v-expanded');
+    const total = Number(wrap.getAttribute('data-expand-total') || '0');
+    const fallback = wrap.getAttribute('data-overflow-fallback') === '1';
+    const temLayoutReal = typeof inner.clientHeight === 'number' && inner.clientHeight > 0;
+    const transborda = temLayoutReal ? (inner.scrollHeight > inner.clientHeight + 2) : fallback;
+
+    if (transborda && !expandido) {
+      inner.classList.add('eproc-v-is-clamped');
+    } else {
+      inner.classList.remove('eproc-v-is-clamped');
+    }
+
+    if (expandido || transborda) {
+      btn.style.display = 'inline-flex';
+      btn.textContent = expandido ? '▴ Recolher' : (total > 0 ? `▾ Expandir (${total})` : '▾ Expandir');
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  function atualizarRecolhimentoDomViewer(containerEl) {
+    if (!containerEl) return;
+    containerEl.querySelectorAll('.eproc-v-cell-collapsible').forEach(atualizarEstadoBlocoRecolhivelViewer);
+  }
+
+  function vincularBotoesExpandirViewer(containerEl, estadoExpandidoSet) {
+    if (!containerEl) return;
+    containerEl.querySelectorAll('.eproc-v-expand-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+        const wrap = btn.closest('.eproc-v-cell-collapsible');
+        if (!wrap) return;
+        const key = wrap.getAttribute('data-expand-key') || btn.getAttribute('data-expand-btn') || '';
+        const estavaExpandido = wrap.classList.contains('eproc-v-expanded');
+        if (estavaExpandido) {
+          wrap.classList.remove('eproc-v-expanded');
+          if (estadoExpandidoSet && key) estadoExpandidoSet.delete(key);
+        } else {
+          wrap.classList.add('eproc-v-expanded');
+          if (estadoExpandidoSet && key) estadoExpandidoSet.add(key);
+        }
+        atualizarEstadoBlocoRecolhivelViewer(wrap);
+      };
+    });
+  }
+
   async function abrirModalVisualizadorPreferencias(modulo = 'minutas') {
     const config = VISUALIZADORES_MODULOS_CONFIG[modulo];
     if (!config) {
@@ -24458,21 +24703,13 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
 
         <div class="eproc-viewer-toolbar">
           <input type="text" id="viewer-filtro-texto" class="eproc-viewer-input" style="flex:1; min-width:220px;" placeholder="🔍 Buscar por nome, grupo, modelo, evento, localizador, prazo, classificação...">
-          <select id="viewer-filtro-tipo" class="eproc-viewer-select">
-            <option value="" selected>Tipo: Todos</option>
-            <option value="Unidade">Unidade</option>
-            <option value="Individual">Individual</option>
+          <select id="viewer-filtro-loc-incluir" class="eproc-viewer-select" title="Filtra preferências que incluam o localizador selecionado como Principal ou Secundário">
+            <option value="" selected>Loc. a incluir: Todos</option>
           </select>
-          <select id="viewer-filtro-grupo" class="eproc-viewer-select">
-            <option value="" selected>Grupo: Todos</option>
+          <select id="viewer-filtro-loc-remover" class="eproc-viewer-select" title="Filtra preferências que removam o localizador selecionado">
+            <option value="" selected>Loc. a remover: Todos</option>
           </select>
-          <select id="viewer-filtro-status" class="eproc-viewer-select">
-            <option value="" selected>Detalhes: Todos</option>
-            <option value="detalhado">Somente Detalhados</option>
-            <option value="pendente">Não carregados</option>
-          </select>
-          <button type="button" id="btn-viewer-carregar-filtradas" class="eproc-viewer-btn eproc-viewer-btn-primary" title="Carrega os detalhes completos apenas das linhas visíveis no filtro atual">🔄 Carregar Filtradas</button>
-          <button type="button" id="btn-viewer-carregar-todas" class="eproc-viewer-btn eproc-viewer-btn-success" title="Busca os campos completos de todas as preferências em lotes seguros">⚡ Carregar Detalhes de Todas</button>
+          <button type="button" id="btn-viewer-limpar-filtros" class="eproc-viewer-btn eproc-viewer-btn-soft" style="display:none;" title="Limpa todos os filtros e ordenação">✕ Limpar filtros</button>
           <button type="button" id="btn-viewer-parar" class="eproc-viewer-btn eproc-viewer-btn-danger" style="display:none;">🛑 Parar</button>
           <button type="button" id="btn-viewer-exportar-csv" class="eproc-viewer-btn eproc-viewer-btn-soft">📥 Exportar CSV</button>
           <button type="button" id="btn-viewer-recarregar-lista" class="eproc-viewer-btn eproc-viewer-btn-soft" title="Atualiza a lista oficial do eproc">↻ Lista</button>
@@ -24496,31 +24733,23 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
           </table>
         </div>
 
+        <div id="viewer-col-dropdown" class="eproc-v-col-dropdown"></div>
+
         <div id="viewer-detail-drawer" class="eproc-viewer-detail-drawer"></div>
 
         <div class="eproc-pref-modal-footer">
           <div id="viewer-footer-stats" class="eproc-modal-footer-stats">Inicializando...</div>
-          <div class="eproc-modal-footer-btns">
-            <button type="button" id="btn-viewer-fechar-rodape" class="eproc-viewer-btn eproc-viewer-btn-soft">Fechar</button>
-          </div>
         </div>
       </div>
     `;
 
-    const fechar = () => {
-      window._eprocViewerParar = true;
-      overlay.style.display = 'none';
-      document.removeEventListener('keydown', onEsc);
-    };
-    const onEsc = (e) => { if (e.key === 'Escape') fechar(); };
-    document.addEventListener('keydown', onEsc);
-    overlay.querySelector('#btn-viewer-fechar-topo').onclick = fechar;
-    overlay.querySelector('#btn-viewer-fechar-rodape').onclick = fechar;
-
+    const modalEl = overlay.querySelector('#eproc-pref-modal-container');
+    const tableWrapEl = overlay.querySelector('#viewer-table-wrap');
     const estadoEl = overlay.querySelector('#viewer-estado-inicial');
     const tableEl = overlay.querySelector('#viewer-table');
     const theadEl = overlay.querySelector('#viewer-thead');
     const tbodyEl = overlay.querySelector('#viewer-tbody');
+    const colDropdownEl = overlay.querySelector('#viewer-col-dropdown');
     const drawerEl = overlay.querySelector('#viewer-detail-drawer');
     const statsEl = overlay.querySelector('#viewer-footer-stats');
     const progWrap = overlay.querySelector('#viewer-prog-wrap');
@@ -24528,14 +24757,11 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     const progPct = overlay.querySelector('#viewer-prog-pct');
     const progFill = overlay.querySelector('#viewer-prog-fill');
     const inpBusca = overlay.querySelector('#viewer-filtro-texto');
-    const selTipo = overlay.querySelector('#viewer-filtro-tipo');
-    const selGrupo = overlay.querySelector('#viewer-filtro-grupo');
-    const selStatus = overlay.querySelector('#viewer-filtro-status');
-    if (selTipo) selTipo.value = '';
-    if (selGrupo) selGrupo.value = '';
-    if (selStatus) selStatus.value = '';
-    const btnCarregarTodas = overlay.querySelector('#btn-viewer-carregar-todas');
-    const btnCarregarFiltradas = overlay.querySelector('#btn-viewer-carregar-filtradas');
+    const selLocIncluir = overlay.querySelector('#viewer-filtro-loc-incluir');
+    const selLocRemover = overlay.querySelector('#viewer-filtro-loc-remover');
+    if (selLocIncluir) selLocIncluir.value = '';
+    if (selLocRemover) selLocRemover.value = '';
+    const btnLimparFiltros = overlay.querySelector('#btn-viewer-limpar-filtros');
     const btnParar = overlay.querySelector('#btn-viewer-parar');
     const btnCsv = overlay.querySelector('#btn-viewer-exportar-csv');
     const btnRecarregar = overlay.querySelector('#btn-viewer-recarregar-lista');
@@ -24543,34 +24769,306 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     let contexto = null;
     let todasLinhas = [];
     let carregandoEmLote = false;
+    const filtrosColuna = {};
+    let ordenacaoColuna = { key: null, dir: null };
+    let colunaDropdownAberta = null;
+    const celulasExpandidasTabela = new Set();
+    const celulasExpandidasFicha = new Set();
 
-    const preencherFiltroGrupos = () => {
-      const atual = selGrupo.value;
-      const grupos = Array.from(new Set(todasLinhas.map(r => (r.grupo || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-      selGrupo.innerHTML = '<option value="">Grupo: Todos</option><option value="__sem_grupo__">(Sem grupo)</option>'
-        + grupos.map(g => `<option value="${escapeHtmlViewer(g)}">${escapeHtmlViewer(g)}</option>`).join('');
-      if (atual) selGrupo.value = atual;
+    const fecharDropdownColuna = () => {
+      if (colDropdownEl) colDropdownEl.style.display = 'none';
+      colunaDropdownAberta = null;
+    };
+
+    const fechar = () => {
+      window._eprocViewerParar = true;
+      fecharDropdownColuna();
+      overlay.style.display = 'none';
+      document.removeEventListener('keydown', onEsc);
+      document.removeEventListener('click', onDocClick);
+    };
+    const onEsc = (e) => {
+      if (e.key === 'Escape') {
+        if (colunaDropdownAberta) {
+          fecharDropdownColuna();
+        } else {
+          fechar();
+        }
+      }
+    };
+    const onDocClick = (e) => {
+      if (!colunaDropdownAberta || !colDropdownEl) return;
+      const target = e && e.target;
+      if (elementoContemViewer(colDropdownEl, target)) return;
+      fecharDropdownColuna();
+    };
+    document.addEventListener('keydown', onEsc);
+    document.addEventListener('click', onDocClick);
+    overlay.querySelector('#btn-viewer-fechar-topo').onclick = fechar;
+    if (tableWrapEl) {
+      tableWrapEl.addEventListener('scroll', () => {
+        if (colunaDropdownAberta) fecharDropdownColuna();
+      });
+    }
+
+    const preencherFiltrosLocalizadores = () => {
+      const { incluir, remover } = coletarLocalizadoresToolbarViewer(todasLinhas);
+      if (selLocIncluir) {
+        const atualInc = selLocIncluir.value;
+        selLocIncluir.innerHTML = '<option value="">Loc. a incluir: Todos</option>'
+          + incluir.map(l => `<option value="${escapeHtmlViewer(l)}">${escapeHtmlViewer(l)}</option>`).join('');
+        selLocIncluir.value = (atualInc && incluir.includes(atualInc)) ? atualInc : '';
+      }
+      if (selLocRemover) {
+        const atualRem = selLocRemover.value;
+        selLocRemover.innerHTML = '<option value="">Loc. a remover: Todos</option>'
+          + remover.map(l => `<option value="${escapeHtmlViewer(l)}">${escapeHtmlViewer(l)}</option>`).join('');
+        selLocRemover.value = (atualRem && remover.includes(atualRem)) ? atualRem : '';
+      }
     };
 
     const obterLinhasFiltradas = () => {
-      const termo = normalizar(inpBusca.value || '');
-      const tipoFiltro = selTipo.value;
-      const grupoFiltro = selGrupo.value;
-      const statusFiltro = selStatus.value;
+      return filtrarEOrdenarLinhasViewer(todasLinhas, config.colunas, {
+        termoBusca: inpBusca ? inpBusca.value : '',
+        locIncluir: selLocIncluir ? selLocIncluir.value : '',
+        locRemover: selLocRemover ? selLocRemover.value : '',
+        filtrosColuna,
+        ordenacaoColuna
+      });
+    };
 
-      return todasLinhas.filter(r => {
-        if (tipoFiltro && normalizar(r.tipo) !== normalizar(tipoFiltro)) return false;
-        if (grupoFiltro === '__sem_grupo__' && (r.grupo || '').trim() !== '') return false;
-        if (grupoFiltro && grupoFiltro !== '__sem_grupo__' && (r.grupo || '').trim() !== grupoFiltro) return false;
-        if (statusFiltro === 'detalhado' && !r.detalhado) return false;
-        if (statusFiltro === 'pendente' && r.detalhado) return false;
-        if (termo) {
-          const textoConcat = config.colunas
-            .map(c => c.key === '_indice' ? '' : resolverTextoCelulaViewer(r, c))
-            .join(' ');
-          if (!normalizar(textoConcat).includes(termo)) return false;
+    const temFiltrosOuOrdenacaoAtivos = () => {
+      if (inpBusca && String(inpBusca.value || '').trim() !== '') return true;
+      if (selLocIncluir && selLocIncluir.value) return true;
+      if (selLocRemover && selLocRemover.value) return true;
+      if (ordenacaoColuna.key && ordenacaoColuna.dir) return true;
+      return Object.values(filtrosColuna).some(f => f && (f.modo === 'vazio' || String(f.valor || '').trim() !== ''));
+    };
+
+    const atualizarIndicadoresCabecalho = (ignorarInputCol = null) => {
+      theadEl.querySelectorAll('.eproc-v-sort-btn').forEach(btn => {
+        const colKey = btn.getAttribute('data-sort-col');
+        const ativo = ordenacaoColuna.key === colKey && (ordenacaoColuna.dir === 'asc' || ordenacaoColuna.dir === 'desc');
+        if (ativo) {
+          btn.classList.add('ativo');
+          btn.textContent = ordenacaoColuna.dir === 'asc' ? '▲ A-Z' : '▼ Z-A';
+        } else {
+          btn.classList.remove('ativo');
+          btn.textContent = 'A-Z ⇅';
         }
-        return true;
+      });
+
+      theadEl.querySelectorAll('.eproc-v-col-filter').forEach(inp => {
+        const colKey = inp.getAttribute('data-col-filter');
+        const f = filtrosColuna[colKey];
+        const ativo = Boolean(f && (f.modo === 'vazio' || String(f.valor || '').trim() !== ''));
+        if (ativo) inp.classList.add('ativo');
+        else inp.classList.remove('ativo');
+        if (colKey !== ignorarInputCol) {
+          inp.value = f ? (f.modo === 'vazio' ? '(Vazio)' : (f.valor || '')) : '';
+        }
+      });
+
+      theadEl.querySelectorAll('.eproc-v-col-dd-btn').forEach(btn => {
+        const colKey = btn.getAttribute('data-col-dd');
+        const f = filtrosColuna[colKey];
+        const ativo = Boolean(f && (f.modo === 'vazio' || String(f.valor || '').trim() !== ''));
+        if (ativo) btn.classList.add('ativo');
+        else btn.classList.remove('ativo');
+      });
+
+      if (btnLimparFiltros) {
+        btnLimparFiltros.style.display = temFiltrosOuOrdenacaoAtivos() ? 'inline-flex' : 'none';
+      }
+    };
+
+    const alternarOrdenacaoColuna = (colKey, dirForcada = null) => {
+      if (!colKey || colKey === '_indice') return;
+      if (dirForcada === 'asc' || dirForcada === 'desc') {
+        ordenacaoColuna = { key: colKey, dir: dirForcada };
+      } else if (dirForcada === null && ordenacaoColuna.key !== colKey) {
+        ordenacaoColuna = { key: colKey, dir: 'asc' };
+      } else if (ordenacaoColuna.dir === 'asc') {
+        ordenacaoColuna = { key: colKey, dir: 'desc' };
+      } else {
+        ordenacaoColuna = { key: null, dir: null };
+      }
+      atualizarIndicadoresCabecalho();
+      renderizarTabela();
+    };
+
+    const abrirDropdownColuna = (colKey, anchorBtn) => {
+      const col = config.colunas.find(c => c.key === colKey);
+      if (!col || !colDropdownEl) return;
+
+      const { valores, qtdPorValor, qtdVazios } = obterValoresDistintosColunaViewer(todasLinhas, col);
+      const filtroAtual = filtrosColuna[colKey] || null;
+      const ordAscAtiva = ordenacaoColuna.key === colKey && ordenacaoColuna.dir === 'asc';
+      const ordDescAtiva = ordenacaoColuna.key === colKey && ordenacaoColuna.dir === 'desc';
+
+      const opcoesHtml = [];
+      opcoesHtml.push(`
+        <button type="button" class="eproc-v-col-dd-opt${!filtroAtual ? ' ativo' : ''}" data-dd-mode="todos">
+          <span class="eproc-v-col-dd-opt-text">✨ Todos (sem filtro)</span>
+          <span class="eproc-v-col-dd-count">${todasLinhas.length}</span>
+        </button>
+      `);
+      if (qtdVazios > 0) {
+        const vazioAtivo = filtroAtual && filtroAtual.modo === 'vazio';
+        opcoesHtml.push(`
+          <button type="button" class="eproc-v-col-dd-opt${vazioAtivo ? ' ativo' : ''}" data-dd-mode="vazio">
+            <span class="eproc-v-col-dd-opt-text">(Vazio / —)</span>
+            <span class="eproc-v-col-dd-count">${qtdVazios}</span>
+          </button>
+        `);
+      }
+      valores.forEach(v => {
+        const ativoVal = filtroAtual && filtroAtual.modo === 'exato' && normalizar(filtroAtual.valor) === normalizar(v);
+        opcoesHtml.push(`
+          <button type="button" class="eproc-v-col-dd-opt${ativoVal ? ' ativo' : ''}" data-dd-mode="exato" data-dd-val="${escapeHtmlViewer(v)}" title="${escapeHtmlViewer(v)}">
+            <span class="eproc-v-col-dd-opt-text">${escapeHtmlViewer(v)}</span>
+            <span class="eproc-v-col-dd-count">${qtdPorValor.get(v) || 0}</span>
+          </button>
+        `);
+      });
+
+      colDropdownEl.innerHTML = `
+        <div class="eproc-v-col-dd-head">
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtmlViewer(col.label)}</span>
+          <button type="button" class="eproc-v-mini-btn" id="btn-dd-fechar" title="Fechar">✕</button>
+        </div>
+        <div class="eproc-v-col-dd-actions">
+          <button type="button" class="eproc-v-col-dd-act-btn${ordAscAtiva ? ' ativo' : ''}" data-dd-sort="asc">▲ A → Z</button>
+          <button type="button" class="eproc-v-col-dd-act-btn${ordDescAtiva ? ' ativo' : ''}" data-dd-sort="desc">▼ Z → A</button>
+          <button type="button" class="eproc-v-col-dd-act-btn" data-dd-clear="1">✕ Limpar</button>
+        </div>
+        <div class="eproc-v-col-dd-list">${opcoesHtml.join('')}</div>
+      `;
+
+      colDropdownEl.style.display = 'flex';
+      if (modalEl && anchorBtn && typeof modalEl.getBoundingClientRect === 'function' && typeof anchorBtn.getBoundingClientRect === 'function') {
+        const modalRect = modalEl.getBoundingClientRect();
+        const thEl = (typeof anchorBtn.closest === 'function' && anchorBtn.closest('th')) || anchorBtn;
+        const thRect = thEl.getBoundingClientRect();
+        const btnRect = anchorBtn.getBoundingClientRect();
+        const ddW = 260;
+        let left = thRect.left - modalRect.left;
+        if (left < 8) {
+          left = Math.max(8, btnRect.right - modalRect.left - ddW);
+        }
+        if (left + ddW > modalRect.width - 10) {
+          left = Math.max(8, modalRect.width - ddW - 10);
+        }
+        const top = Math.max(40, btnRect.bottom - modalRect.top + 4);
+        colDropdownEl.style.left = `${Math.round(left)}px`;
+        colDropdownEl.style.top = `${Math.round(top)}px`;
+        const ddListEl = colDropdownEl.querySelector('.eproc-v-col-dd-list');
+        if (ddListEl && modalRect.height > 0) {
+          ddListEl.style.maxHeight = `${Math.max(100, Math.min(220, modalRect.height - top - 95))}px`;
+        }
+      }
+      colunaDropdownAberta = colKey;
+
+      const btnDdFechar = colDropdownEl.querySelector('#btn-dd-fechar');
+      if (btnDdFechar) btnDdFechar.onclick = () => fecharDropdownColuna();
+
+      colDropdownEl.querySelectorAll('[data-dd-sort]').forEach(b => {
+        b.onclick = () => {
+          const dir = b.getAttribute('data-dd-sort');
+          fecharDropdownColuna();
+          alternarOrdenacaoColuna(colKey, dir);
+        };
+      });
+
+      const btnClearCol = colDropdownEl.querySelector('[data-dd-clear]');
+      if (btnClearCol) {
+        btnClearCol.onclick = () => {
+          delete filtrosColuna[colKey];
+          if (ordenacaoColuna.key === colKey) ordenacaoColuna = { key: null, dir: null };
+          fecharDropdownColuna();
+          atualizarIndicadoresCabecalho();
+          renderizarTabela();
+        };
+      }
+
+      colDropdownEl.querySelectorAll('.eproc-v-col-dd-opt').forEach(b => {
+        b.onclick = () => {
+          const modo = b.getAttribute('data-dd-mode');
+          if (modo === 'todos') {
+            delete filtrosColuna[colKey];
+          } else if (modo === 'vazio') {
+            filtrosColuna[colKey] = { valor: '', modo: 'vazio' };
+          } else {
+            filtrosColuna[colKey] = { valor: b.getAttribute('data-dd-val') || '', modo: 'exato' };
+          }
+          fecharDropdownColuna();
+          atualizarIndicadoresCabecalho();
+          renderizarTabela();
+        };
+      });
+    };
+
+    const renderizarCabecalhoTabela = () => {
+      theadEl.innerHTML = '<tr>' + config.colunas.map(col => {
+        const cls = col.sticky === 'num' ? 'eproc-v-col-sticky-num' : (col.sticky === 'nome' ? 'eproc-v-col-sticky-nome' : '');
+        if (col.key === '_indice') {
+          return `
+            <th class="${cls}" data-col-key="_indice">
+              <div class="eproc-v-th-inner">
+                <div class="eproc-v-th-top"><span class="eproc-v-th-title" title="Número da linha exibida">${escapeHtmlViewer(col.label)}</span></div>
+                <div class="eproc-v-th-filter-spacer"></div>
+              </div>
+            </th>
+          `;
+        }
+        return `
+          <th class="${cls}" data-col-key="${escapeHtmlViewer(col.key)}">
+            <div class="eproc-v-th-inner">
+              <div class="eproc-v-th-top">
+                <span class="eproc-v-th-title" data-sort-title="${escapeHtmlViewer(col.key)}" title="Clique para ordenar ${escapeHtmlViewer(col.label)} (A-Z / Z-A)">${escapeHtmlViewer(col.label)}</span>
+                <button type="button" class="eproc-v-sort-btn" data-sort-col="${escapeHtmlViewer(col.key)}" title="Ordenar A-Z / Z-A">A-Z ⇅</button>
+              </div>
+              <div class="eproc-v-th-filter-wrap">
+                <input type="text" class="eproc-v-col-filter" data-col-filter="${escapeHtmlViewer(col.key)}" placeholder="Filtrar..." title="Filtrar ${escapeHtmlViewer(col.label)}">
+                <button type="button" class="eproc-v-col-dd-btn" data-col-dd="${escapeHtmlViewer(col.key)}" title="Listar valores encontrados nesta coluna">▾</button>
+              </div>
+            </div>
+          </th>
+        `;
+      }).join('') + '</tr>';
+
+      theadEl.querySelectorAll('[data-sort-title]').forEach(el => {
+        el.onclick = () => alternarOrdenacaoColuna(el.getAttribute('data-sort-title'));
+      });
+      theadEl.querySelectorAll('.eproc-v-sort-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+          alternarOrdenacaoColuna(btn.getAttribute('data-sort-col'));
+        };
+      });
+      theadEl.querySelectorAll('.eproc-v-col-filter').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const colKey = inp.getAttribute('data-col-filter');
+          const val = String(inp.value || '');
+          if (val.trim()) {
+            filtrosColuna[colKey] = { valor: val, modo: 'contem' };
+          } else {
+            delete filtrosColuna[colKey];
+          }
+          atualizarIndicadoresCabecalho(colKey);
+          renderizarTabela();
+        });
+      });
+      theadEl.querySelectorAll('.eproc-v-col-dd-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+          const colKey = btn.getAttribute('data-col-dd');
+          if (colunaDropdownAberta === colKey) {
+            fecharDropdownColuna();
+          } else {
+            abrirDropdownColuna(colKey, btn);
+          }
+        };
       });
     };
 
@@ -24587,7 +25085,17 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         .filter(c => c.key !== '_indice')
         .map(c => {
           const valHtml = renderizarConteudoCelulaViewer(row, c);
-          return `<div class="eproc-viewer-detail-item"><div class="eproc-viewer-detail-label">${escapeHtmlViewer(c.label)}</div><div>${valHtml}</div></div>`;
+          const chaveExp = `${row.id}::${c.key}`;
+          const meta = calcularMetadadosColapsavelViewer(row, c, 'ficha');
+          const conteudoRecolhivel = renderizarBlocoRecolhivelViewer(valHtml, {
+            key: chaveExp,
+            expandido: celulasExpandidasFicha.has(chaveExp),
+            ehListaPills: meta.ehListaPills,
+            totalItens: meta.totalItens,
+            fallbackOverflow: meta.fallbackOverflow,
+            modo: 'ficha'
+          });
+          return `<div class="eproc-viewer-detail-item"><div class="eproc-viewer-detail-label">${escapeHtmlViewer(c.label)}</div>${conteudoRecolhivel}</div>`;
         }).join('');
       drawerEl.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -24598,6 +25106,8 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       `;
       const btnF = drawerEl.querySelector('#btn-viewer-fechar-drawer');
       if (btnF) btnF.onclick = () => { drawerEl.style.display = 'none'; };
+      atualizarRecolhimentoDomViewer(drawerEl);
+      vincularBotoesExpandirViewer(drawerEl, celulasExpandidasFicha);
     };
 
     const renderizarTabela = () => {
@@ -24608,10 +25118,14 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       estadoEl.style.display = 'none';
       tableEl.style.display = 'table';
 
-      theadEl.innerHTML = '<tr>' + config.colunas.map(col => {
-        const cls = col.sticky === 'num' ? 'eproc-v-col-sticky-num' : (col.sticky === 'nome' ? 'eproc-v-col-sticky-nome' : '');
-        return `<th class="${cls}">${escapeHtmlViewer(col.label)}</th>`;
-      }).join('') + '</tr>';
+      if (theadEl.children.length === 0) {
+        renderizarCabecalhoTabela();
+      }
+      atualizarIndicadoresCabecalho(
+        (document.activeElement && document.activeElement.getAttribute)
+          ? document.activeElement.getAttribute('data-col-filter')
+          : null
+      );
 
       if (filtradas.length === 0) {
         tbodyEl.innerHTML = `<tr><td colspan="${config.colunas.length}" style="text-align:center; padding:24px; color:#64748b;">Nenhuma preferência corresponde aos filtros aplicados.</td></tr>`;
@@ -24623,11 +25137,27 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
           if (col.key === '_indice') {
             return `<td class="eproc-v-col-sticky-num">${idx + 1}</td>`;
           }
+          const chaveExp = `${row.id}::${col.key}`;
+          const expandido = celulasExpandidasTabela.has(chaveExp);
+          const meta = calcularMetadadosColapsavelViewer(row, col, 'tabela');
+
           if (col.key === 'nome') {
+            const tituloHtml = renderizarBlocoRecolhivelViewer(
+              `<span title="${escapeHtmlViewer(row.nome)}">${escapeHtmlViewer(row.nome)}</span>`,
+              {
+                key: chaveExp,
+                expandido,
+                ehListaPills: false,
+                totalItens: 0,
+                fallbackOverflow: meta.fallbackOverflow,
+                extraInnerClass: 'eproc-v-nome-titulo',
+                modo: 'tabela'
+              }
+            );
             return `
               <td class="eproc-v-col-sticky-nome">
                 <div class="eproc-v-nome-wrap">
-                  <div class="eproc-v-nome-titulo">${escapeHtmlViewer(row.nome)}</div>
+                  ${tituloHtml}
                   <div class="eproc-v-row-actions">
                     <button type="button" class="eproc-v-mini-btn btn-viewer-row-load" data-pref-id="${escapeHtmlViewer(row.id)}" title="${row.detalhado ? 'Recarregar dados desta preferência no eproc' : 'Carregar todos os campos desta preferência'}">${row.detalhado ? '↻ Atualizar' : '🔍 Detalhar'}</button>
                     <button type="button" class="eproc-v-mini-btn btn-viewer-row-ficha" data-pref-id="${escapeHtmlViewer(row.id)}" title="Abrir ficha detalhada em cartões">👁️ Ficha</button>
@@ -24636,10 +25166,23 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
               </td>
             `;
           }
-          return `<td>${renderizarConteudoCelulaViewer(row, col)}</td>`;
+
+          const valHtml = renderizarConteudoCelulaViewer(row, col);
+          const blocoHtml = renderizarBlocoRecolhivelViewer(valHtml, {
+            key: chaveExp,
+            expandido,
+            ehListaPills: meta.ehListaPills,
+            totalItens: meta.totalItens,
+            fallbackOverflow: meta.fallbackOverflow,
+            modo: 'tabela'
+          });
+          return `<td>${blocoHtml}</td>`;
         }).join('');
         return `<tr data-row-id="${escapeHtmlViewer(row.id)}">${tds}</tr>`;
       }).join('');
+
+      atualizarRecolhimentoDomViewer(tbodyEl);
+      vincularBotoesExpandirViewer(tbodyEl, celulasExpandidasTabela);
 
       tbodyEl.querySelectorAll('.btn-viewer-row-load').forEach(btn => {
         btn.onclick = async () => {
@@ -24651,7 +25194,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
           try {
             const det = await config.carregarDetalhe(todasLinhas[idxLinha], contexto, { forcarRecarga: true });
             todasLinhas[idxLinha] = det;
-            preencherFiltroGrupos();
+            preencherFiltrosLocalizadores();
             renderizarTabela();
           } catch (e) {
             todasLinhas[idxLinha] = { ...todasLinhas[idxLinha], erroDetalhe: e.message || String(e) };
@@ -24679,8 +25222,6 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
 
       carregandoEmLote = true;
       window._eprocViewerParar = false;
-      btnCarregarTodas.disabled = true;
-      btnCarregarFiltradas.disabled = true;
       btnRecarregar.disabled = true;
       btnParar.style.display = 'inline-flex';
       progWrap.style.display = 'block';
@@ -24716,7 +25257,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
           concluidas++;
           atualizarProg(item.nome);
           if (concluidas % 3 === 0 || concluidas === total) {
-            preencherFiltroGrupos();
+            preencherFiltrosLocalizadores();
             renderizarTabela();
           }
         }
@@ -24725,11 +25266,9 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       await Promise.all(Array.from({ length: Math.min(concorrencia, total) }, () => worker()));
 
       carregandoEmLote = false;
-      btnCarregarTodas.disabled = false;
-      btnCarregarFiltradas.disabled = false;
       btnRecarregar.disabled = false;
       btnParar.style.display = 'none';
-      preencherFiltroGrupos();
+      preencherFiltrosLocalizadores();
       renderizarTabela();
       if (window._eprocViewerParar) {
         progLabel.textContent = `⏹️ Interrompido em ${concluidas}/${total} preferências.`;
@@ -24744,6 +25283,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       if (limparCache) {
         window._eprocCacheDetalhesPrefsMinutas = new Map();
       }
+      fecharDropdownColuna();
       estadoEl.style.display = 'block';
       tableEl.style.display = 'none';
       estadoEl.innerHTML = '⏳ Consultando preferências cadastradas no eproc 2G...';
@@ -24780,7 +25320,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
           return;
         }
 
-        preencherFiltroGrupos();
+        preencherFiltrosLocalizadores();
         renderizarTabela();
 
         // Carrega automaticamente todos os campos detalhados em segundo plano ao abrir a tela
@@ -24793,14 +25333,23 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       }
     };
 
-    inpBusca.addEventListener('input', renderizarTabela);
-    selTipo.addEventListener('change', renderizarTabela);
-    selGrupo.addEventListener('change', renderizarTabela);
-    selStatus.addEventListener('change', renderizarTabela);
+    if (inpBusca) inpBusca.addEventListener('input', renderizarTabela);
+    if (selLocIncluir) selLocIncluir.addEventListener('change', renderizarTabela);
+    if (selLocRemover) selLocRemover.addEventListener('change', renderizarTabela);
+    if (btnLimparFiltros) {
+      btnLimparFiltros.onclick = () => {
+        if (inpBusca) inpBusca.value = '';
+        if (selLocIncluir) selLocIncluir.value = '';
+        if (selLocRemover) selLocRemover.value = '';
+        Object.keys(filtrosColuna).forEach(k => delete filtrosColuna[k]);
+        ordenacaoColuna = { key: null, dir: null };
+        fecharDropdownColuna();
+        atualizarIndicadoresCabecalho();
+        renderizarTabela();
+      };
+    }
 
     btnParar.onclick = () => { window._eprocViewerParar = true; };
-    btnCarregarTodas.onclick = () => executarCarregamentoLote(todasLinhas);
-    btnCarregarFiltradas.onclick = () => executarCarregamentoLote(obterLinhasFiltradas());
     btnRecarregar.onclick = () => inicializarDados(true);
 
     btnCsv.onclick = () => {

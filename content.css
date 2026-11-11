@@ -552,6 +552,7 @@
 
 /* ════ Visualizador de Preferências Criadas (Tabela Completa) — v3.8.0 ════ */
 #eproc-pref-modal-container.eproc-viewer-modal {
+  position: relative;
   width: 96vw;
   max-width: 96vw;
   height: 92vh;
@@ -590,6 +591,11 @@
   outline: none;
   width: auto;
   appearance: auto;
+}
+
+.eproc-viewer-select {
+  max-width: 245px;
+  text-overflow: ellipsis;
 }
 
 .eproc-viewer-input:focus,
@@ -673,11 +679,237 @@
   color: #f8fafc;
   font-weight: 700;
   font-size: 11px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-right: 1px solid #334155;
   border-bottom: 2px solid #0284c7;
   text-align: left;
+  vertical-align: top;
   white-space: nowrap;
+}
+
+.eproc-v-th-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.eproc-v-th-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.eproc-v-th-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#eproc-pref-modal-container .eproc-v-sort-btn {
+  background: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  margin: 0;
+  line-height: 1.3;
+  text-transform: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#eproc-pref-modal-container .eproc-v-sort-btn:hover {
+  border-color: #38bdf8;
+  color: #f8fafc;
+}
+
+#eproc-pref-modal-container .eproc-v-sort-btn.ativo {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+.eproc-v-th-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+#eproc-pref-modal-container .eproc-v-col-filter {
+  flex: 1;
+  min-width: 58px;
+  width: 100%;
+  height: 22px;
+  min-height: 22px;
+  max-height: 22px;
+  margin: 0;
+  padding: 2px 5px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  outline: none;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+#eproc-pref-modal-container .eproc-v-col-filter::placeholder {
+  color: #94a3b8;
+  opacity: 0.85;
+}
+
+#eproc-pref-modal-container .eproc-v-col-filter:focus {
+  border-color: #38bdf8;
+  background: #0f172a;
+}
+
+#eproc-pref-modal-container .eproc-v-col-filter.ativo {
+  border-color: #38bdf8;
+  background: #0c4a6e;
+  color: #e0f2fe;
+}
+
+#eproc-pref-modal-container .eproc-v-col-dd-btn {
+  height: 22px;
+  min-height: 22px;
+  min-width: 20px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 1;
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#eproc-pref-modal-container .eproc-v-col-dd-btn:hover,
+#eproc-pref-modal-container .eproc-v-col-dd-btn.ativo {
+  border-color: #38bdf8;
+  color: #ffffff;
+  background: #0284c7;
+}
+
+.eproc-v-th-filter-spacer {
+  height: 22px;
+}
+
+.eproc-v-col-dropdown {
+  position: absolute;
+  z-index: 30;
+  width: 260px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.25);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: #0f172a;
+}
+
+.eproc-v-col-dd-head {
+  padding: 6px 8px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 11px;
+  color: #0f172a;
+}
+
+.eproc-v-col-dd-actions {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.eproc-v-col-dd-act-btn {
+  flex: 1;
+  padding: 3px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.eproc-v-col-dd-act-btn:hover {
+  background: #eff6ff;
+  border-color: #38bdf8;
+  color: #0369a1;
+}
+
+.eproc-v-col-dd-act-btn.ativo {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+.eproc-v-col-dd-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.eproc-v-col-dd-opt {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #1e293b;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.eproc-v-col-dd-opt:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.eproc-v-col-dd-opt.ativo {
+  background: #dbeafe;
+  color: #1e40af;
+  font-weight: 700;
+}
+
+.eproc-v-col-dd-opt-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eproc-v-col-dd-count {
+  font-size: 10px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 0 5px;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .eproc-viewer-table tbody td {
@@ -793,7 +1025,7 @@
 .eproc-viewer-detail-drawer {
   border-top: 2px solid #0284c7;
   background: #f8fafc;
-  max-height: 220px;
+  max-height: 36vh;
   overflow-y: auto;
   padding: 10px 16px;
   display: none;
@@ -820,4 +1052,74 @@
   color: #64748b;
   text-transform: uppercase;
   margin-bottom: 2px;
+}
+
+.eproc-v-cell-collapsible {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+}
+
+.eproc-v-cell-inner {
+  width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.38;
+  word-break: break-word;
+}
+
+.eproc-v-cell-inner.eproc-v-cell-pills {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: 42px;
+  overflow: hidden;
+}
+
+.eproc-v-detail-collapsible .eproc-v-cell-inner {
+  -webkit-line-clamp: 4;
+}
+
+.eproc-v-detail-collapsible .eproc-v-cell-inner.eproc-v-cell-pills {
+  max-height: 84px;
+}
+
+.eproc-v-cell-inner.eproc-v-cell-pills.eproc-v-is-clamped {
+  -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+}
+
+.eproc-v-cell-collapsible.eproc-v-expanded .eproc-v-cell-inner {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: none;
+  overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+#eproc-pref-modal-container .eproc-v-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #0369a1;
+  font-size: 9.5px;
+  font-weight: 700;
+  margin: 0;
+  padding: 1px 6px;
+  text-transform: none;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+#eproc-pref-modal-container .eproc-v-expand-btn:hover {
+  background: #e0f2fe;
+  border-color: #38bdf8;
+  color: #0c4a6e;
 }
