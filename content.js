@@ -14432,6 +14432,363 @@
     return true;
   }
 
+  function toHtmlEntitiesEprocAtp(str) {
+    return Array.from(String(str || '')).map(ch => `&#${ch.codePointAt(0)};`).join('');
+  }
+
+  function extrairSiglasLocalizadorTextoAtp(texto = '') {
+    const dec = decodificarEntidadesHtml(decodeEntities(String(texto || ''))).trim();
+    if (!dec) return [];
+    const encontrados = [];
+    const reUser = /👤\s*([^👤\r\n]+?)\s*👤/g;
+    let m;
+    while ((m = reUser.exec(dec)) !== null) {
+      const s = m[1].trim();
+      if (s && !encontrados.some(x => normalizar(x) === normalizar(s))) {
+        encontrados.push(s);
+      }
+    }
+    return encontrados;
+  }
+
+  function coletarCamposFormularioAtp(form, { compactarCompSel = false, lembreteEmHtmlEntities = false } = {}) {
+    const pairs = [];
+    if (!form) return pairs;
+
+    const elements = Array.from(form.querySelectorAll('input, select, textarea'));
+    for (const el of elements) {
+      const name = el.getAttribute ? (el.getAttribute('name') || el.name || '') : (el.name || '');
+      if (!name) continue;
+      if (el.disabled || (el.getAttribute && el.getAttribute('disabled') !== null)) continue;
+
+      const tag = (el.tagName || '').toUpperCase();
+      if (tag === 'INPUT') {
+        const type = String((el.getAttribute && el.getAttribute('type')) || el.type || 'text').toLowerCase();
+        if (['submit', 'button', 'reset', 'file', 'image'].includes(type)) continue;
+        if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
+        const val = el.value !== undefined ? String(el.value) : (el.getAttribute ? (el.getAttribute('value') || '') : '');
+        pairs.push([name, val]);
+      } else if (tag === 'TEXTAREA') {
+        const raw = (el.value !== undefined && el.value !== '') ? String(el.value) : String(el.textContent || '');
+        const finalVal = (name === 'LembreteTexto' && lembreteEmHtmlEntities) ? toHtmlEntitiesEprocAtp(raw) : raw;
+        pairs.push([name, finalVal]);
+      } else if (tag === 'SELECT') {
+        const opts = Array.from(el.options || el.querySelectorAll('option') || []);
+        const isMult = !!el.multiple || (el.getAttribute && el.getAttribute('multiple') !== null);
+        const selecionadas = opts.filter(o => !!o.selected || (o.getAttribute && o.getAttribute('selected') !== null));
+
+        if (compactarCompSel && name.startsWith('compSel')) {
+          if (selecionadas.length > 0) {
+            const vals = selecionadas.map(o => o.value !== undefined ? String(o.value) : (o.getAttribute ? (o.getAttribute('value') || '') : ''));
+            pairs.push([`compSelPacked_${name}`, JSON.stringify(vals)]);
+          }
+          continue;
+        }
+
+        if (isMult) {
+          selecionadas.forEach(o => {
+            const v = o.value !== undefined ? String(o.value) : (o.getAttribute ? (o.getAttribute('value') || '') : '');
+            pairs.push([name, v]);
+          });
+        } else {
+          const optUnica = selecionadas[0] || opts[0];
+          if (optUnica) {
+            const v = optUnica.value !== undefined ? String(optUnica.value) : (optUnica.getAttribute ? (optUnica.getAttribute('value') || '') : '');
+            pairs.push([name, v]);
+          }
+        }
+      }
+    }
+    return pairs;
+  }
+
+  function substituirTextoLembreteAtp(lembreteAtual, origensPermitidas = [], novoNomeCompleto = '') {
+    const atualLimpo = decodificarEntidadesHtml(decodeEntities(String(lembreteAtual || ''))).replace(/\u00a0/g, ' ').trim();
+    const novoLimpo = String(novoNomeCompleto || '')
+      .replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
+
+    if (!novoLimpo) return { alterado: false, jaIgual: false, novoTexto: atualLimpo };
+    if (atualLimpo === novoLimpo) return { alterado: false, jaIgual: true, novoTexto: atualLimpo };
+
+    if (!atualLimpo || /^👤?\s*Servidor\s*\d+\s*👤?$/i.test(atualLimpo)) {
+      return { alterado: true, jaIgual: false, novoTexto: novoLimpo };
+    }
+
+    const normAtual = normalizar(atualLimpo);
+    const origsOrdenadas = (origensPermitidas || [])
+      .map(s => String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim())
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+
+    for (const orig of origsOrdenadas) {
+      if (normalizar(orig) === normAtual) {
+        return { alterado: true, jaIgual: false, novoTexto: novoLimpo };
+      }
+    }
+
+    // Substituição pontual apenas se o texto contiver referência explícita ao servidor anterior / "Servidor N"
+    const candidatasRegex = [...origsOrdenadas];
+    const mServ = atualLimpo.match(/\bServidor\s*\d+\b/i);
+    if (mServ) candidatasRegex.push(mServ[0]);
+
+    for (const orig of candidatasRegex) {
+      const esc = orig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+      const reExact = new RegExp(`(?<![\\p{L}\\p{N}_.])${esc}(?![\\p{L}\\p{N}_.])`, 'iu');
+      if (reExact.test(atualLimpo)) {
+        const substituido = atualLimpo.replace(reExact, novoLimpo).replace(/\s+/g, ' ').trim();
+        return {
+          alterado: substituido !== atualLimpo,
+          jaIgual: substituido === atualLimpo,
+          novoTexto: substituido
+        };
+      }
+    }
+
+    return { alterado: false, jaIgual: false, preservadoManual: true, lembreteAtual: atualLimpo, novoTexto: atualLimpo };
+  }
+
+  function filtrarAtpsTransitoParaSlot(listaAtps = [], siglasSlot = []) {
+    if (!Array.isArray(listaAtps) || listaAtps.length === 0) return [];
+    const normsSlot = (siglasSlot || [])
+      .map(s => normalizar(String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim()))
+      .filter(Boolean);
+    if (normsSlot.length === 0) return [];
+
+    return listaAtps.filter(atp => {
+      const siglasAtp = (atp.siglasLoc && atp.siglasLoc.length > 0)
+        ? atp.siglasLoc
+        : extrairSiglasLocalizadorTextoAtp(`${atp.locRemover || ''} ${atp.locIncluir || ''}`);
+      return siglasAtp.some(s => normsSlot.includes(normalizar(s)));
+    });
+  }
+
+  async function obterAtpsTransitoJulgadoEproc() {
+    try {
+      const urlListar = obterUrlAcaoMenu('automatizar_localizadores');
+      const resp = await fetch(urlListar, { credentials: 'same-origin' });
+      if (!resp.ok) return [];
+      const html = await lerRespostaTexto(resp);
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      const lista = [];
+      const idsVistos = new Set();
+
+      const extrairRegras = (d) => {
+        const rows = d.querySelectorAll('#tableAutomatizacaoLocalizadores tr, tr[id^="trLocalizadorAut_"]');
+        rows.forEach(tr => {
+          const spnGrupo = tr.querySelector('span[id^="spnGrupoRegra_"]');
+          if (!spnGrupo) return;
+          const textoGrupo = decodificarEntidadesHtml(decodeEntities(spnGrupo.textContent || '')).trim();
+          if (!normalizar(textoGrupo).includes('transito em julgado')) return;
+
+          const linksAlt = Array.from(tr.querySelectorAll('a[href*="automatizar_localizadores_alterar"]'));
+          const linkEdit = linksAlt.find(a => {
+            const h = a.getAttribute('href') || '';
+            return !h.includes('sin_duplicar_regra=S');
+          });
+          if (!linkEdit) return;
+          const rawHref = (linkEdit.getAttribute('href') || '').replace(/&amp;/g, '&');
+          if (!rawHref) return;
+
+          const mIdTr = (tr.id || '').match(/trLocalizadorAut_(\d+)/);
+          const mIdHref = rawHref.match(/id_controle_localizador_sistema=(\d+)/i);
+          const inpId = tr.querySelector('input[name="id_controle_localizador[]"], input[id^="chkInfraItem"]');
+          const id = (mIdTr && mIdTr[1]) || (mIdHref && mIdHref[1]) || (inpId ? String(inpId.value || '').trim() : '');
+          if (!id || idsVistos.has(id)) return;
+          idsVistos.add(id);
+
+          const tds = Array.from(tr.querySelectorAll('td'));
+          const mNumLink = tr.innerHTML ? tr.innerHTML.match(/num_regra=(\d+)/i) : null;
+          const numRegraRaw = mNumLink ? mNumLink[1] : ((tds[1] && tds[1].textContent ? tds[1].textContent.match(/\d+/) : null) || [''])[0];
+          const locRemover = tds[3] ? decodificarEntidadesHtml(decodeEntities(tds[3].textContent || '')).trim() : '';
+          const tdIncHtml = tds[5] ? (tds[5].innerHTML || '') : '';
+          const locIncCabecalho = tdIncHtml ? tdIncHtml.split(/<br\b|<div\b/i)[0].replace(/<[^>]+>/g, ' ') : '';
+          const locIncluir = decodificarEntidadesHtml(decodeEntities(locIncCabecalho)).trim();
+          const mLemb = tdIncHtml.match(/Lembrete:\s*<span[^>]*>([\s\S]*?)<\/span>/i);
+          const lembreteTabela = mLemb ? decodificarEntidadesHtml(decodeEntities(mLemb[1].replace(/<[^>]+>/g, ''))).trim() : '';
+          const temAcaoLembrete = /INCLUIR\s+LEMBRETE/i.test(tdIncHtml) || !!mLemb;
+          const siglasLoc = extrairSiglasLocalizadorTextoAtp(`${locRemover} ${locIncluir}`);
+
+          if (!temAcaoLembrete) return;
+
+          lista.push({
+            id,
+            numRegra: numRegraRaw || id,
+            grupo: textoGrupo,
+            locRemover,
+            locIncluir,
+            lembrete: lembreteTabela,
+            siglasLoc,
+            urlEditar: new URL(rawHref, window.location.href).href
+          });
+        });
+      };
+
+      extrairRegras(doc);
+
+      const selPag = doc.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+      const frmPag = doc.querySelector('form[action*="automatizar_localizadores"]');
+      if (selPag && selPag.options && selPag.options.length > 1 && frmPag) {
+        const actionPag = new URL((frmPag.getAttribute('action') || urlListar).replace(/&amp;/g, '&'), window.location.href).href;
+        for (let p = 1; p < selPag.options.length; p++) {
+          const pairsPag = [];
+          frmPag.querySelectorAll('input[type="hidden"]').forEach(inp => {
+            if (inp.name) pairsPag.push([inp.name, inp.name === 'hdnInfraPaginaAtual' ? selPag.options[p].value : inp.value]);
+          });
+          const respP = await fetch(actionPag, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: encodeWindows1252Body(pairsPag),
+            credentials: 'same-origin'
+          });
+          if (respP.ok) {
+            const htmlP = await lerRespostaTexto(respP);
+            extrairRegras(new DOMParser().parseFromString(htmlP, 'text/html'));
+          }
+        }
+      }
+
+      window._eprocAtpsTransitoServidores = lista;
+      return lista;
+    } catch (e) {
+      console.warn('[Servidores] Erro ao consultar ATPs de Trânsito em Julgado:', e);
+      return [];
+    }
+  }
+
+  async function atualizarLembreteAtpEproc(atpItem, origensPermitidas = [], novoNomeCompleto = '') {
+    if (!atpItem || !atpItem.urlEditar) {
+      throw new Error('URL de edição da ATP indisponível.');
+    }
+
+    const respEdit = await fetch(atpItem.urlEditar, { credentials: 'same-origin' });
+    if (!respEdit.ok) {
+      throw new Error(`Falha ao abrir edição da ATP #${atpItem.numRegra} (HTTP ${respEdit.status})`);
+    }
+    const htmlEdit = await lerRespostaTexto(respEdit);
+    const docEdit = new DOMParser().parseFromString(htmlEdit, 'text/html');
+
+    const form = docEdit.getElementById('frmAssociaEventoLocalizador') ||
+                 docEdit.querySelector('form[action*="automatizar_localizadores_alterar"]');
+    if (!form) {
+      throw new Error(`Formulário frmAssociaEventoLocalizador não encontrado na ATP #${atpItem.numRegra}.`);
+    }
+
+    const chkLancar = form.querySelector('#chkLancarAcaoProgramada');
+    if (chkLancar && !chkLancar.checked) {
+      throw new Error(`Ação Programada está desativada na ATP #${atpItem.numRegra}.`);
+    }
+
+    const elLembrete = form.querySelector('#LembreteTexto') || form.querySelector('textarea[name="LembreteTexto"]');
+    if (!elLembrete) {
+      throw new Error(`Campo LembreteTexto não encontrado na ATP #${atpItem.numRegra}.`);
+    }
+
+    const lembAtual = (elLembrete.value !== undefined && elLembrete.value !== '') ? elLembrete.value : (elLembrete.textContent || '');
+    const sub = substituirTextoLembreteAtp(lembAtual, origensPermitidas, novoNomeCompleto);
+
+    if (sub.jaIgual) {
+      atpItem.lembrete = sub.novoTexto;
+      return { atualizado: false, jaIgual: true, anterior: sub.novoTexto, novo: sub.novoTexto };
+    }
+    if (sub.preservadoManual || !sub.alterado) {
+      return { atualizado: false, preservadoManual: true, lembreteAtual: sub.lembreteAtual || lembAtual };
+    }
+
+    elLembrete.value = sub.novoTexto;
+    elLembrete.textContent = sub.novoTexto;
+
+    const hdnManter = form.querySelector('#hdnSinManterPagina, input[name="hdnSinManterPagina"]');
+    if (hdnManter) hdnManter.value = 'S';
+
+    const mSalvarDados = htmlEdit.match(/['"](controlador\.php\?acao=automatizacao\/salvarDados[^'"]*)['"]/i);
+    let extraHdnAtp = null;
+    if (mSalvarDados && mSalvarDados[1]) {
+      const urlSalvarDados = new URL(mSalvarDados[1].replace(/&amp;/g, '&'), atpItem.urlEditar).href;
+      const selLista = form.querySelector('#selListaATP');
+      const indiceOrigem = (selLista && selLista.value) ? parseInt(selLista.value, 10) || 1 : 1;
+      const hdnATP = form.querySelector(`#hdnATP_${indiceOrigem}, input[name="hdnATP_${indiceOrigem}"]`);
+
+      if (hdnATP || (form.querySelector('#chkMultiplasAcoes') && form.querySelector('#chkMultiplasAcoes').checked)) {
+        const paresDados = coletarCamposFormularioAtp(form, { compactarCompSel: false, lembreteEmHtmlEntities: true });
+        const formDataObj = {};
+        for (const [kRaw, vRaw] of paresDados) {
+          const key = kRaw.replace('[]', '');
+          formDataObj[key] = (kRaw.includes('[]') && formDataObj[key] !== undefined)
+            ? `${formDataObj[key]},${vRaw}`
+            : vRaw;
+        }
+        const respDados = await fetch(urlSalvarDados, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: serializarObjetoAjaxEproc({ formData: formDataObj }).toString()
+        });
+        if (!respDados.ok) {
+          throw new Error(`Erro ao serializar ação programada da ATP #${atpItem.numRegra} (HTTP ${respDados.status})`);
+        }
+        const txtDados = await lerRespostaTexto(respDados);
+        let jsonDados = null;
+        try { jsonDados = JSON.parse(txtDados); } catch (eJson) {}
+        if (!jsonDados || jsonDados.erro || !jsonDados.dados_serializados) {
+          throw new Error((jsonDados && jsonDados.erro) || `Falha em automatizacao/salvarDados na ATP #${atpItem.numRegra}.`);
+        }
+        const inpDesc = form.querySelector('#txtDescricaoAcaoProgramada');
+        const descNova = inpDesc && inpDesc.value ? inpDesc.value.trim().toUpperCase() : '';
+        const descAnterior = (hdnATP && hdnATP.value && hdnATP.value.includes('|')) ? hdnATP.value.split('|')[0] : '';
+        const valorATP = `${descNova || descAnterior}|${jsonDados.dados_serializados}`;
+        if (hdnATP) hdnATP.value = valorATP;
+        else extraHdnAtp = [`hdnATP_${indiceOrigem}`, valorATP];
+      }
+    }
+
+    const pairsSubmit = coletarCamposFormularioAtp(form, { compactarCompSel: true, lembreteEmHtmlEntities: false });
+    if (extraHdnAtp && !pairsSubmit.some(([k]) => k === extraHdnAtp[0])) {
+      pairsSubmit.push(extraHdnAtp);
+    }
+    if (!pairsSubmit.some(([k]) => k === 'hdnSinManterPagina')) {
+      pairsSubmit.push(['hdnSinManterPagina', 'S']);
+    }
+
+    const actionAttr = decodeEntities(form.getAttribute ? (form.getAttribute('action') || '') : (form.action || ''));
+    const urlPost = new URL(actionAttr || atpItem.urlEditar, atpItem.urlEditar).href;
+    const respPost = await fetch(urlPost, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encodeWindows1252Body(pairsSubmit)
+    });
+    if (!respPost.ok) {
+      throw new Error(`Falha HTTP ${respPost.status} ao salvar ATP #${atpItem.numRegra}.`);
+    }
+
+    const htmlPost = await lerRespostaTexto(respPost);
+    const docPost = new DOMParser().parseFromString(htmlPost, 'text/html');
+    const exc = docPost.querySelector('.infraExcecao, #divInfraExcecao');
+    if (exc && exc.textContent.trim()) {
+      throw new Error(exc.textContent.trim().slice(0, 180));
+    }
+    const htmlSemFuncs = htmlPost.replace(/function\s+[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/g, '');
+    const mAlert = htmlSemFuncs.match(/alert\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (mAlert && mAlert[1] && !/sucesso|alterad|salvo/i.test(mAlert[1])) {
+      throw new Error(mAlert[1].slice(0, 180));
+    }
+
+    atpItem.lembrete = sub.novoTexto;
+    return {
+      atualizado: true,
+      jaIgual: false,
+      anterior: decodificarEntidadesHtml(decodeEntities(lembAtual)).trim(),
+      novo: sub.novoTexto
+    };
+  }
+
   // Persistência local (world: MAIN utiliza localStorage) e interface dinâmica de localizadores 👤
   function encontrarGrupoVinculadoAoLocalizador(siglaLoc, grupos = [], fallbackNomeGrupo = '') {
     const siglaLimpa = String(siglaLoc || '').replace(/👤/g, '').trim();
@@ -14699,8 +15056,10 @@
     const locsCarregados = Array.isArray(window._eprocLocalizadoresUnidade) && window._eprocLocalizadoresUnidade.some(l => (l.nomeCompleto || '').includes('👤'));
     const prefsRelCarregadas = Array.isArray(window._eprocPrefsRelatorioServidores);
     const prefsDocCarregadas = Array.isArray(window._eprocPrefsDocumentosServidores);
+    const atpsCarregadas = Array.isArray(window._eprocAtpsTransitoServidores);
     const listaPrefsRel = prefsRelCarregadas ? window._eprocPrefsRelatorioServidores : [];
     const listaPrefsDoc = prefsDocCarregadas ? window._eprocPrefsDocumentosServidores : [];
+    const listaAtpsTj = atpsCarregadas ? window._eprocAtpsTransitoServidores : [];
 
     const listaSlots = (Array.isArray(slotsExistentes) && slotsExistentes.length > 0)
       ? slotsExistentes
@@ -14755,12 +15114,17 @@
       }
 
       let prefsVincHtml = '';
-      if (prefsRelCarregadas || prefsDocCarregadas) {
-        const siglaSlotAtual = String(nomeBaseAtual || '').replace(/👤/g, '').trim();
+      if (prefsRelCarregadas || prefsDocCarregadas || atpsCarregadas) {
+        const siglaSlotAtual = String(nomeBaseAtual || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
         const qtdRelSlot = prefsRelCarregadas ? filtrarPreferenciasParaSlot(listaPrefsRel, [siglaSlotAtual]).length : 0;
         const qtdDocSlot = prefsDocCarregadas ? filtrarPreferenciasParaSlot(listaPrefsDoc, [siglaSlotAtual]).length : 0;
-        const corPrefs = (qtdRelSlot > 0 || qtdDocSlot > 0) ? '#0f766e' : '#94a3b8';
-        prefsVincHtml = `<div id="srv-prefs-info-${i}" style="font-size:9.5px; color:${corPrefs}; line-height:1.2; padding-left:2px;" title="Preferências encontradas no eproc vinculadas a ${nomeBaseAtual}">📊 ${qtdRelSlot} relatório(s) • 📄 ${qtdDocSlot} doc(s)</div>`;
+        const qtdAtpSlot = atpsCarregadas ? filtrarAtpsTransitoParaSlot(listaAtpsTj, [siglaSlotAtual]).length : 0;
+        const corPrefs = (qtdRelSlot > 0 || qtdDocSlot > 0 || qtdAtpSlot > 0) ? '#0f766e' : '#94a3b8';
+        const partesPrefs = [];
+        if (prefsRelCarregadas) partesPrefs.push(`📊 ${qtdRelSlot} relatório(s)`);
+        if (prefsDocCarregadas) partesPrefs.push(`📄 ${qtdDocSlot} doc(s)`);
+        if (atpsCarregadas) partesPrefs.push(`⚡ ${qtdAtpSlot} ATP(s) TJ`);
+        prefsVincHtml = `<div id="srv-prefs-info-${i}" style="font-size:9.5px; color:${corPrefs}; line-height:1.2; padding-left:2px;" title="Preferências e ATPs de Trânsito em Julgado vinculadas a ${nomeBaseAtual}">${partesPrefs.join(' • ')}</div>`;
       }
 
       html += `
@@ -14876,16 +15240,17 @@
     addLog('🔄 [Ler eproc] Consultando grupos de preferência (listar_formulario_personalizacao_grupo)...');
     const grupos = await obterGruposPreferenciaEproc();
 
-    addLog('🔄 [Ler eproc] Consultando preferências de Relatórios e Documentos...');
-    const [prefsRel, prefsDoc] = await Promise.all([
+    addLog('🔄 [Ler eproc] Consultando preferências de Relatórios, Documentos e ATPs (Trânsito em Julgado)...');
+    const [prefsRel, prefsDoc, atpsTj] = await Promise.all([
       obterPreferenciasRelatorioParaServidores(),
-      obterPreferenciasDocumentosParaServidores()
+      obterPreferenciasDocumentosParaServidores(),
+      obterAtpsTransitoJulgadoEproc()
     ]);
 
     const slotsDinamicos = construirSlotsDinamicosDoEproc(localizadores, grupos, obterDadosServidoresDosInputs());
     const qtdLocsUsuario = localizadores.filter(l => (l.nomeCompleto || '').includes('👤')).length;
 
-    addLog(`ℹ️ eproc: ${totalUsuarios} usuário(s), ${qtdLocsUsuario} localizador(es) 👤 (de ${localizadores.length}), ${grupos.length} grupo(s), ${prefsRel.length} relatório(s) e ${prefsDoc.length} doc(s).`);
+    addLog(`ℹ️ eproc: ${totalUsuarios} usuário(s), ${qtdLocsUsuario} localizador(es) 👤 (de ${localizadores.length}), ${grupos.length} grupo(s), ${prefsRel.length} relatório(s), ${prefsDoc.length} doc(s) e ${atpsTj.length} ATP(s) TJ.`);
 
     renderizarTabelaServidores(slotsDinamicos);
     salvarServidoresStorage(false);
@@ -14895,11 +15260,11 @@
       if (totalUsuarios === 0 || localizadores.length === 0 || errs) {
         banner.style.background = '#fef3c7';
         banner.style.color = '#92400e';
-        banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${totalUsuarios} usuários, ${qtdLocsUsuario} localizadores 👤, ${prefsRel.length} relatórios e ${prefsDoc.length} docs. ${errs || 'Verifique permissões ou abra uma tela do eproc com o menu lateral.'}`;
+        banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${totalUsuarios} usuários, ${qtdLocsUsuario} localizadores 👤, ${prefsRel.length} relatórios, ${prefsDoc.length} docs e ${atpsTj.length} ATPs TJ. ${errs || 'Verifique permissões ou abra uma tela do eproc com o menu lateral.'}`;
       } else {
         banner.style.background = '#dcfce7';
         banner.style.color = '#15803d';
-        banner.innerHTML = `✅ <strong>Pronto:</strong> ${totalUsuarios} usuários, ${qtdLocsUsuario} localizador(es) 👤, ${grupos.length} grupos, ${prefsRel.length} relatórios e ${prefsDoc.length} docs carregados.`;
+        banner.innerHTML = `✅ <strong>Pronto:</strong> ${totalUsuarios} usuários, ${qtdLocsUsuario} localizador(es) 👤, ${grupos.length} grupos, ${prefsRel.length} relatórios, ${prefsDoc.length} docs e ${atpsTj.length} ATPs TJ carregados.`;
         setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
       }
     }
@@ -15241,6 +15606,7 @@
     let gruposSucesso = 0;
     let relatoriosSucesso = 0;
     let documentosSucesso = 0;
+    let atpsSucesso = 0;
     const gruposNaoEncontrados = [];
     const localizadoresNaoEncontrados = [];
     const usuariosNovosVinculados = [];
@@ -15252,6 +15618,8 @@
 
     const chkRenomearPrefs = document.getElementById('srv-chk-renomear-preferencias');
     const deveRenomearPrefs = chkRenomearPrefs ? !!chkRenomearPrefs.checked : true;
+    const chkRenomearAtps = document.getElementById('srv-chk-renomear-lembretes-atp');
+    const deveAtualizarAtps = chkRenomearAtps ? !!chkRenomearAtps.checked : true;
 
     try {
       if (!window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0) {
@@ -15275,6 +15643,7 @@
 
       let prefsRelatorioUnidade = [];
       let prefsDocumentosUnidade = [];
+      let atpsTransitoUnidade = [];
       if (deveRenomearPrefs) {
         addLog('🔍 Consultando preferências de Relatórios e Documentos da unidade...');
         [prefsRelatorioUnidade, prefsDocumentosUnidade] = await Promise.all([
@@ -15282,6 +15651,11 @@
           obterPreferenciasDocumentosParaServidores()
         ]);
         addLog(`ℹ️ ${prefsRelatorioUnidade.length} relatório(s) e ${prefsDocumentosUnidade.length} documento(s) carregado(s) para verificação.`);
+      }
+      if (deveAtualizarAtps) {
+        addLog('🔍 Consultando ATPs do grupo Trânsito em Julgado (Lembretes)...');
+        atpsTransitoUnidade = await obterAtpsTransitoJulgadoEproc();
+        addLog(`ℹ️ ${atpsTransitoUnidade.length} ATP(s) de Trânsito em Julgado encontrada(s) com Lembrete.`);
       }
 
       const idsPrefsRenomeadasNoLote = new Set();
@@ -15433,6 +15807,8 @@
         const siglasOrigemSlot = candidatasOrigem.filter((v, idxS, arrS) =>
           v && normalizar(v) !== normalizar(item.sigla) && arrS.findIndex(x => normalizar(x) === normalizar(v)) === idxS
         );
+        const origensLembreteSlot = [siglaLocCurtoOriginal, ...candidatasOrigem, ...siglasOrigemSlot]
+          .filter((v, idxO, arrO) => v && arrO.findIndex(x => normalizar(x) === normalizar(v)) === idxO);
 
         // EXECUÇÃO CONJUNTA (1. Localizador -> 2. Grupo de Trabalho + Usuários -> 3. Gestão -> 4. Relatórios e Documentos)
         let localizadorOk = false;
@@ -15573,8 +15949,35 @@
           if (infoPrefsEl) {
             const totRelAt = filtrarPreferenciasParaSlot(prefsRelatorioUnidade, [item.sigla]).length;
             const totDocAt = filtrarPreferenciasParaSlot(prefsDocumentosUnidade, [item.sigla]).length;
-            infoPrefsEl.style.color = (totRelAt > 0 || totDocAt > 0) ? '#0f766e' : '#94a3b8';
-            infoPrefsEl.textContent = `📊 ${totRelAt} relatório(s) • 📄 ${totDocAt} doc(s)`;
+            const totAtpAt = filtrarAtpsTransitoParaSlot(atpsTransitoUnidade, [...siglasOrigemSlot, item.sigla]).length;
+            infoPrefsEl.style.color = (totRelAt > 0 || totDocAt > 0 || totAtpAt > 0) ? '#0f766e' : '#94a3b8';
+            const partesAt = [`📊 ${totRelAt} relatório(s)`, `📄 ${totDocAt} doc(s)`];
+            if (deveAtualizarAtps) partesAt.push(`⚡ ${totAtpAt} ATP(s) TJ`);
+            infoPrefsEl.textContent = partesAt.join(' • ');
+          }
+        }
+
+        // E. Lembretes das ATPs de Trânsito em Julgado vinculadas ao slot
+        if (deveAtualizarAtps && localizadorOk && grupoOk && atpsTransitoUnidade.length > 0 && !window._eprocPararLote) {
+          const atpsSlot = filtrarAtpsTransitoParaSlot(atpsTransitoUnidade, [...siglasOrigemSlot, item.sigla]);
+          for (const atp of atpsSlot) {
+            if (window._eprocPararLote) break;
+            try {
+              const resAtp = await atualizarLembreteAtpEproc(atp, origensLembreteSlot, novoLocalizadorCurto);
+              atp.siglasLoc = [item.sigla];
+              if (resAtp.jaIgual) {
+                addLog(`  ✅ [ATP #${atp.numRegra} TJ] Lembrete já está correto: "${novoLocalizadorCurto}"`);
+              } else if (resAtp.preservadoManual) {
+                addLog(`  ℹ️ [ATP #${atp.numRegra} TJ] Lembrete "${resAtp.lembreteAtual}" preservado (personalizado).`);
+              } else if (resAtp.atualizado) {
+                atpsSucesso++;
+                addLog(`  ✅ [ATP #${atp.numRegra} TJ] Lembrete atualizado: "${resAtp.anterior}" ➔ "${resAtp.novo}"`);
+              }
+              await sleep(100);
+            } catch (eAtp) {
+              addLog(`  ⚠️ [ATP #${atp.numRegra} TJ] Erro ao atualizar lembrete: ${eAtp.message}`, 'warn');
+              preferenciasComErro.push({ slot: slotNum, tipo: `ATP #${atp.numRegra}`, nome: atp.lembrete || `Regra #${atp.numRegra}`, erro: eAtp.message });
+            }
           }
         }
 
@@ -15589,7 +15992,7 @@
       salvarServidoresStorage(false);
 
       addLog('🏁 PERSONALIZAÇÃO DE SERVIDORES CONCLUÍDA!', 'info');
-      addLog(`📊 Localizadores: ${localizadoresSucesso} | Grupos: ${gruposSucesso} | Relatórios: ${relatoriosSucesso} | Docs: ${documentosSucesso} | Novos Vínculos: ${usuariosNovosVinculados.length} | Já Constavam: ${usuariosJaConstavam.length} | Não Alterados: ${slotsBloqueados.length}`);
+      addLog(`📊 Localizadores: ${localizadoresSucesso} | Grupos: ${gruposSucesso} | Relatórios: ${relatoriosSucesso} | Docs: ${documentosSucesso} | ATPs TJ: ${atpsSucesso} | Novos Vínculos: ${usuariosNovosVinculados.length} | Já Constavam: ${usuariosJaConstavam.length} | Não Alterados: ${slotsBloqueados.length}`);
 
       renderizarModalConclusaoServidores({
         total: slotsFinais.length,
@@ -15597,6 +16000,7 @@
         gruposSucesso,
         relatoriosSucesso,
         documentosSucesso,
+        atpsSucesso,
         gruposNaoEncontrados,
         localizadoresNaoEncontrados,
         usuariosNovosVinculados,
@@ -15672,6 +16076,7 @@
 
     const relatoriosQtd = rel.relatoriosSucesso || 0;
     const documentosQtd = rel.documentosSucesso || 0;
+    const atpsQtd = rel.atpsSucesso || 0;
 
     overlay.innerHTML = `
       <div style="background:#ffffff; border-radius:12px; width:560px; max-width:92vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); overflow:hidden; font-family:system-ui, -apple-system, sans-serif;">
@@ -15684,7 +16089,7 @@
         </div>
 
         <div style="padding:16px; overflow-y:auto; flex:1;">
-          <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; margin-bottom:12px;">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap:6px; margin-bottom:12px;">
             <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 4px; text-align:center;">
               <div style="font-size:17px; font-weight:800; color:#15803d;">${rel.localizadoresSucesso}</div>
               <div style="font-size:10px; color:#166534; font-weight:600;">Localizadores</div>
@@ -15705,6 +16110,10 @@
               <div style="font-size:17px; font-weight:800; color:#0e7490;">${documentosQtd}</div>
               <div style="font-size:10px; color:#155e75; font-weight:600;">Docs Renom.</div>
             </div>
+            <div style="background:#ecfeff; border:1px solid #a5f3fc; border-radius:8px; padding:8px 4px; text-align:center;">
+              <div style="font-size:17px; font-weight:800; color:#0e7490;">${atpsQtd}</div>
+              <div style="font-size:10px; color:#155e75; font-weight:600;">Lembretes ATP TJ</div>
+            </div>
             <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:8px 4px; text-align:center;">
               <div style="font-size:17px; font-weight:800; color:#475569;">${rel.usuariosJaConstavam.length}</div>
               <div style="font-size:10px; color:#475569; font-weight:600;">Já Constavam</div>
@@ -15712,7 +16121,7 @@
           </div>
 
           <div style="font-size:11.5px; color:#334155; line-height:1.45;">
-            Nos slots válidos, localizador, grupo de trabalho, perfis ativos e títulos de relatórios/documentos vinculados foram atualizados mantendo filtros, flags e membros anteriores intactos. Slots com qualquer pendência foram preservados.
+            Nos slots válidos, localizador, grupo de trabalho, perfis ativos, títulos de relatórios/documentos e lembretes das ATPs de Trânsito em Julgado foram atualizados mantendo filtros, flags e membros anteriores intactos. Slots com qualquer pendência foram preservados.
           </div>
 
           ${bloqueadosHtml}
@@ -15741,20 +16150,22 @@
     const slotsSalvos = carregarServidoresStorage();
     renderizarTabelaServidores(slotsSalvos);
 
-    const chkRenPrefs = document.getElementById('srv-chk-renomear-preferencias');
-    if (chkRenPrefs) {
+    const vincularCheckboxPersistente = (elemId, storageKey) => {
+      const chk = document.getElementById(elemId);
+      if (!chk) return;
       try {
-        const prefSalva = localStorage.getItem('eproc_servidores_renomear_prefs');
-        if (prefSalva !== null) {
-          chkRenPrefs.checked = prefSalva === 'true';
-        }
+        const saved = localStorage.getItem(storageKey);
+        if (saved !== null) chk.checked = saved === 'true';
       } catch (e) {}
-      chkRenPrefs.addEventListener('change', () => {
+      chk.addEventListener('change', () => {
         try {
-          localStorage.setItem('eproc_servidores_renomear_prefs', chkRenPrefs.checked ? 'true' : 'false');
+          localStorage.setItem(storageKey, chk.checked ? 'true' : 'false');
         } catch (e) {}
       });
-    }
+    };
+
+    vincularCheckboxPersistente('srv-chk-renomear-preferencias', 'eproc_servidores_renomear_prefs');
+    vincularCheckboxPersistente('srv-chk-renomear-lembretes-atp', 'eproc_servidores_renomear_lembretes_atp');
 
     const btnExec = document.getElementById('btn-servidores-executar');
     if (btnExec) btnExec.onclick = executarPersonalizacaoServidores;
@@ -15890,9 +16301,13 @@
               </button>
             </div>
 
-            <label style="display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:600; color:#334155; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; margin-bottom:8px; cursor:pointer;" title="Ao personalizar um slot, renomeia também os títulos das preferências de Relatório Geral e Documentos (Área de Minutas) vinculadas, preservando filtros e grupos">
+            <label style="display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:600; color:#334155; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; margin-bottom:4px; cursor:pointer;" title="Ao personalizar um slot, renomeia também os títulos das preferências de Relatório Geral e Documentos (Área de Minutas) vinculadas, preservando filtros e grupos">
               <input type="checkbox" id="srv-chk-renomear-preferencias" checked style="cursor:pointer;">
               <span>Renomear também Relatórios e Documentos vinculados</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:600; color:#334155; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; margin-bottom:8px; cursor:pointer;" title="Ao personalizar um slot, atualiza também o lembrete das ATPs do grupo Trânsito em Julgado para o nome completo do servidor">
+              <input type="checkbox" id="srv-chk-renomear-lembretes-atp" checked style="cursor:pointer;">
+              <span>Atualizar lembretes das ATPs (Trânsito em Julgado)</span>
             </label>
 
             <!-- Tabela dos 9 Slots -->
@@ -16263,6 +16678,7 @@
         sessionStorage.removeItem('eproc_pref_2g_modulo_ativo');
         localStorage.removeItem('eproc_servidores_personalizados');
         localStorage.removeItem('eproc_servidores_renomear_prefs');
+        localStorage.removeItem('eproc_servidores_renomear_lembretes_atp');
       } catch (e) {}
 
       window._eprocPararLote = true;
@@ -16272,6 +16688,7 @@
       window._eprocGruposUnidade = null;
       window._eprocPrefsRelatorioServidores = null;
       window._eprocPrefsDocumentosServidores = null;
+      window._eprocAtpsTransitoServidores = null;
       window._eprocServidoresArquivoImportadoRef = null;
       window._eprocServidoresVerificadosNaoEncontrados = null;
       window._eprocPromiseSyncBasicoServidores = null;
