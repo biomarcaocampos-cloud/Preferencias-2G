@@ -693,12 +693,8 @@
       if (cardInfo) cardInfo.style.display = 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = 'none';
       if (btnIniciar) btnIniciar.style.display = 'none';
-      if (!pularRecargaPlanilha && (!window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0)) {
-        carregarUsuariosAtivosDoOrgao().then(mapa => {
-          if (mapa && Object.keys(mapa).length > 0) {
-            renderizarTabelaServidores(obterDadosServidoresDosInputs());
-          }
-        });
+      if (!pularRecargaPlanilha) {
+        sincronizarServidoresBasicoDoEproc();
       }
     } else {
       if (containerSrv) containerSrv.style.display = 'none';
@@ -13020,7 +13016,7 @@
           const bateCand = lCurto === candNorm || lComp === candNorm;
           if (!bateCand) return false;
           // Se o localizador já encontrado É o próprio localizador deste slot, não há colisão
-          if (siglaAtualBase && (lCurto === normalizar(siglaAtualBase) || lComp === normalizar(item.nomeBase))) {
+          if (siglaAtualBase && (lCurto === normalizar(siglaAtualBase) || lComp === normalizar(siglaAtualBase) || lComp === normalizar(item.nomeBase))) {
             return false;
           }
           if (lCurto === normalizar(`Servidor ${item.slot}`) || lComp === normalizar(`Servidor ${item.slot}`)) {
@@ -13030,7 +13026,9 @@
           if (!temLocGenericoSlot && cand === siglaBase) {
             const reivindicadoPorOutroSlot = slots.some(outro =>
               outro && outro.slot !== item.slot && outro.nomeBase &&
-              (normalizar(outro.nomeBase) === lComp || normalizar(String(outro.nomeBase).replace(/👤/g, '')) === lCurto)
+              (normalizar(outro.nomeBase) === lComp ||
+               normalizar(String(outro.nomeBase).replace(/👤/g, '')) === lComp ||
+               normalizar(String(outro.nomeBase).replace(/👤/g, '')) === lCurto)
             );
             if (!reivindicadoPorOutroSlot) return false;
           }
@@ -14483,7 +14481,7 @@
         gestao: false
       }));
       return base.map(s => {
-        const siglaLoc = String(s.nomeBase || '').replace(/👤/g, '').trim();
+        const siglaLoc = String(s.nomeBase || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
         const vinc = encontrarGrupoVinculadoAoLocalizador(siglaLoc, grupos, s.nomeGrupoBase);
         return {
           ...s,
@@ -14496,12 +14494,14 @@
     // Separa personalizados e genéricos ("Servidor N") para ordenação previsível e limpa
     const enriquecidos = locsUsuario.map(loc => {
       const nomeComp = decodeEntities(loc.nomeCompleto || '').trim();
-      const nomeCurto = decodeEntities(loc.nomeCurto || '').trim() || nomeComp.replace(/👤/g, '').trim();
-      const mNum = nomeCurto.match(/^Servidor\s*(\d+)$/i);
+      const siglaLoc = nomeComp.replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
+      const nomeCurto = decodeEntities(loc.nomeCurto || '').trim() || siglaLoc;
+      const mNum = siglaLoc.match(/^Servidor\s*(\d+)$/i) || nomeCurto.match(/^Servidor\s*(\d+)$/i);
       return {
         loc,
         locId: loc.id || '',
         nomeComp,
+        siglaLoc: siglaLoc || nomeCurto,
         nomeCurto,
         ehGenerico: !!mNum,
         numGen: mNum ? parseInt(mNum[1], 10) : 999999
@@ -14511,15 +14511,15 @@
     enriquecidos.sort((a, b) => {
       if (a.ehGenerico !== b.ehGenerico) return a.ehGenerico ? 1 : -1;
       if (a.ehGenerico && b.ehGenerico) return a.numGen - b.numGen;
-      return a.nomeCurto.localeCompare(b.nomeCurto, 'pt-BR');
+      return a.siglaLoc.localeCompare(b.siglaLoc, 'pt-BR');
     });
 
     const usadosSalvos = new Set();
-    const resultado = enriquecidos.map((itemLoc, idx) => {
-      const slotNum = idx + 1;
-      let matchSalvo = null;
+    const matchesPorIdx = new Array(enriquecidos.length).fill(null);
 
-      if (Array.isArray(slotsAtuais) && slotsAtuais.length > 0) {
+    if (Array.isArray(slotsAtuais) && slotsAtuais.length > 0) {
+      // Passo 1: match exato (locId, nomeBase atual ou slot genérico "Servidor N")
+      enriquecidos.forEach((itemLoc, idx) => {
         const acharIdx = slotsAtuais.findIndex((sa, sIdx) => {
           if (usadosSalvos.has(sIdx)) return false;
           if (sa.locId && itemLoc.locId && String(sa.locId) === String(itemLoc.locId)) return true;
@@ -14529,12 +14529,49 @@
         });
         if (acharIdx !== -1) {
           usadosSalvos.add(acharIdx);
-          matchSalvo = slotsAtuais[acharIdx];
+          matchesPorIdx[idx] = slotsAtuais[acharIdx];
         }
-      }
+      });
 
+      // Passo 2: recupera seleção salva quando nomeBase ainda estava genérica (ex.: Servidor 1), mas grupo/sigla já corresponde ao localizador real
+      const mapaU = window._eprocUsuariosUnidade || {};
+      const temMapaU = Object.keys(mapaU).length > 0;
+      enriquecidos.forEach((itemLoc, idx) => {
+        if (matchesPorIdx[idx] || itemLoc.ehGenerico) return;
+        const acharIdx = slotsAtuais.findIndex((sa, sIdx) => {
+          if (usadosSalvos.has(sIdx)) return false;
+          const baseGenerica = !sa.nomeBase || /^👤?Servidor\s*\d+👤?$/i.test(String(sa.nomeBase).trim());
+          if (!baseGenerica) return false;
+          const grpSalvo = String(sa.nomeGrupoBase || '').trim();
+          const grpNaoGenerico = grpSalvo && !/^Trabalho\s*-\s*Servidor\s*\d+$/i.test(grpSalvo);
+          if (grpNaoGenerico && normalizar(grpSalvo) === normalizar(`Trabalho - ${itemLoc.siglaLoc}`)) return true;
+          const nomeServSalvo = String(sa.nomeServidor || '').trim();
+          if (nomeServSalvo) {
+            const siglaServ = calcularSiglaServidor(nomeServSalvo);
+            if (siglaServ && normalizar(siglaServ) === normalizar(itemLoc.siglaLoc) && (!temMapaU || mapaU[normalizar(nomeServSalvo)])) {
+              return true;
+            }
+          }
+          return false;
+        });
+        if (acharIdx !== -1) {
+          usadosSalvos.add(acharIdx);
+          matchesPorIdx[idx] = slotsAtuais[acharIdx];
+        }
+      });
+    }
+
+    const mapaUsuariosUnidade = window._eprocUsuariosUnidade || {};
+    const resultado = enriquecidos.map((itemLoc, idx) => {
+      const slotNum = idx + 1;
+      const matchSalvo = matchesPorIdx[idx];
       const fallbackGrupo = matchSalvo ? matchSalvo.nomeGrupoBase : '';
-      const vinc = encontrarGrupoVinculadoAoLocalizador(itemLoc.nomeCurto, grupos, fallbackGrupo);
+      const vinc = encontrarGrupoVinculadoAoLocalizador(itemLoc.siglaLoc || itemLoc.nomeCurto, grupos, fallbackGrupo);
+      const nomeServ = matchSalvo ? (matchSalvo.nomeServidor || '') : '';
+      const entryUnidade = nomeServ ? mapaUsuariosUnidade[normalizar(nomeServ)] : null;
+      const perfisSlot = (entryUnidade && Array.isArray(entryUnidade.perfis))
+        ? entryUnidade.perfis
+        : (matchSalvo ? (matchSalvo.perfis || []) : []);
 
       return {
         slot: slotNum,
@@ -14542,8 +14579,8 @@
         nomeBase: itemLoc.nomeComp,
         nomeGrupoBase: vinc.nomeGrupo,
         grupoEncontrado: vinc.encontrado,
-        nomeServidor: matchSalvo ? (matchSalvo.nomeServidor || '') : '',
-        perfis: matchSalvo ? (matchSalvo.perfis || []) : [],
+        nomeServidor: nomeServ,
+        perfis: perfisSlot,
         gestao: matchSalvo ? !!matchSalvo.gestao : false
       };
     });
@@ -14775,7 +14812,52 @@
     atualizarSiglasEmTempoReal();
   }
 
+  async function sincronizarServidoresBasicoDoEproc(forcar = false) {
+    if (!forcar && window._eprocSyncBasicoServidoresTentado) {
+      return window._eprocPromiseSyncBasicoServidores || null;
+    }
+    const faltaUsuarios = forcar || !window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0;
+    const faltaLocs = forcar || !Array.isArray(window._eprocLocalizadoresUnidade) || window._eprocLocalizadoresUnidade.length === 0;
+    const faltaGrupos = forcar || !Array.isArray(window._eprocGruposUnidade) || window._eprocGruposUnidade.length === 0;
+
+    if (!faltaUsuarios && !faltaLocs && !faltaGrupos) return null;
+    if (window._eprocPromiseSyncBasicoServidores) return window._eprocPromiseSyncBasicoServidores;
+
+    window._eprocPromiseSyncBasicoServidores = (async () => {
+      try {
+        const [mapa, locs, grps] = await Promise.all([
+          faltaUsuarios ? carregarUsuariosAtivosDoOrgao() : Promise.resolve(window._eprocUsuariosUnidade),
+          faltaLocs ? obterLocalizadoresOrgaoEproc() : Promise.resolve(window._eprocLocalizadoresUnidade),
+          faltaGrupos ? obterGruposPreferenciaEproc() : Promise.resolve(window._eprocGruposUnidade)
+        ]);
+        window._eprocSyncBasicoServidoresTentado = true;
+
+        if (gravacaoEmAndamento || !document.getElementById('rito-servidores-slots-lista')) return;
+
+        const slotsUi = obterDadosServidoresDosInputs();
+        const temSelecaoUi = slotsUi.some(s => s.nomeServidor && s.nomeServidor.trim());
+        const slotsBase = temSelecaoUi ? slotsUi : (carregarServidoresStorage() || slotsUi);
+        const temLocsUsuario = Array.isArray(locs) && locs.some(l => (l.nomeCompleto || '').includes('👤'));
+
+        if (temLocsUsuario) {
+          const slotsDinamicos = construirSlotsDinamicosDoEproc(locs, grps || window._eprocGruposUnidade || [], slotsBase);
+          renderizarTabelaServidores(slotsDinamicos);
+          salvarServidoresStorage(false);
+        } else if (mapa && Object.keys(mapa).length > 0) {
+          renderizarTabelaServidores(slotsBase);
+        }
+      } catch (e) {
+        console.warn('[Servidores] Erro na sincronização automática:', e);
+      } finally {
+        window._eprocPromiseSyncBasicoServidores = null;
+      }
+    })();
+
+    return window._eprocPromiseSyncBasicoServidores;
+  }
+
   async function lerLocalizadoresAtuaisDoEproc() {
+    window._eprocSyncBasicoServidoresTentado = true;
     const banner = document.getElementById('srv-status-info');
     if (banner) {
       banner.style.display = 'block';
@@ -14955,6 +15037,7 @@
         return;
       }
 
+      await sincronizarServidoresBasicoDoEproc();
       if (!window._eprocUsuariosUnidade || Object.keys(window._eprocUsuariosUnidade).length === 0) {
         await carregarUsuariosAtivosDoOrgao();
       }
@@ -15240,16 +15323,23 @@
       const slotsFinais = resolverColisoesSiglas(slots, localizadores);
 
       const localizarLocDoSlot = (item, slotNum, novoLocalizadorNome, novoLocalizadorCurto) => {
-        const siglaBaseAntiga = String(item.nomeBase || '').replace(/👤/g, '').trim();
+        const siglaBaseAntiga = String(item.nomeBase || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
         let m = item.locId ? localizadores.find(l => l.id && String(l.id) === String(item.locId)) : null;
         if (!m) {
-          m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(item.nomeBase) || (siglaBaseAntiga && normalizar(l.nomeCurto) === normalizar(siglaBaseAntiga)));
+          m = localizadores.find(l =>
+            normalizar(l.nomeCompleto) === normalizar(item.nomeBase) ||
+            (siglaBaseAntiga && (
+              normalizar(String(l.nomeCompleto || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim()) === normalizar(siglaBaseAntiga) ||
+              normalizar(l.nomeCurto) === normalizar(siglaBaseAntiga)
+            ))
+          );
         }
         if (!m) {
           m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(`Servidor ${slotNum}`) || normalizar(l.nomeCurto) === normalizar(`Servidor ${slotNum}`));
         }
         if (!m) {
-          m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(novoLocalizadorNome) || normalizar(l.nomeCurto) === normalizar(novoLocalizadorCurto));
+          m = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(novoLocalizadorNome)) ||
+              localizadores.find(l => (l.nomeCompleto || '').includes('👤') && normalizar(l.nomeCurto) === normalizar(novoLocalizadorCurto));
         }
         return m || null;
       };
@@ -15283,12 +15373,17 @@
 
         const item = slotsFinais[idx];
         const slotNum = item.slot;
+        const nomeServidorLimpo = String(item.nomeServidor || '')
+          .replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toUpperCase();
         const novoLocalizadorNome = `👤${item.sigla}👤`;
-        const novoLocalizadorCurto = item.sigla;
+        const novoLocalizadorCurto = nomeServidorLimpo || item.sigla;
         const novoGrupoNome = `Trabalho - ${item.sigla}`;
         const perfisUsuario = item.perfis || [];
 
-        addLog(`🔹 [Slot ${slotNum}] Validando pré-requisitos para "${item.nomeServidor}" ➔ ${novoLocalizadorNome}...`, 'info');
+        addLog(`🔹 [Slot ${slotNum}] Validando pré-requisitos para "${item.nomeServidor}" ➔ ${novoLocalizadorNome} (${novoLocalizadorCurto})...`, 'info');
 
         // PRÉ-VALIDAÇÃO CONJUNTA (SOMENTE LEITURA):
         // Localizador + Grupo Existente + Usuário no Órgão precisam existir ANTES de gravar qualquer alteração!
@@ -15328,9 +15423,14 @@
           continue;
         }
 
-        const siglaLocOriginal = decodeEntities(locMatch.nomeCurto || '').replace(/👤/g, '').trim();
-        const siglaSlotOriginal = String(item.nomeBase || '').replace(/👤/g, '').trim();
-        const siglasOrigemSlot = [siglaLocOriginal, siglaSlotOriginal].filter((v, idxS, arrS) =>
+        const siglaLocCompOriginal = decodeEntities(locMatch.nomeCompleto || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
+        const siglaLocCurtoOriginal = decodeEntities(locMatch.nomeCurto || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
+        const siglaSlotOriginal = String(item.nomeBase || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
+        const candidatasOrigem = [siglaLocCompOriginal, siglaSlotOriginal];
+        if (siglaLocCurtoOriginal && (!siglaLocCurtoOriginal.includes(' ') || /^Servidor\s*\d+$/i.test(siglaLocCurtoOriginal))) {
+          candidatasOrigem.push(siglaLocCurtoOriginal);
+        }
+        const siglasOrigemSlot = candidatasOrigem.filter((v, idxS, arrS) =>
           v && normalizar(v) !== normalizar(item.sigla) && arrS.findIndex(x => normalizar(x) === normalizar(v)) === idxS
         );
 
@@ -15340,26 +15440,38 @@
         const jaIgualLoc = decodeEntities(locMatch.nomeCompleto).trim() === novoLocalizadorNome &&
                            decodeEntities(locMatch.nomeCurto).trim() === novoLocalizadorCurto;
         if (jaIgualLoc) {
-          addLog(`  ✅ Localizador já está com o nome correto: ${novoLocalizadorNome}`);
+          addLog(`  ✅ Localizador já está com o nome correto: ${novoLocalizadorNome} (Nome: ${novoLocalizadorCurto})`);
           localizadoresSucesso++;
           localizadorOk = true;
         } else {
-          addLog(`  ✏️ Renomeando localizador "${locMatch.nomeCompleto}" para "${novoLocalizadorNome}"...`);
+          addLog(`  ✏️ Renomeando localizador "${locMatch.nomeCompleto}" para "${novoLocalizadorNome}" (Nome do Localizador: "${novoLocalizadorCurto}")...`);
           try {
             await alterarLocalizadorEproc(locMatch.urlAlterar, novoLocalizadorNome, novoLocalizadorCurto, locMatch.nomeCurto);
-            addLog(`  ✅ Localizador renomeado com sucesso: ${novoLocalizadorNome}`);
+            addLog(`  ✅ Localizador renomeado com sucesso: ${novoLocalizadorNome} (Nome: ${novoLocalizadorCurto})`);
             localizadoresSucesso++;
             localizadorOk = true;
-            const badge = document.getElementById(`srv-badge-base-${slotNum}`);
-            if (badge) {
-              badge.textContent = novoLocalizadorNome;
-              badge.setAttribute('data-base', novoLocalizadorNome);
-            }
-            salvarServidoresStorage(false);
           } catch (e) {
             addLog(`  ❌ Erro ao renomear localizador: ${e.message}. Grupo mantido inalterado.`, 'error');
             slotsBloqueados.push({ slot: slotNum, nome: item.nomeServidor, motivos: [`Falha ao renomear localizador: ${e.message}`] });
           }
+        }
+        if (localizadorOk) {
+          locMatch.nomeCompleto = novoLocalizadorNome;
+          locMatch.nomeCurto = novoLocalizadorCurto;
+          const badge = document.getElementById(`srv-badge-base-${slotNum}`);
+          if (badge) {
+            badge.textContent = novoLocalizadorNome;
+            badge.setAttribute('data-base', novoLocalizadorNome);
+            if (locMatch.id) badge.setAttribute('data-loc-id', String(locMatch.id));
+            badge.style.color = '#0f766e';
+            badge.setAttribute('title', `Localizador atual no eproc: ${novoLocalizadorNome}`);
+          }
+          const selUser = document.getElementById(`srv-select-user-${slotNum}`);
+          const optVazia = selUser && selUser.querySelector('option[value=""]');
+          if (optVazia) {
+            optVazia.textContent = `-- Manter atual (${item.sigla}) ou trocar --`;
+          }
+          salvarServidoresStorage(false);
         }
 
         if (!localizadorOk) {
@@ -15373,6 +15485,7 @@
         try {
           const idsParaVincular = perfisParaVincular.map(p => p.id);
           const resSave = await renomearGrupoEprocPreservandoTudo(detGrupo, novoGrupoNome, idsParaVincular);
+          grpMatch.nome = novoGrupoNome;
           gruposSucesso++;
           grupoOk = true;
           addLog(`  ✅ Grupo de trabalho salvo como "${novoGrupoNome}" (vínculos e preferências anteriores preservados).`);
@@ -15468,6 +15581,11 @@
         await sleep(300);
       }
 
+      window._eprocSyncBasicoServidoresTentado = true;
+      if (typeof renderizarTabelaServidores === 'function' && localizadores.length > 0 && document.getElementById('rito-servidores-slots-lista')) {
+        const slotsAtualizados = construirSlotsDinamicosDoEproc(localizadores, grupos, obterDadosServidoresDosInputs());
+        renderizarTabelaServidores(slotsAtualizados);
+      }
       salvarServidoresStorage(false);
 
       addLog('🏁 PERSONALIZAÇÃO DE SERVIDORES CONCLUÍDA!', 'info');
@@ -15647,15 +15765,9 @@
     const btnImp = document.getElementById('btn-servidores-importar-planilha');
     if (btnImp) btnImp.onclick = importarServidoresDaPlanilha;
 
-    // Carrega usuários da unidade em background somente se a aba Servidores estiver ativa
+    // Carrega usuários, localizadores e grupos da unidade em background somente se a aba Servidores estiver ativa
     if (moduloAtivo === 'servidores') {
-      carregarUsuariosAtivosDoOrgao().then(mapa => {
-        if (mapa && Object.keys(mapa).length > 0) {
-          const slotsAtuais = obterDadosServidoresDosInputs();
-          const temSelecaoUi = slotsAtuais.some(s => s.nomeServidor && s.nomeServidor.trim());
-          renderizarTabelaServidores(temSelecaoUi ? slotsAtuais : (carregarServidoresStorage() || slotsAtuais));
-        }
-      });
+      sincronizarServidoresBasicoDoEproc();
     }
   }
 
@@ -16162,6 +16274,8 @@
       window._eprocPrefsDocumentosServidores = null;
       window._eprocServidoresArquivoImportadoRef = null;
       window._eprocServidoresVerificadosNaoEncontrados = null;
+      window._eprocPromiseSyncBasicoServidores = null;
+      window._eprocSyncBasicoServidoresTentado = false;
       window._eprocViewerParar = true;
       window._eprocCacheDetalhesPrefsMinutas = null;
       window._eprocCacheCatalogosMinutaViewer = null;
