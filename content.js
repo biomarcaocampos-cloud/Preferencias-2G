@@ -4,7 +4,7 @@
 
 //  Arquivo: content.js
 
-//  Versão: 3.7.0 (atualizada em 10/11/2026)
+//  Versão: 3.8.0 (atualizada em 10/11/2026)
 
 // ============================================================
 
@@ -132,43 +132,49 @@
 
 
   function normalizeCore(str) {
-
     if (!str) return '';
-
     return decodeEntities(str)
-
+      .replace(/[0-9*#]\uFE0F?\u20E3/gu, ' ')
       .replace(/\p{Extended_Pictographic}/gu, ' ')
-
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-
       .toLowerCase()
-
       .replace(/[^a-z0-9]+/g, ' ')
-
       .trim();
-
   }
 
-
-
   function normalizeFull(str) {
-
     if (!str) return '';
-
     return decodeEntities(str)
-
       .replace(/\u231B/g, '⏳')
-
       .replace(/[\uFE0E\uFE0F\u200B-\u200D]/g, '')
-
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-
       .toLowerCase()
-
       .replace(/[\s\-_–—/\\|*()]+/g, ' ')
-
       .trim();
+  }
 
+  function sanitizarMensagemLogExecucao(msg) {
+    return String(msg ?? '')
+      .replace(/\s*\(ID:\s*\d{6,}\)/gi, '')
+      .trimEnd();
+  }
+
+  function formatarListaLocalizadoresRemoverLog(nomes) {
+    if (!Array.isArray(nomes) || nomes.length === 0) return ': (Nenhum encontrado)';
+    return ' (' + nomes.length + '):\n' + nomes.map(n => '   • ' + n).join('\n');
+  }
+
+  function renderizarLocalizadoresRemoverHtml(dados, label) {
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const lista = dados && Array.isArray(dados.locDesativarLista) ? dados.locDesativarLista : [];
+    if (lista.length > 0) {
+      const itensHtml = lista.map(n => `<div>• ${esc(n)}</div>`).join('');
+      return `<div><span class="rito-log-label">${esc(label)} (${lista.length}):</span><div style="padding-left: 14px; margin-top: 2px; line-height: 1.45;">${itensHtml}</div></div>`;
+    }
+    if (dados && dados.locDesativar) {
+      return `<div><span class="rito-log-label">${esc(label)}:</span> ${esc(dados.locDesativar)}</div>`;
+    }
+    return '';
   }
 
 
@@ -343,70 +349,46 @@
 
     // NUNCA escolhe um localizador com emoji diferente (ex: 🟦 em vez de 🦾).
 
+    const dNums = dCore.match(/\b\d+\b/g) || [];
+    const numsCompat = (p) => {
+      if (dNums.length === 0) return true;
+      const pNums = p.core.match(/\b\d+\b/g) || [];
+      return dNums.every(n => pNums.includes(n));
+    };
+
     if (dEmojis.length > 0) {
-
       const emojiFiltered = parsedOpts.filter(p => p.emojis.some(e => dEmojis.includes(e)));
-
       if (emojiFiltered.length > 0) {
-
         // 3a. Texto essencial idêntico no nome curto ou no nome completo
-
         found = emojiFiltered.find(p => p.shortCore === dCore || p.core === dCore);
-
         if (found) return found.opt;
-
-
 
         // 3b. Texto essencial começa com o desejado
-
-        found = emojiFiltered.find(p => p.shortCore.startsWith(dCore) || p.core.startsWith(dCore));
-
+        found = emojiFiltered.find(p => numsCompat(p) && (p.shortCore.startsWith(dCore) || p.core.startsWith(dCore)));
         if (found) return found.opt;
-
-
 
         // 3c. O desejado começa com o texto da opção
-
-        found = emojiFiltered.find(p => dCore.startsWith(p.shortCore) || dCore.startsWith(p.core));
-
+        found = emojiFiltered.find(p => numsCompat(p) && (dCore.startsWith(p.shortCore) || dCore.startsWith(p.core)));
         if (found) return found.opt;
-
-
 
         // 3d. Contém o texto essencial completo (ex.: "ag contestacao" em "ag contestacao defesa")
-
-        found = emojiFiltered.find(p => p.core.includes(dCore) || p.shortCore.includes(dCore));
-
+        found = emojiFiltered.find(p => numsCompat(p) && (p.core.includes(dCore) || p.shortCore.includes(dCore)));
         if (found) return found.opt;
 
-
-
         // 3e. Pontuação por palavras-chave discriminatórias
-
         const dWords = dCore.split(' ').filter(w => w.length > 1 && !['c', 'p', 'm', 'g', 'd', 'de', 'a', 'o', 'em'].includes(w));
-
         const requiredDistinctive = DISTINCTIVE.filter(k => dWords.some(w => w === k || (k.length >= 4 && (w.startsWith(k) || k.startsWith(w)))));
 
-
-
         if (dWords.length > 0) {
-
           let best = null;
-
           let bestScore = -1;
-
           for (const p of emojiFiltered) {
-
+            if (!numsCompat(p)) continue;
             const pWords = p.core.split(' ');
 
-
-
             if (requiredDistinctive.length > 0) {
-
               const hasRequired = requiredDistinctive.every(k => pWords.some(pw => pw === k || (k.length >= 4 && (pw.startsWith(k) || k.startsWith(pw)))));
-
               if (!hasRequired) continue;
-
             }
 
 
@@ -460,15 +442,10 @@
 
 
     // TIER 4: Para buscas sem emoji (ex.: "ARQUIVO - ARQUIVO", "BAIXADOS - BAIXADOS", "SUSPENSOS")
-
     found = parsedOpts.find(p => p.shortCore === dCore || p.core === dCore);
-
     if (found) return found.opt;
 
-
-
-    found = parsedOpts.find(p => p.core.includes(dCore) || dCore.includes(p.core));
-
+    found = parsedOpts.find(p => numsCompat(p) && (p.core.includes(dCore) || dCore.includes(p.core)));
     if (found) return found.opt;
 
 
@@ -734,6 +711,11 @@
     const pill = document.getElementById('rito-modulo-status-pill');
     if (pill) {
       pill.textContent = moduloAtivo === 'servidores' ? 'SERVIDORES' : (moduloAtivo === 'intimacoes' ? 'INTIMAÇÕES' : (moduloAtivo === 'relatorios' ? 'RELATÓRIOS' : (moduloAtivo === 'movimentacoes' ? 'MOVIMENTAÇÃO' : (moduloAtivo === 'area_minutas' ? 'DOCS' : 'MINUTAS'))));
+    }
+
+    const btnVisualizarPrefs = document.getElementById('btn-rito-visualizar-preferencias');
+    if (btnVisualizarPrefs) {
+      btnVisualizarPrefs.style.display = moduloAtivo === 'minutas' ? 'flex' : 'none';
     }
 
     const btnGerenciador = document.getElementById('btn-rito-abrir-gerenciador');
@@ -1894,7 +1876,39 @@
 
   }
 
+  /**
+   * Mapeia o texto da planilha para o código de comportamento do localizador em Nova Minuta:
+   * '0' = Remover informado(s), '1' = Todos, '2' = Todos exceto sistema, '3' = Não remover.
+   */
+  function parsearComportamentoLocalizadorMinuta(compLocRaw, localizadoresDesativar) {
+    if (Array.isArray(localizadoresDesativar) && localizadoresDesativar.length > 0) return '0';
+    const cNorm = normalizar(compLocRaw || '');
+    if (!cNorm) return '3';
+    if (cNorm === '0' || cNorm.includes('informado') || cNorm.includes('selecionado') || cNorm.includes('especifico')) {
+      return '0';
+    }
+    if (cNorm === '2' || (cNorm.includes('todos') && (cNorm.includes('exceto') || cNorm.includes('sistema')))) {
+      return '2';
+    }
+    if (cNorm === '1' || (cNorm.includes('todos') && !cNorm.includes('nao remover') && !cNorm.includes('nenhum'))) {
+      return '1';
+    }
+    if (cNorm === '3' || cNorm.includes('nao remover') || cNorm.includes('manter') || cNorm.includes('nenhum')) {
+      return '3';
+    }
+    if (cNorm.includes('remover')) return '0';
+    return '3';
+  }
 
+  function limparPrazoNumericoMinuta(rawVal) {
+    if (rawVal === undefined || rawVal === null) return '';
+    const s = String(rawVal).replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+    if (!s || s === '-') return '';
+    const n = normalizar(s);
+    if (n === 'nao' || n === 'nenhum' || n === 'nao se aplica' || n === 'n a') return '';
+    const m = s.match(/\d+/);
+    return m ? m[0] : '';
+  }
 
   function converterTabelaParaItens(tabela) {
 
@@ -1930,7 +1944,9 @@
 
     let colEventoComplementar = -1, colDadosComplementares = -1;
 
-    let colIntimar = -1, colEvIntimar = -1, colPzEsp = -1, colPzSimp = -1, colPzPartes = -1, colPzDPU = -1;
+    let colIntimar = -1, colEvIntimar = -1, colModoPrazos = -1, colPzEsp = -1, colPzSimp = -1, colPzPartes = -1, colPzDPU = -1;
+
+    let colPrazoAutores = -1, colPrazoReus = -1, colPrazoInteressados = -1, colPrazoMP = -1, colUrgente = -1;
 
     let colRemeter = -1, colEvRemessa = -1, colOrgaoRemessa = -1, colGrupo = -1, colAssinante = -1;
     let colNum = -1;
@@ -2038,19 +2054,31 @@
 
 
 
-      // Colunas Específicas 2G - Intimação e Remessa Encadeada:
+      // Colunas Específicas 2G - Intimação (Por Polo / Por Tipo de Parte / Urgente) e Remessa Encadeada:
 
-      if (colIntimar === -1 && n.includes('intimar')) colIntimar = c;
+      if (colIntimar === -1 && n.includes('intimar') && !n.includes('urgente')) colIntimar = c;
 
       if (colEvIntimar === -1 && (n.includes('evento de intimacao') || n.includes('tipo de intimacao'))) colEvIntimar = c;
 
-      if (colPzEsp === -1 && n.includes('prazo especial')) colPzEsp = c;
+      if (colModoPrazos === -1 && (n.includes('modo de prazo') || n.includes('modo prazo') || n === 'modo')) colModoPrazos = c;
 
-      if (colPzSimp === -1 && n.includes('prazo simples')) colPzSimp = c;
+      if (colPzEsp === -1 && (n.includes('prazo especial') || (n.includes('especial') && n.includes('entidade')))) colPzEsp = c;
 
-      if (colPzPartes === -1 && (n.includes('prazo partes') || n.includes('partes com prazo simples'))) colPzPartes = c;
+      if (colPzPartes === -1 && (n.includes('prazo partes') || n.includes('partes com prazo simples') || (n.includes('simples') && (n.includes('demais') || n.includes('parte'))))) colPzPartes = c;
 
-      if (colPzDPU === -1 && (n.includes('prazo dpu') || n.includes('dpu'))) colPzDPU = c;
+      else if (colPzSimp === -1 && (n.includes('prazo simples') || (n.includes('simples') && n.includes('entidade')))) colPzSimp = c;
+
+      if (colPzDPU === -1 && (n.includes('prazo dpu') || n.includes('dpu') || n.includes('defensoria'))) colPzDPU = c;
+
+      if (colPrazoAutores === -1 && (n.includes('polo ativo') || n.includes('autores'))) colPrazoAutores = c;
+
+      if (colPrazoReus === -1 && (n.includes('polo passivo') || n.includes('reus'))) colPrazoReus = c;
+
+      if (colPrazoInteressados === -1 && (n.includes('interessad') || n.includes('terceir'))) colPrazoInteressados = c;
+
+      if (colPrazoMP === -1 && (n.includes('custos') || n.includes('ministerio') || n.includes('prazo mp') || /\bmp\b/.test(n))) colPrazoMP = c;
+
+      if (colUrgente === -1 && n.includes('urgente')) colUrgente = c;
 
       if (colRemeter === -1 && n.includes('remeter')) colRemeter = c;
 
@@ -2151,19 +2179,19 @@
       let compLocRaw = colComportamentoLoc !== -1 ? String(r[colComportamentoLoc] || '').trim() : '';
       let locDesativarRaw = colLocDesativar !== -1 ? String(r[colLocDesativar] || '').trim() : '';
       let localizadoresDesativar = [];
-      if (locDesativarRaw && locDesativarRaw !== '-' && !normalizar(locDesativarRaw).includes('nao remover') && !normalizar(locDesativarRaw).includes('nenhum')) {
-        localizadoresDesativar = locDesativarRaw.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+      const locDesNorm = normalizar(locDesativarRaw);
+      if (locDesativarRaw && locDesativarRaw !== '-' && !locDesNorm.includes('nao remover') && locDesNorm !== 'nenhum' && locDesNorm !== 'nao se aplica' && locDesNorm !== 'n/a') {
+        localizadoresDesativar = locDesativarRaw
+          .split(/[;,]/)
+          .map(s => s.trim())
+          .filter(s => {
+            if (!s || s === '-') return false;
+            const sNorm = normalizar(s);
+            return !sNorm.includes('nao remover') && sNorm !== 'nenhum' && sNorm !== 'nao se aplica';
+          });
       }
-      // [v3.5.6] No eproc minuta_cadastrar: '0' = Remover informado(s), '1' = Todos, '2' = Todos exceto sistema, '3' = Não remover
-      let comportamentoCodigo = '3';
-      const cNorm = normalizar(compLocRaw);
-      if (cNorm.includes('todos') || cNorm === '1') {
-        comportamentoCodigo = '1';
-      } else if (cNorm.includes('selecionado') || cNorm.includes('remover') || cNorm === '0' || cNorm === '2' || localizadoresDesativar.length > 0) {
-        comportamentoCodigo = '0';
-      } else if (cNorm.includes('nao remover') || cNorm.includes('manter') || cNorm === '3') {
-        comportamentoCodigo = '3';
-      }
+      // [v3.5.7] Precedência corrigida via parsearComportamentoLocalizadorMinuta ('0' | '1' | '2' | '3')
+      const comportamentoCodigo = parsearComportamentoLocalizadorMinuta(compLocRaw, localizadoresDesativar);
 
 
 
@@ -2211,7 +2239,7 @@
 
 
 
-      // Dados de Intimação e Remessa (2G)
+      // Dados de Intimação (Por Polo / Por Tipo de Parte / Urgente) e Remessa (2G)
 
       const valIntimar = colIntimar !== -1 ? (r[colIntimar] || '') : '';
 
@@ -2219,13 +2247,63 @@
 
       const evIntimar = colEvIntimar !== -1 ? (r[colEvIntimar] || '').trim() : '';
 
-      const pzEsp = colPzEsp !== -1 ? (parseInt(r[colPzEsp], 10) || 30) : 30;
+      const rawPzEsp = colPzEsp !== -1 ? limparPrazoNumericoMinuta(r[colPzEsp]) : '';
 
-      const pzSimp = colPzSimp !== -1 ? (parseInt(r[colPzSimp], 10) || 15) : 15;
+      const rawPzSimp = colPzSimp !== -1 ? limparPrazoNumericoMinuta(r[colPzSimp]) : '';
 
-      const pzPartes = colPzPartes !== -1 ? (parseInt(r[colPzPartes], 10) || 15) : 15;
+      const rawPzPartes = colPzPartes !== -1 ? limparPrazoNumericoMinuta(r[colPzPartes]) : '';
 
-      const pzDPU = colPzDPU !== -1 ? (parseInt(r[colPzDPU], 10) || 30) : 30;
+      const rawPzDPU = colPzDPU !== -1 ? limparPrazoNumericoMinuta(r[colPzDPU]) : '';
+
+      const rawPzAutores = colPrazoAutores !== -1 ? limparPrazoNumericoMinuta(r[colPrazoAutores]) : '';
+
+      const rawPzReus = colPrazoReus !== -1 ? limparPrazoNumericoMinuta(r[colPrazoReus]) : '';
+
+      const rawPzInteressados = colPrazoInteressados !== -1 ? limparPrazoNumericoMinuta(r[colPrazoInteressados]) : '';
+
+      const rawPzMP = colPrazoMP !== -1 ? limparPrazoNumericoMinuta(r[colPrazoMP]) : '';
+
+      const temPrazoTipoParte = Boolean(rawPzEsp || rawPzSimp || rawPzPartes || rawPzDPU);
+
+      const temPrazoPolo = Boolean(rawPzAutores || rawPzReus || rawPzInteressados || rawPzMP);
+
+      const modoPrazosRaw = colModoPrazos !== -1 ? String(r[colModoPrazos] || '').trim() : '';
+
+      const normModoPrazosRaw = normalizar(modoPrazosRaw);
+
+      let modoPoloMinuta = false;
+
+      if (normModoPrazosRaw.includes('polo')) {
+
+        modoPoloMinuta = true;
+
+      } else if (normModoPrazosRaw.includes('tipo') || normModoPrazosRaw.includes('parte')) {
+
+        modoPoloMinuta = false;
+
+      } else if (temPrazoPolo && !temPrazoTipoParte) {
+
+        modoPoloMinuta = true;
+
+      }
+
+      const modoPrazosMinuta = modoPrazosRaw && modoPrazosRaw !== '-' ? modoPrazosRaw : (modoPoloMinuta ? 'Por Polo' : 'Por Tipo de Parte');
+
+      const usarDefaultLegadoTipo = deveIntimar && !modoPoloMinuta && !temPrazoTipoParte;
+
+      const pzEsp = usarDefaultLegadoTipo ? '30' : rawPzEsp;
+
+      const pzSimp = usarDefaultLegadoTipo ? '15' : rawPzSimp;
+
+      const pzPartes = usarDefaultLegadoTipo ? '15' : rawPzPartes;
+
+      const pzDPU = usarDefaultLegadoTipo ? '30' : rawPzDPU;
+
+      const urgenteRaw = colUrgente !== -1 ? String(r[colUrgente] || '').trim() : '';
+
+      const normUrgenteMin = normalizar(urgenteRaw);
+
+      const ehUrgenteMinuta = normUrgenteMin === 'sim' || normUrgenteMin === 's' || normUrgenteMin === 'true';
 
 
 
@@ -2256,6 +2334,12 @@
 
         eventoIntimacao: evIntimar,
 
+        modoPrazos: modoPrazosMinuta,
+
+        normModoPrazos: normalizar(modoPrazosMinuta),
+
+        modoPolo: modoPoloMinuta,
+
         prazoEspecial: pzEsp,
 
         prazoSimples: pzSimp,
@@ -2263,6 +2347,16 @@
         prazoPartes: pzPartes,
 
         prazoDPU: pzDPU,
+
+        prazoAutores: rawPzAutores,
+
+        prazoReus: rawPzReus,
+
+        prazoInteressados: rawPzInteressados,
+
+        prazoMP: rawPzMP,
+
+        intimacaoUrgente: ehUrgenteMinuta,
 
         remeterProcesso: deveRemeter,
 
@@ -2669,9 +2763,7 @@
 
 
     await sleep(250);
-
-    addLog(`✅ Modelo selecionado: "${m.descricao}" (ID: ${idReal})`);
-
+    addLog(`✅ Modelo selecionado: "${m.descricao}"`);
     return true;
 
   }
@@ -2854,7 +2946,10 @@
           try { window.$('#selLocalizadorDesativar option').prop('selected', false); } catch (e) {}
         }
       }
+      const hdnGuardaReset = document.getElementById('hdnGuardaLocalizadoresAtuais');
+      if (hdnGuardaReset) hdnGuardaReset.value = '0;';
       window._eprocMinutaLocsDesativar = null;
+      window._eprocMinutaLocsDesativarObjs = null;
       window._eprocMinutaComportamentoLoc = null;
         dispararEventos(selNovo, ['change']);
 
@@ -3857,9 +3952,7 @@
 
 
     await sleep(200);
-
-    addLog(`✓ Modelo selecionado: "${m.descricao}" (ID: ${idMatriz})`);
-
+    addLog(`✓ Modelo selecionado: "${m.descricao}"`);
     return true;
 
   }
@@ -6498,6 +6591,142 @@
 
 
 
+  const ESQUEMA_PRAZOS_INTIMACAO = {
+    porPolo: [
+      { prop: 'prazoAutores', chk: 'chkSelPrazoAutores', txt: 'txtPrazoAutores', chkUrg: 'chkSelPrazoIntimacaoUrgenteAutores', fnKey: 'onKeyUpTxtPrazoAutores', fnChTxt: 'onChangeTxtPrazoAutores', fnChChk: 'onChangeChkSelPrazoAutores', label: 'Autores' },
+      { prop: 'prazoReus', chk: 'chkSelPrazoReus', txt: 'txtPrazoReus', chkUrg: 'chkSelPrazoIntimacaoUrgenteReus', fnKey: 'onKeyUpTxtPrazoReus', fnChTxt: 'onChangeTxtPrazoReus', fnChChk: 'onChangeChkSelPrazoReus', label: 'Réus' },
+      { prop: 'prazoInteressados', chk: 'chkSelPrazoInteressados', txt: 'txtPrazoInteressados', chkUrg: 'chkSelPrazoIntimacaoUrgenteInteressados', fnKey: 'onKeyUpTxtPrazoInteressados', fnChTxt: 'onChangeTxtPrazoInteressados', fnChChk: 'onChangeChkSelPrazoInteressados', label: 'Interessados' },
+      { prop: 'prazoMP', chk: 'chkSelMPF', txt: 'txtPrazoMPF', chkUrg: 'chkSelPrazoIntimacaoUrgenteMPF', fnKey: 'onKeyUpTxtPrazoMPF', fnChTxt: 'onChangeTxtPrazoMPF', fnChChk: 'onChangeChkSelMPF', label: 'MP' }
+    ],
+    porTipoDeParte: [
+      { prop: 'prazoEspecial', chk: 'chkSelEntPrazoEspecial', txt: 'txtPrazoEntPrazoEspecial', chkUrg: 'chkSelParteIntimacaoUrgenteEntPrazoEspecial', fnKey: 'onKeyUpTxtPrazoEntPrazoEspecial', fnChTxt: 'onChangeTxtPrazoEntPrazoEspecial', fnChChk: 'onChangeChkSelEntPrazoEspecial', label: 'Esp' },
+      { prop: 'prazoSimples', chk: 'chkSelEntPrazoSimples', txt: 'txtPrazoEntPrazoSimples', chkUrg: 'chkSelParteIntimacaoUrgenteEntPrazoSimples', fnKey: 'onKeyUpTxtPrazoEntPrazoSimples', fnChTxt: 'onChangeTxtPrazoEntPrazoSimples', fnChChk: 'onChangeChkSelEntPrazoSimples', label: 'Simp' },
+      { prop: 'prazoPartes', chk: 'chkSelNaoEntPrazoSimples', txt: 'txtPrazoNaoEntPrazoSimples', chkUrg: 'chkSelParteIntimacaoUrgenteNaoEntPrazoSimples', fnKey: 'onKeyUpTxtPrazoNaoEntPrazoSimples', fnChTxt: 'onChangeTxtPrazoNaoEntPrazoSimples', fnChChk: 'onChangeChkSelNaoEntPrazoSimples', label: 'Partes' },
+      { prop: 'prazoDPU', chk: 'chkSelDPU', txt: 'txtPrazoDPU', chkUrg: 'chkSelParteIntimacaoUrgenteDPU', fnKey: 'onKeyUpTxtPrazoDPU', fnChTxt: 'onChangeTxtPrazoDPU', fnChChk: 'onChangeChkSelDPU', label: 'DPU' }
+    ]
+  };
+
+  function ehModoPoloItemMinuta(item) {
+    if (!item) return false;
+    if (typeof item.modoPolo === 'boolean') return item.modoPolo;
+    const nm = normalizar(item.normModoPrazos || item.modoPrazos || '');
+    if (nm.includes('polo')) return true;
+    if (nm.includes('tipo') || nm.includes('parte')) return false;
+    const temPolo = Boolean(item.prazoAutores || item.prazoReus || item.prazoInteressados || item.prazoMP);
+    const temTipo = Boolean(item.prazoEspecial || item.prazoSimples || item.prazoPartes || item.prazoDPU);
+    return temPolo && !temTipo;
+  }
+
+  function aplicarModoPrazosIntimacaoDom(doc, win, modoPolo) {
+    if (!doc) return;
+    if (modoPolo) {
+      if (win && typeof win.checkPorPolo === 'function') {
+        try { win.checkPorPolo(true); } catch (e) {}
+      }
+      const rdPolo = doc.getElementById('porPolo');
+      const rdTipo = doc.getElementById('porTipoDeParte');
+      if (rdTipo) {
+        rdTipo.checked = false;
+        rdTipo.removeAttribute('checked');
+      }
+      if (rdPolo) {
+        rdPolo.disabled = false;
+        rdPolo.checked = true;
+        rdPolo.setAttribute('checked', 'checked');
+        if (!(win && typeof win.checkPorPolo === 'function')) {
+          dispararEventos(rdPolo, ['change']);
+        }
+      }
+      if (win && win.jQuery) {
+        try {
+          win.jQuery('#porTipoDeParte').prop('checked', false);
+          win.jQuery('#porPolo').prop('checked', true);
+          win.jQuery('.tipoParte').css('display', 'none');
+          win.jQuery('.porPolo').css('display', 'block');
+        } catch (e) {}
+      } else {
+        doc.querySelectorAll('.tipoParte').forEach(el => { el.style.display = 'none'; });
+        doc.querySelectorAll('.porPolo').forEach(el => { el.style.display = 'block'; });
+      }
+    } else {
+      if (win && typeof win.checkTipoDeParte === 'function') {
+        try { win.checkTipoDeParte(true); } catch (e) {}
+      }
+      const rdPolo = doc.getElementById('porPolo');
+      const rdTipo = doc.getElementById('porTipoDeParte');
+      if (rdPolo) {
+        rdPolo.checked = false;
+        rdPolo.removeAttribute('checked');
+      }
+      if (rdTipo) {
+        rdTipo.disabled = false;
+        rdTipo.checked = true;
+        rdTipo.setAttribute('checked', 'checked');
+        if (!(win && typeof win.checkTipoDeParte === 'function')) {
+          dispararEventos(rdTipo, ['change']);
+        }
+      }
+      if (win && win.jQuery) {
+        try {
+          win.jQuery('#porPolo').prop('checked', false);
+          win.jQuery('#porTipoDeParte').prop('checked', true);
+          win.jQuery('.porPolo').css('display', 'none');
+          win.jQuery('.tipoParte').css('display', 'block');
+        } catch (e) {}
+      } else {
+        doc.querySelectorAll('.porPolo').forEach(el => { el.style.display = 'none'; });
+        doc.querySelectorAll('.tipoParte').forEach(el => { el.style.display = 'block'; });
+      }
+    }
+  }
+
+  function sincronizarUrgenciaIntimacaoDom(doc, win, chkUrgId, ativo) {
+    if (!doc || !chkUrgId) return;
+    const chkUrg = doc.getElementById(chkUrgId);
+    if (!chkUrg) return;
+    chkUrg.disabled = false;
+    chkUrg.checked = !!ativo;
+    if (ativo) chkUrg.setAttribute('checked', 'checked');
+    else chkUrg.removeAttribute('checked');
+    if (win && win.jQuery) {
+      try {
+        win.jQuery(chkUrg).prop('disabled', false).prop('checked', !!ativo).trigger('change');
+      } catch (e) {}
+    } else {
+      dispararEventos(chkUrg, ['change']);
+    }
+    chkUrg.checked = !!ativo;
+  }
+
+  function limparCampoPrazoIntimacaoDom(doc, win, spec) {
+    if (!doc || !spec) return;
+    const chkEl = doc.getElementById(spec.chk);
+    const txtEl = doc.getElementById(spec.txt);
+    if (spec.chkUrg) sincronizarUrgenciaIntimacaoDom(doc, win, spec.chkUrg, false);
+    if (txtEl) {
+      txtEl.value = '';
+      txtEl.removeAttribute('value');
+      if (win && win.jQuery) {
+        try { win.jQuery(txtEl).val('').trigger('change'); } catch (e) {}
+      } else {
+        dispararEventos(txtEl, ['input', 'change']);
+      }
+    }
+    if (chkEl) {
+      chkEl.checked = false;
+      chkEl.removeAttribute('checked');
+      if (win && win.jQuery) {
+        try { win.jQuery(chkEl).prop('checked', false).trigger('change'); } catch (e) {}
+      } else {
+        dispararEventos(chkEl, ['change']);
+      }
+      if (spec.fnChChk && win && typeof win[spec.fnChChk] === 'function') {
+        try { win[spec.fnChChk](); } catch (e) {}
+      }
+      chkEl.checked = false;
+    }
+  }
+
   async function configurarIntimacaoPartes2G(item, dados) {
 
     if (!item.intimarPartes) return false;
@@ -6578,9 +6807,9 @@
 
 
 
-    // Aguarda carregar as opções avançadas (prazos por tipo de parte)
+    // Aguarda carregar as opções avançadas (Por Polo / Por Tipo de Parte)
 
-    const rdo = await esperarCond(() => document.getElementById('porTipoDeParte'), 8000);
+    const rdo = await esperarCond(() => document.getElementById('porTipoDeParte') || document.getElementById('porPolo'), 8000);
 
     if (!rdo) {
 
@@ -6590,41 +6819,77 @@
 
     }
 
-    if (!rdo.checked) { rdo.click(); await sleep(300); }
+    const modoPolo = ehModoPoloItemMinuta(item);
 
-    if (!rdo.checked) { rdo.checked = true; dispararEventos(rdo, ['change']); }
+    const modoKey = modoPolo ? 'porPolo' : 'porTipoDeParte';
 
-    await sleep(300);
+    const modoOpostoKey = modoPolo ? 'porTipoDeParte' : 'porPolo';
 
+    aplicarModoPrazosIntimacaoDom(document, window, modoPolo);
 
+    await sleep(250);
 
-    const campos = [
+    // Limpa modo oposto, txtPrazoIgual e checkboxes globais de urgência/seleção antes de preencher
 
-      ['chkSelEntPrazoEspecial', 'txtPrazoEntPrazoEspecial', item.prazoEspecial || 30],
+    const txtPrazoIgual = document.getElementById('txtPrazoIgual');
 
-      ['chkSelEntPrazoSimples', 'txtPrazoEntPrazoSimples', item.prazoSimples || 15],
+    if (txtPrazoIgual) txtPrazoIgual.value = '';
 
-      ['chkSelNaoEntPrazoSimples', 'txtPrazoNaoEntPrazoSimples', item.prazoPartes || 15],
+    ['chkSelTodosPolo', 'chkSelTodosTipoParte', 'chkSelPrazoIntimacaoUrgenteTodos', 'chkSelIntimacaoUrgenteTodos', 'chkIntimacaoUrgente'].forEach(idG => {
 
-      ['chkSelDPU', 'txtPrazoDPU', item.prazoDPU || 30]
+      const elG = document.getElementById(idG);
 
-    ];
+      if (elG && elG.checked) { elG.checked = false; elG.removeAttribute('checked'); }
 
-    for (const [idChk, idTxt, dias] of campos) {
+    });
 
-      const c = document.getElementById(idChk);
+    for (const spOpp of ESQUEMA_PRAZOS_INTIMACAO[modoOpostoKey]) {
 
-      const t = document.getElementById(idTxt);
-
-      if (c && !c.checked) { c.click(); await sleep(120); if (!c.checked) { c.checked = true; dispararEventos(c, ['change']); } }
-
-      if (t) { t.disabled = false; t.value = String(dias); dispararEventos(t, ['input', 'change']); }
-
-      if (!c && !t) addLog('⚠️ Campos de prazo ' + idChk + '/' + idTxt + ' não encontrados.', 'warn');
+      limparCampoPrazoIntimacaoDom(document, window, spOpp);
 
     }
 
-    dados.intimacao = 'Sim (Esp:' + (item.prazoEspecial || 30) + 'd, Simp:' + (item.prazoSimples || 15) + 'd, Partes:' + (item.prazoPartes || 15) + 'd, DPU:' + (item.prazoDPU || 30) + 'd)';
+    const partesResumo = [];
+
+    for (const sp of ESQUEMA_PRAZOS_INTIMACAO[modoKey]) {
+
+      const valDias = String((item && item[sp.prop]) || '').trim();
+
+      if (valDias && valDias !== '-') {
+
+        const ok = preencherPrazoParteIntimacao(sp.txt, sp.chk, sp.fnKey, sp.fnChTxt, sp.fnChChk, sp.label, valDias);
+
+        if (!ok && !document.getElementById(sp.chk) && !document.getElementById(sp.txt)) {
+
+          addLog('⚠️ Campos de prazo ' + sp.chk + '/' + sp.txt + ' não encontrados.', 'warn');
+
+        }
+
+        if (sp.chkUrg) {
+
+          sincronizarUrgenciaIntimacaoDom(document, window, sp.chkUrg, !!item.intimacaoUrgente);
+
+          const chkReconf = document.getElementById(sp.chk);
+
+          if (chkReconf) chkReconf.checked = true;
+
+        }
+
+        partesResumo.push(`${sp.label}:${valDias}d`);
+
+      } else {
+
+        limparCampoPrazoIntimacaoDom(document, window, sp);
+
+      }
+
+    }
+
+    const modoTitulo = modoPolo ? 'Por Polo' : 'Por Tipo de Parte';
+
+    const sufUrg = item.intimacaoUrgente ? ' [Urgente]' : '';
+
+    dados.intimacao = `Sim - ${modoTitulo} (${partesResumo.length > 0 ? partesResumo.join(', ') : 'sem prazos'})${sufUrg}`;
 
     addLog('✓ Agendamento de Intimação configurado (' + dados.intimacao + ')');
 
@@ -6818,11 +7083,9 @@
 
       const chksPrazos = [
 
-        'chkSelEntPrazoEspecial', 'chkSelEntPrazoSimples',
+        'chkSelTodosPolo', 'chkSelTodosTipoParte',
 
-        'chkSelNaoEntPrazoSimples', 'chkSelDPU',
-
-        'chkSelPrazoAutores', 'chkSelPrazoReus', 'chkSelTodosPolo'
+        'chkSelPrazoIntimacaoUrgenteTodos', 'chkSelIntimacaoUrgenteTodos', 'chkIntimacaoUrgente'
 
       ];
 
@@ -6837,6 +7100,16 @@
           dispararEventos(el, ['change']);
 
         }
+
+      });
+
+      const txtIgual = document.getElementById('txtPrazoIgual');
+
+      if (txtIgual) txtIgual.value = '';
+
+      [...ESQUEMA_PRAZOS_INTIMACAO.porPolo, ...ESQUEMA_PRAZOS_INTIMACAO.porTipoDeParte].forEach(sp => {
+
+        limparCampoPrazoIntimacaoDom(document, window, sp);
 
       });
 
@@ -6930,29 +7203,49 @@
 
     const s = document.getElementById('selEventoEncadeadoCitacaoIntimacao');
 
-    const r = document.getElementById('porTipoDeParte');
+    const modoPolo = ehModoPoloItemMinuta(item);
 
-    if (!(c && c.checked && s && s.value && s.value !== 'null' && r && r.checked)) return false;
+    const r = document.getElementById(modoPolo ? 'porPolo' : 'porTipoDeParte');
 
-    const campos = [
+    const rOposto = document.getElementById(modoPolo ? 'porTipoDeParte' : 'porPolo');
 
-      ['chkSelEntPrazoEspecial', 'txtPrazoEntPrazoEspecial', item.prazoEspecial || 30],
+    const jq = window.jQuery || window.$;
 
-      ['chkSelEntPrazoSimples', 'txtPrazoEntPrazoSimples', item.prazoSimples || 15],
+    const rMarcado = r && r.checked && (!jq || Boolean(jq(r).prop('checked')));
 
-      ['chkSelNaoEntPrazoSimples', 'txtPrazoNaoEntPrazoSimples', item.prazoPartes || 15],
+    const rOpostoLimpo = !rOposto || (!rOposto.checked && (!jq || !jq(rOposto).prop('checked')));
 
-      ['chkSelDPU', 'txtPrazoDPU', item.prazoDPU || 30]
+    if (!(c && c.checked && s && s.value && s.value !== 'null' && rMarcado && rOpostoLimpo)) return false;
 
-    ];
+    const specs = ESQUEMA_PRAZOS_INTIMACAO[modoPolo ? 'porPolo' : 'porTipoDeParte'];
 
-    for (const [ic, it, d] of campos) {
+    for (const sp of specs) {
 
-      const cc = document.getElementById(ic), tt = document.getElementById(it);
+      const valEsperado = String((item && item[sp.prop]) || '').trim();
 
-      if (cc && !cc.checked) return false;
+      const querAtivo = valEsperado !== '' && valEsperado !== '-';
 
-      if (tt && String(tt.value) !== String(d)) return false;
+      const cc = document.getElementById(sp.chk);
+
+      const tt = document.getElementById(sp.txt);
+
+      const uu = sp.chkUrg ? document.getElementById(sp.chkUrg) : null;
+
+      if (querAtivo) {
+
+        if (cc && (!cc.checked || (jq && !jq(cc).prop('checked')))) return false;
+
+        if (tt && String(tt.value).trim() !== valEsperado) return false;
+
+        if (uu && (Boolean(uu.checked) !== Boolean(item && item.intimacaoUrgente) || (jq && Boolean(jq(uu).prop('checked')) !== Boolean(item && item.intimacaoUrgente)))) return false;
+
+      } else {
+
+        if (cc && (cc.checked || (jq && jq(cc).prop('checked')))) return false;
+
+        if (uu && (uu.checked || (jq && jq(uu).prop('checked')))) return false;
+
+      }
 
     }
 
@@ -6976,6 +7269,77 @@
 
         await sleep(300);
 
+      }
+
+      // Reafirmação final DOM + jQuery imediatamente antes do #btnOK (validarPreferenciasIntimacao usa $("#...").prop('checked'))
+      const jqFim = window.jQuery || window.$;
+      const chkEncFim = document.getElementById('chkEncadeamentoIntimar');
+      if (chkEncFim) {
+        chkEncFim.disabled = false;
+        chkEncFim.checked = true;
+        chkEncFim.setAttribute('checked', 'checked');
+        if (jqFim) try { jqFim(chkEncFim).prop('disabled', false).prop('checked', true); } catch (e) {}
+      }
+      const chkMarcarFim = document.getElementById('chkEncadeamentoMarcarIntimacao');
+      if (chkMarcarFim) {
+        chkMarcarFim.checked = false;
+        chkMarcarFim.removeAttribute('checked');
+        if (jqFim) try { jqFim(chkMarcarFim).prop('checked', false); } catch (e) {}
+      }
+      const selEvIntFim = document.getElementById('selEventoEncadeadoCitacaoIntimacao');
+      const idEvIntFim = window._eprocEventoIntimacaoId || (selEvIntFim && selEvIntFim.value && selEvIntFim.value !== 'null' ? selEvIntFim.value : '');
+      if (selEvIntFim && idEvIntFim && idEvIntFim !== 'null') {
+        selEvIntFim.value = idEvIntFim;
+        if (jqFim) try { jqFim(selEvIntFim).val(idEvIntFim); } catch (e) {}
+      }
+      const hdnEvIntFim = document.getElementById('hdnEventoCitacaoIntimacao');
+      if (hdnEvIntFim && idEvIntFim && idEvIntFim !== 'null') {
+        hdnEvIntFim.value = idEvIntFim;
+      }
+      const modoPoloFim = ehModoPoloItemMinuta(item);
+      const rdAtivoFim = document.getElementById(modoPoloFim ? 'porPolo' : 'porTipoDeParte');
+      const rdOpostoFim = document.getElementById(modoPoloFim ? 'porTipoDeParte' : 'porPolo');
+      if (rdOpostoFim) {
+        rdOpostoFim.checked = false;
+        rdOpostoFim.removeAttribute('checked');
+        if (jqFim) try { jqFim(rdOpostoFim).prop('checked', false); } catch (e) {}
+      }
+      if (rdAtivoFim) {
+        rdAtivoFim.disabled = false;
+        rdAtivoFim.checked = true;
+        rdAtivoFim.setAttribute('checked', 'checked');
+        if (jqFim) try { jqFim(rdAtivoFim).prop('checked', true); } catch (e) {}
+      }
+      const clsMostrarFim = modoPoloFim ? '.porPolo' : '.tipoParte';
+      const clsOcultarFim = modoPoloFim ? '.tipoParte' : '.porPolo';
+      document.querySelectorAll(clsOcultarFim).forEach(el => { el.style.display = 'none'; });
+      document.querySelectorAll(clsMostrarFim).forEach(el => { el.style.display = 'block'; });
+      const specsAtivosFim = ESQUEMA_PRAZOS_INTIMACAO[modoPoloFim ? 'porPolo' : 'porTipoDeParte'];
+      for (const sp of specsAtivosFim) {
+        const val = String(item[sp.prop] || '').trim();
+        const querAtivo = val !== '' && val !== '-';
+        const cc = document.getElementById(sp.chk);
+        const tt = document.getElementById(sp.txt);
+        const uu = sp.chkUrg ? document.getElementById(sp.chkUrg) : null;
+        if (cc) {
+          cc.disabled = false;
+          cc.checked = querAtivo;
+          if (querAtivo) cc.setAttribute('checked', 'checked'); else cc.removeAttribute('checked');
+          if (jqFim) try { jqFim(cc).prop('disabled', false).prop('checked', querAtivo); } catch (e) {}
+        }
+        if (tt) {
+          tt.disabled = false;
+          tt.value = querAtivo ? val : '';
+          if (querAtivo) tt.setAttribute('value', val); else tt.removeAttribute('value');
+          if (jqFim) try { jqFim(tt).prop('disabled', false).val(querAtivo ? val : ''); } catch (e) {}
+        }
+        if (uu) {
+          const urgAtivo = querAtivo && Boolean(item.intimacaoUrgente);
+          uu.disabled = false;
+          uu.checked = urgAtivo;
+          if (urgAtivo) uu.setAttribute('checked', 'checked'); else uu.removeAttribute('checked');
+          if (jqFim) try { jqFim(uu).prop('disabled', false).prop('checked', urgAtivo); } catch (e) {}
+        }
       }
 
     } else {
@@ -7209,7 +7573,7 @@
                 const comp = it.getAttribute('complemento') || '';
                 if (correspondeAoUsuarioLogado(desc, id, comp, perfil) || (items.length === 1 && id)) {
                   _cacheUsuarioLogado = { id: String(id), nome: desc || perfil.nomeCompleto || perfil.sigla, complemento: comp, perfil };
-                  addLog('👤 Usuário logado identificado no órgão: "' + _cacheUsuarioLogado.nome + '" (ID: ' + id + ')');
+                  addLog('👤 Usuário logado identificado no órgão: "' + _cacheUsuarioLogado.nome + '"');
                   return _cacheUsuarioLogado;
                 }
               }
@@ -7223,7 +7587,7 @@
                   const comp = u.complemento || u.DesTipoUsuario || '';
                   if (correspondeAoUsuarioLogado(desc, id, comp, perfil) || (lista.length === 1 && id)) {
                     _cacheUsuarioLogado = { id: String(id), nome: desc || perfil.nomeCompleto || perfil.sigla, complemento: comp, perfil };
-                    addLog('👤 Usuário logado identificado no órgão: "' + _cacheUsuarioLogado.nome + '" (ID: ' + id + ')');
+                    addLog('👤 Usuário logado identificado no órgão: "' + _cacheUsuarioLogado.nome + '"');
                     return _cacheUsuarioLogado;
                   }
                 }
@@ -7264,7 +7628,7 @@
                 complemento: achouU.DesTipoUsuario || achouU.complemento || '',
                 perfil
               };
-              addLog('👤 Usuário logado identificado no órgão: "' + _cacheUsuarioLogado.nome + '" (ID: ' + _cacheUsuarioLogado.id + ')');
+              addLog('👤 Usuário logado identificado no órgão: "' + _cacheUsuarioLogado.nome + '"');
               return _cacheUsuarioLogado;
             }
           }
@@ -7631,7 +7995,7 @@
               dispararEventos(selGrupo, ['change']);
             }
             window._eprocGrupoAtualId = String(idExistente);
-            addLog('✓ Grupo pronto: "' + raw + '" (ID: ' + idExistente + ')');
+            addLog('✓ Grupo pronto: "' + raw + '"');
             return { id: String(idExistente), text: raw };
           }
         }
@@ -7662,6 +8026,244 @@
       return await executarPassoAPassoIntimacao(item);
     }
     return await executarPassoAPassoItemMinuta(item);
+  }
+
+  /**
+   * Resolve um nome/sigla de localizador alvo para { id, text } buscando no select atual,
+   * no catálogo da unidade e no combo de novo localizador (priorizando match com mesmo emoji).
+   */
+  function resolverOpcaoLocalizadorMinuta(alvo, selDesativar, catalogoUnidade, selNovoLoc) {
+    if (!alvo) return null;
+    const candidatosCatalogo = Array.isArray(catalogoUnidade)
+      ? catalogoUnidade
+          .map(l => {
+            if (!l) return null;
+            const id = String(l.value || l.IdLocalizadorOrgao || l.id || '').trim();
+            const txtSigDes = l.SigLocalizador
+              ? (l.DesLocalizador ? `${l.SigLocalizador} - ${l.DesLocalizador}` : l.SigLocalizador)
+              : l.DesLocalizador;
+            const text = String(l.text || l.label || txtSigDes || '').trim();
+            return (id && id !== 'null' && text) ? { value: id, text } : null;
+          })
+          .filter(Boolean)
+      : [];
+
+    const fontes = [selDesativar, candidatosCatalogo, selNovoLoc].filter(Boolean);
+    for (const permitirFallback of [false, true]) {
+      for (const fonte of fontes) {
+        const opt = acharOpcaoLocalizador(fonte, alvo, permitirFallback);
+        if (opt && opt.value && String(opt.value).trim() !== 'null') {
+          return {
+            id: String(opt.value).trim(),
+            text: String(opt.text || opt.label || alvo).trim()
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Aplica (ou reafirma após rebuilds nativos do eproc como selecionaCheckLocalizadores)
+   * #selOpcaoLocalizador, #selLocalizadorDesativar[] e #hdnGuardaLocalizadoresAtuais em Nova Minuta.
+   */
+  function aplicarLocalizadoresDesativarMinutas2G(doc, win, codComportamento, locsDesativarObjs) {
+    if (!doc) return [];
+    const cod = String(codComportamento || '3').trim();
+    const vistos = new Set();
+    const listaAlvos = (Array.isArray(locsDesativarObjs) ? locsDesativarObjs : []).filter(o => {
+      const id = o && o.id ? String(o.id).trim() : '';
+      if (!id || id === 'null' || vistos.has(id)) return false;
+      vistos.add(id);
+      return true;
+    });
+    const idsAlvo = listaAlvos.map(o => String(o.id).trim());
+
+    const selOp = doc.getElementById('selOpcaoLocalizador');
+    const selDes = doc.getElementById('selLocalizadorDesativar');
+    const divDes = doc.getElementById('divLocalizadorDesativar') || (selDes ? selDes.parentElement : null);
+    const hdnGuarda = doc.getElementById('hdnGuardaLocalizadoresAtuais');
+
+    if (selOp) {
+      selOp.disabled = false;
+      const mudou = String(selOp.value) !== cod;
+      selOp.value = cod;
+      if (mudou) dispararEventos(selOp, ['change']);
+      if (win && typeof win.comportamentoLocalizadores === 'function') {
+        try { win.comportamentoLocalizadores(''); } catch (e) {}
+      }
+    }
+
+    if (selDes) {
+      Array.from(selDes.options).forEach(o => {
+        o.selected = false;
+        o.removeAttribute('selected');
+      });
+
+      if (cod === '0') {
+        if (divDes) divDes.style.display = 'block';
+        selDes.disabled = false;
+
+        for (const alvoObj of listaAlvos) {
+          const id = String(alvoObj.id).trim();
+          let optD = Array.from(selDes.options).find(o => String(o.value).trim() === id);
+          if (!optD) {
+            optD = doc.createElement('option');
+            optD.value = id;
+            optD.text = String(alvoObj.text || id).trim();
+            selDes.appendChild(optD);
+          }
+          optD.selected = true;
+          optD.setAttribute('selected', 'selected');
+        }
+
+        if (win && win.$) {
+          try { win.$('#selLocalizadorDesativar').val(idsAlvo); } catch (e) {}
+        }
+        if (hdnGuarda) {
+          hdnGuarda.value = idsAlvo.length > 0 ? ('0;' + idsAlvo.join(';')) : '0;';
+        }
+        if (win && typeof win.salvaLocalizadoresMarcados === 'function') {
+          try { win.salvaLocalizadoresMarcados('', ''); } catch (e) {}
+        }
+        if (hdnGuarda && idsAlvo.length > 0) {
+          hdnGuarda.value = '0;' + idsAlvo.join(';');
+        }
+      } else {
+        if (win && win.$) {
+          try { win.$('#selLocalizadorDesativar option').prop('selected', false); } catch (e) {}
+        }
+        if (hdnGuarda) hdnGuarda.value = '0;';
+      }
+    }
+
+    return idsAlvo;
+  }
+
+  /**
+   * Injeta/substitui no payload codificado em Base64 (Agendamento| / frmDadosMinutaParaATP|)
+   * os campos exatos de comportamento do localizador e localizadores a remover/desativar.
+   */
+  function aplicarLocalizadoresNoPayloadMinuta(payloadStr, codComportamento, idsDesativar, rdPrefLocValue) {
+    if (typeof payloadStr !== 'string') return payloadStr;
+    const prefixo = ['Agendamento|', 'frmDadosMinutaParaATP|'].find(p => payloadStr.startsWith(p));
+    if (!prefixo) return payloadStr;
+    if (codComportamento === null || codComportamento === undefined || codComportamento === '') return payloadStr;
+
+    const cod = String(codComportamento).trim();
+    const ids = Array.isArray(idsDesativar)
+      ? Array.from(new Set(idsDesativar.map(x => String(x).trim()).filter(x => x && x !== 'null')))
+      : [];
+    const rdLoc = (cod === '0' && ids.length > 0) ? 'L' : String(rdPrefLocValue || 'L').trim();
+
+    try {
+      const decodificado = atob(payloadStr.substring(prefixo.length));
+      const rawPares = decodificado ? decodificado.split('&').filter(Boolean) : [];
+      const chavesLocalizadorRemover = new Set([
+        'selOpcaoLocalizador',
+        'selLocalizadorDesativar[]',
+        'selLocalizadorDesativar',
+        'hdnGuardaLocalizadoresAtuais',
+        'rdPrefLocalizadores'
+      ]);
+      const novosPares = [];
+      for (const par of rawPares) {
+        const eqIdx = par.indexOf('=');
+        const kRaw = eqIdx !== -1 ? par.substring(0, eqIdx) : par;
+        let k = kRaw;
+        try { k = decodeURIComponent(kRaw); } catch (e) {}
+        if (chavesLocalizadorRemover.has(k)) continue;
+        novosPares.push(par);
+      }
+
+      novosPares.push('rdPrefLocalizadores=' + encodeURIComponent(rdLoc));
+      novosPares.push('selOpcaoLocalizador=' + encodeURIComponent(cod));
+      if (cod === '0' && ids.length > 0) {
+        novosPares.push('hdnGuardaLocalizadoresAtuais=' + encodeURIComponent('0;' + ids.join(';')));
+        for (const id of ids) {
+          novosPares.push('selLocalizadorDesativar%5B%5D=' + encodeURIComponent(id));
+        }
+      } else {
+        novosPares.push('hdnGuardaLocalizadoresAtuais=' + encodeURIComponent('0;'));
+      }
+
+      return prefixo + btoa(novosPares.join('&'));
+    } catch (e) {
+      return payloadStr;
+    }
+  }
+
+  /**
+   * Injeta/substitui no payload Base64 de Minutas (Agendamento| / frmDadosMinutaParaATP|)
+   * os campos exatos de Modo de Prazos (Por Polo ou Por Tipo de Parte), prazos e Intimação Urgente,
+   * removendo quaisquer vestígios do modo oposto.
+   */
+  function aplicarIntimacaoNoPayloadMinuta(payloadStr, item, idEventoIntimacao) {
+    if (typeof payloadStr !== 'string' || !item || !item.intimarPartes) return payloadStr;
+    const prefixo = ['Agendamento|', 'frmDadosMinutaParaATP|'].find(p => payloadStr.startsWith(p));
+    if (!prefixo) return payloadStr;
+
+    const modoPolo = ehModoPoloItemMinuta(item);
+    const modoKey = modoPolo ? 'porPolo' : 'porTipoDeParte';
+    const chavesLimpar = new Set([
+      'chkEncadeamentoIntimar',
+      'chkEncadeamentoMarcarIntimacao',
+      'opcoes_avancadas',
+      'txtPrazoIgual',
+      'chkIntimacaoUrgente',
+      'chkSelTodosPolo',
+      'chkSelTodosTipoParte',
+      'chkSelPrazoIntimacaoUrgenteTodos',
+      'chkSelIntimacaoUrgenteTodos'
+    ]);
+    if (idEventoIntimacao && idEventoIntimacao !== 'null') {
+      chavesLimpar.add('selEventoEncadeadoCitacaoIntimacao');
+      chavesLimpar.add('hdnEventoCitacaoIntimacao');
+    }
+    for (const sp of [...ESQUEMA_PRAZOS_INTIMACAO.porPolo, ...ESQUEMA_PRAZOS_INTIMACAO.porTipoDeParte]) {
+      chavesLimpar.add(sp.chk);
+      chavesLimpar.add(sp.txt);
+      if (sp.chkUrg) chavesLimpar.add(sp.chkUrg);
+    }
+
+    try {
+      const decodificado = atob(payloadStr.substring(prefixo.length));
+      const rawPares = decodificado ? decodificado.split('&').filter(Boolean) : [];
+      const novosPares = [];
+      for (const par of rawPares) {
+        const eqIdx = par.indexOf('=');
+        const kRaw = eqIdx !== -1 ? par.substring(0, eqIdx) : par;
+        let k = kRaw;
+        try { k = decodeURIComponent(kRaw); } catch (e) {}
+        if (chavesLimpar.has(k)) continue;
+        novosPares.push(par);
+      }
+
+      // Em Agendamento (#frmMinutaCadastro.serialize()), #chkEncadeamentoIntimar tem value="1"
+      // e os checkboxes chkSel* / chkSel*Urgente* serializam como "on" (eproc PHP espera "1" para marcar Intimar/Citar Partes!)
+      novosPares.push('chkEncadeamentoIntimar=1');
+      if (idEventoIntimacao && idEventoIntimacao !== 'null') {
+        const idEvEnc = encodeURIComponent(String(idEventoIntimacao).trim());
+        novosPares.push('selEventoEncadeadoCitacaoIntimacao=' + idEvEnc);
+        novosPares.push('hdnEventoCitacaoIntimacao=' + idEvEnc);
+      }
+      novosPares.push('opcoes_avancadas=' + encodeURIComponent(modoKey));
+      novosPares.push('txtPrazoIgual=');
+
+      for (const sp of ESQUEMA_PRAZOS_INTIMACAO[modoKey]) {
+        const val = String(item[sp.prop] || '').trim();
+        if (!val || val === '-') continue;
+        novosPares.push(encodeURIComponent(sp.chk) + '=on');
+        novosPares.push(encodeURIComponent(sp.txt) + '=' + encodeURIComponent(val));
+        if (item.intimacaoUrgente && sp.chkUrg) {
+          novosPares.push(encodeURIComponent(sp.chkUrg) + '=on');
+        }
+      }
+
+      return prefixo + btoa(novosPares.join('&'));
+    } catch (e) {
+      return payloadStr;
+    }
   }
 
 
@@ -8119,10 +8721,8 @@
   }
 
   async function executarDiagnosticoPreVooRelatorios() {
-    if (!itensCarregados || itensCarregados.length === 0) {
-      alertOriginal.call(window, 'Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
-      return;
-    }
+    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itensSel) return;
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     const btnIni = document.getElementById('btn-rito-iniciar');
@@ -8134,6 +8734,7 @@
     if (btnIni) btnIni.disabled = true;
 
     try {
+      adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • RELATÓRIOS');
       addLog('🔍 Iniciando Verificação prévia: Módulo Relatório Geral...');
       atualizarProgressoDiagnostico(15, 'Etapa 1/3', '1. Mapeando Localizadores de Relatório...', true);
       await sleep(80);
@@ -8144,20 +8745,20 @@
       atualizarProgressoDiagnostico(50, 'Etapa 2/3', '2. Verificando Grupos de Preferências...', true);
       await sleep(80);
 
-      const gruposPlanilha = Array.from(new Set(itensCarregados.map(it => it.grupo).filter(g => g && g !== '-')));
-      addLog('📁 Identificando grupos de preferências da planilha (' + gruposPlanilha.length + ' grupo(s))...');
+      const gruposPlanilha = Array.from(new Set(itensSel.map(it => it.grupo).filter(g => g && g !== '-')));
+      addLog('📁 Identificando grupos de preferências selecionadas (' + gruposPlanilha.length + ' grupo(s))...');
       const gruposCadastrados = await obterGruposCadastradosNoEproc2G();
       const gruposFaltantes = gruposPlanilha.filter(g => !gruposCadastrados.has(normalizar(g)));
-      addLog('✓ Grupos da planilha: ' + gruposPlanilha.length + ' mapeados (' + gruposFaltantes.length + ' novos a serem criados no eproc).');
+      addLog('✓ Grupos das selecionadas: ' + gruposPlanilha.length + ' mapeados (' + gruposFaltantes.length + ' novos a serem criados no eproc).');
 
       atualizarProgressoDiagnostico(85, 'Etapa 3/3', '3. Verificando Preferências Existentes...', true);
       await sleep(80);
 
       addLog('📋 Consultando preferências já salvas na Unidade...');
       const existentes = await obterPreferenciaRelatorioExistentes();
-      const totalItens = itensCarregados.length;
+      const totalItens = itensSel.length;
       let jaExistemCount = 0;
-      itensCarregados.forEach(it => {
+      itensSel.forEach(it => {
         if (preferenciaJaExiste(it.nome, existentes)) jaExistemCount++;
       });
       const totalUnicas = new Set(Array.from(existentes).map(normalizar)).size;
@@ -8166,7 +8767,7 @@
       atualizarProgressoDiagnostico(100, 'Concluído', 'Verificação prévia concluída!', false);
 
       addLog('=== RELATÓRIO DA VERIFICAÇÃO PRÉVIA (RELATÓRIOS) ===');
-      addLog('• Total de preferências na planilha: ' + totalItens);
+      addLog('• Preferências auditadas (seleção): ' + totalItens + (totalItens !== itensCarregados.length ? ' de ' + itensCarregados.length + ' na planilha' : ''));
       addLog('• Grupos mapeados: ' + gruposPlanilha.length + ' (' + gruposFaltantes.length + ' serão criados automaticamente)');
       addLog('• Preferências já existentes na Unidade: ' + jaExistemCount + (jaExistemCount > 0 ? ' (serão puladas automaticamente)' : ''));
       addLog('✅ Auditoria de integridade concluída com sucesso!', 'success');
@@ -8196,7 +8797,7 @@
         const res = await gerenciarGrupoPreferencia2G(g);
         if (res && res.id) {
           mapaIds.set(normalizar(g), res.id);
-          addLog('✓ Grupo pronto: "' + g + '" (ID: ' + res.id + ')');
+          addLog('✓ Grupo pronto: "' + g + '"');
         }
       } catch (e) {
         console.warn('Erro ao garantir grupo ' + g + ':', e);
@@ -8525,7 +9126,7 @@
 
     let idPreferencia = idExistente || null;
     try {
-      addLog('📤 Salvando cabeçalho da preferência: "' + item.nome + '"' + (idExistente ? ' (Atualizando ID: ' + idExistente + ')' : '') + '...');
+      addLog('📤 Salvando cabeçalho da preferência: "' + item.nome + '"' + (idExistente ? ' (Atualizando)' : '') + '...');
       const respAdd = await fetch(urlAdicionar, {
         method: 'POST',
         credentials: 'same-origin',
@@ -8589,7 +9190,7 @@
       }
     } catch (eAdd) {
       if (!idPreferencia) throw eAdd;
-      addLog('ℹ️ Cabeçalho já existente no eproc, prosseguindo com vinculação de filtros para ID: ' + idPreferencia);
+      addLog('ℹ️ Cabeçalho já existente no eproc, prosseguindo com vinculação de filtros...');
     }
 
     if (idPreferencia) {
@@ -8600,7 +9201,7 @@
     }
 
     // 7. Vincula os filtros da pesquisa da tela à preferência criada/atualizada (salvar_request)
-    addLog('💾 Vinculando filtros do relatório (ID: ' + idPreferencia + ', Operação: ' + opDesejada + ')...');
+    addLog('💾 Vinculando filtros do relatório (Operação: ' + opDesejada + ')...');
     let bodyReq = '';
     if (window.$ && window.$('#frmProcessoLista').length) {
       if (window.$('#frmIdPreferencia #IdPreferencia').length) {
@@ -8952,7 +9553,7 @@
     hdnEvento.value = achou.id;
     txtEvento.value = achou.descricao;
     destacarCampoAtivo(txtEvento, 'Evento Definido', `${achou.descricao} [ID: ${achou.id}]`);
-    addLog(`✅ Evento selecionado: "${achou.descricao}" (ID interno: ${achou.id})`);
+    addLog(`✅ Evento selecionado: "${achou.descricao}"`);
     return achou;
   }
 
@@ -9017,10 +9618,8 @@
   }
 
   async function executarDiagnosticoPreVooMovimentacoes() {
-    if (!itensCarregados || itensCarregados.length === 0) {
-      alertOriginal.call(window, 'Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
-      return;
-    }
+    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itensSel) return;
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     const btnIni = document.getElementById('btn-rito-iniciar');
@@ -9032,6 +9631,7 @@
     if (btnIni) btnIni.disabled = true;
 
     try {
+      adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • MOVIMENTAÇÕES');
       addLog('🔍 Iniciando Verificação prévia: Módulo Movimentações...');
       atualizarProgressoDiagnostico(15, 'Etapa 1/3', '1. Mapeando Localizadores de Destino na Unidade...', true);
       await sleep(80);
@@ -9041,7 +9641,7 @@
       let locsOk = 0;
       let locsFallback = 0;
 
-      for (const it of itensCarregados) {
+      for (const it of itensSel) {
         if (!it.novoLocalizador) {
           locsOk++;
           continue;
@@ -9054,7 +9654,7 @@
           addLog(`⚠️ Linha ${it.linha} ("${it.nome}"): Novo Localizador "${it.novoLocalizador}" não encontrado na Unidade (usará Fallback).`, 'warn');
         }
       }
-      addLog(`✓ Localizadores de destino: ${locsOk}/${itensCarregados.length} encontrados na Unidade.`);
+      addLog(`✓ Localizadores de destino: ${locsOk}/${itensSel.length} encontrados na Unidade.`);
 
       atualizarProgressoDiagnostico(55, 'Etapa 2/3', '2. Validando Eventos de Movimentação (pelo nome e código)...', true);
       await sleep(80);
@@ -9063,7 +9663,7 @@
       let evsOk = 0;
       let evsFaltantes = 0;
 
-      for (const it of itensCarregados) {
+      for (const it of itensSel) {
         let achouEv = encontrarEventoMovimentacao(it.evento, it.eventoCod, catalogoEv);
         if (!achouEv && it.evento) {
           const semCod = String(it.evento).replace(/\(\s*\d+\s*\)/g, '').trim();
@@ -9072,7 +9672,7 @@
         }
         if (achouEv) {
           evsOk++;
-          addLog(`✓ Evento #${it.num}: "${it.evento}" ➔ "${achouEv.descricao}" (ID: ${achouEv.id})`);
+          addLog(`✓ Evento #${it.num}: "${it.evento}" ➔ "${achouEv.descricao}"`);
         } else {
           evsFaltantes++;
           addLog(`❌ Evento #${it.num} não localizado: "${it.evento}" (Cód: ${it.eventoCod || '-'})`, 'warn');
@@ -9082,27 +9682,27 @@
       atualizarProgressoDiagnostico(85, 'Etapa 3/3', '3. Verificando Grupos e Preferências Já Cadastradas...', true);
       await sleep(80);
 
-      const gruposPlanilha = Array.from(new Set(itensCarregados.map(it => it.grupo).filter(g => g && g !== '-')));
+      const gruposPlanilha = Array.from(new Set(itensSel.map(it => it.grupo).filter(g => g && g !== '-')));
       if (gruposPlanilha.length === 0) {
         addLog('ℹ️ Coluna "Grupo de preferência" está vazia: nenhum grupo será criado ou vinculado.');
       } else {
         const gruposCadastrados = await obterGruposCadastradosNoEproc2G();
         const gruposFaltantes = gruposPlanilha.filter(g => !gruposCadastrados.has(normalizar(g)));
-        addLog(`✓ Grupos na planilha: ${gruposPlanilha.length} (${gruposFaltantes.length} novos a criar).`);
+        addLog(`✓ Grupos das selecionadas: ${gruposPlanilha.length} (${gruposFaltantes.length} novos a criar).`);
       }
 
       const existentes = await obterPreferenciasExistentes();
       let jaExistemCount = 0;
-      itensCarregados.forEach(it => {
+      itensSel.forEach(it => {
         if (preferenciaJaExiste(it.nome, existentes)) jaExistemCount++;
       });
 
       atualizarProgressoDiagnostico(100, 'Concluído', 'Verificação prévia de Movimentações concluída!', false);
 
       addLog('=== RELATÓRIO DA VERIFICAÇÃO PRÉVIA (MOVIMENTAÇÕES) ===');
-      addLog('• Total de preferências na planilha: ' + itensCarregados.length);
-      addLog('• Eventos validados pelo nome: ' + evsOk + ' / ' + itensCarregados.length);
-      addLog('• Localizadores de destino encontrados: ' + locsOk + ' / ' + itensCarregados.length);
+      addLog('• Preferências auditadas (seleção): ' + itensSel.length + (itensSel.length !== itensCarregados.length ? ' de ' + itensCarregados.length + ' na planilha' : ''));
+      addLog('• Eventos validados pelo nome: ' + evsOk + ' / ' + itensSel.length);
+      addLog('• Localizadores de destino encontrados: ' + locsOk + ' / ' + itensSel.length);
       addLog('• Grupos a vincular: ' + (gruposPlanilha.length === 0 ? 'Nenhum (coluna vazia)' : gruposPlanilha.length));
       addLog('• Preferências já existentes na Unidade: ' + jaExistemCount + (jaExistemCount > 0 ? ' (serão puladas automaticamente)' : ''));
       addLog('✅ Auditoria de Movimentação Processual concluída!', 'success');
@@ -9334,6 +9934,7 @@
 
         if (item.localizadoresDesativar && item.localizadoresDesativar.length > 0) {
           const desativadosNomes = [];
+          const idsDesativarVistos = new Set();
           for (const locDes of item.localizadoresDesativar) {
             let optD = acharOpcaoLocalizador(selDesativar, locDes, false);
             if (!optD && selNovoLoc) {
@@ -9349,11 +9950,17 @@
             if (optD) {
               optD.selected = true;
               optD.setAttribute('selected', 'selected');
-              desativadosNomes.push(optD.text.trim());
+              const optId = String(optD.value || '').trim();
+              if (!optId || !idsDesativarVistos.has(optId)) {
+                if (optId) idsDesativarVistos.add(optId);
+                desativadosNomes.push(optD.text.trim());
+              }
             }
           }
+          dados.locDesativarLista = desativadosNomes;
           dados.locDesativar = desativadosNomes.length > 0 ? desativadosNomes.join('; ') : '(Nenhum)';
         } else {
+          dados.locDesativarLista = [];
           dados.locDesativar = '(Nenhum - NÃO remover de localizador algum)';
         }
       }
@@ -9779,93 +10386,52 @@
 
       // Configuração: Comportamento do localizador: NÃO remover de localizador algum (valor 3)
 
-      // [v3.5.6] Configuração: Comportamento do Localizador (0 = Remover informado(s)) e Localizadores a Desativar
+      // [v3.5.7] Configuração: Comportamento do Localizador (0..3) e Localizadores a Desativar
       const selNovoLoc = document.getElementById('selNovoLocalizador');
       const selOpcaoLoc = document.getElementById('selOpcaoLocalizador');
       const selDesativar = document.getElementById('selLocalizadorDesativar');
       const codComportamento = (item.localizadoresDesativar && item.localizadoresDesativar.length > 0) ? '0' : (item.comportamentoLocalizador || '3');
-      const arrIdsDesativarMinuta = [];
+      const arrObjsDesativarMinuta = [];
+      let arrIdsDesativarMinuta = [];
+      let textoComp = 'NÃO remover de localizador algum (3)';
+      if (codComportamento === '0') textoComp = 'Remover o processo do(s) localizador(es) informado(s) (0)';
+      else if (codComportamento === '1') textoComp = 'Remover de todos os localizadores atuais (1)';
+      else if (codComportamento === '2') textoComp = 'Remover de todos os localizadores (exceto sistema) (2)';
       if (selOpcaoLoc) {
-        let textoComp = 'NÃO remover de localizador algum (3)';
-        if (codComportamento === '0') textoComp = 'Remover o processo do(s) localizador(es) informado(s) (0)';
-        else if (codComportamento === '1') textoComp = 'Remover de todos os localizadores atuais (1)';
         destacarCampoAtivo(selOpcaoLoc, 'Comportamento do Localizador', textoComp);
-        selOpcaoLoc.value = codComportamento;
-        dispararEventos(selOpcaoLoc, ['change']);
-        if (typeof window.comportamentoLocalizadores === 'function') {
-          try { window.comportamentoLocalizadores(''); } catch (e) {}
-        }
-        await sleep(200);
         dados.comportamento = textoComp;
       }
       if (codComportamento === '0' && item.localizadoresDesativar && item.localizadoresDesativar.length > 0) {
-        if (selDesativar) {
-          try {
-            const divDes = document.getElementById('divLocalizadorDesativar') || selDesativar.parentElement;
-            if (divDes) divDes.style.display = 'block';
-          } catch (e) {}
-          Array.from(selDesativar.options).forEach(o => { o.selected = false; o.removeAttribute('selected'); });
-          const catalogoUnidade = await obterOuCarregarCatalogoLocalizadoresUnidade();
-          const desativadosNomes = [];
-          for (const alvo of item.localizadoresDesativar) {
-            let optD = acharOpcaoLocalizador(selDesativar, alvo, false);
-            if (!optD) {
-              let idEncontrado = null;
-              let textoEncontrado = alvo;
-              if (Array.isArray(catalogoUnidade)) {
-                const alvoNorm = normalizar(alvo);
-                const itemCat = catalogoUnidade.find(l => {
-                  const lNorm = normalizar(l.text || l.label || '');
-                  return lNorm === alvoNorm || lNorm.includes(alvoNorm) || alvoNorm.includes(lNorm);
-                });
-                if (itemCat) {
-                  idEncontrado = String(itemCat.value || itemCat.IdLocalizadorOrgao || itemCat.id || '').trim();
-                  textoEncontrado = itemCat.text || itemCat.label || alvo;
-                }
-              }
-              if (!idEncontrado && selNovoLoc) {
-                const optRef = acharOpcaoLocalizador(selNovoLoc, alvo, false);
-                if (optRef && optRef.value && optRef.value !== 'null') {
-                  idEncontrado = optRef.value;
-                  textoEncontrado = optRef.text;
-                }
-              }
-              if (idEncontrado) {
-                optD = document.createElement('option');
-                optD.value = idEncontrado;
-                optD.text = textoEncontrado;
-                selDesativar.appendChild(optD);
-              }
+        const catalogoUnidade = await obterOuCarregarCatalogoLocalizadoresUnidade();
+        const desativadosNomes = [];
+        const idsDesativarVistos = new Set();
+        for (const alvo of item.localizadoresDesativar) {
+          const resolvido = resolverOpcaoLocalizadorMinuta(alvo, selDesativar, catalogoUnidade, selNovoLoc);
+          if (resolvido && resolvido.id) {
+            const resId = String(resolvido.id).trim();
+            if (!idsDesativarVistos.has(resId)) {
+              idsDesativarVistos.add(resId);
+              arrObjsDesativarMinuta.push(resolvido);
+              desativadosNomes.push(resolvido.text);
             }
-            if (optD && optD.value) {
-              optD.selected = true;
-              optD.setAttribute('selected', 'selected');
-              arrIdsDesativarMinuta.push(String(optD.value).trim());
-              desativadosNomes.push(optD.text.trim());
-            } else {
-              addLog(`⚠️ Localizador a remover não localizado no catálogo da Unidade: "${alvo}"`, 'warn');
-            }
+          } else {
+            addLog(`⚠️ Localizador a remover não localizado no catálogo da Unidade: "${alvo}"`, 'warn');
           }
-          if (window.$) {
-            try {
-              window.$('#selLocalizadorDesativar').val(arrIdsDesativarMinuta).trigger('change');
-            } catch (e) {}
-          }
-          if (typeof window.salvaLocalizadoresMarcados === 'function') {
-            try { window.salvaLocalizadoresMarcados('', ''); } catch (e) {}
-          }
-          dados.locDesativar = desativadosNomes.length > 0 ? desativadosNomes.join('; ') : '(Nenhum encontrado)';
-          addLog(`🗑️ Localizador(es) a desativar marcado(s): ${dados.locDesativar} (IDs: ${arrIdsDesativarMinuta.join(', ')})`, 'info');
         }
+        arrIdsDesativarMinuta = aplicarLocalizadoresDesativarMinutas2G(document, window, codComportamento, arrObjsDesativarMinuta);
+        await sleep(200);
+        dados.locDesativarLista = desativadosNomes;
+        dados.locDesativar = desativadosNomes.length > 0 ? desativadosNomes.join('; ') : '(Nenhum encontrado)';
+        addLog(`🗑️ Localizador(es) a desativar marcado(s)${formatarListaLocalizadoresRemoverLog(desativadosNomes)}`, 'info');
       } else {
-        if (selDesativar) {
-          Array.from(selDesativar.options).forEach(o => { o.selected = false; o.removeAttribute('selected'); });
-          if (window.$) {
-            try { window.$('#selLocalizadorDesativar option').prop('selected', false); } catch (e) {}
-          }
-        }
-        dados.locDesativar = codComportamento === '1' ? 'Remover de todos os localizadores atuais (1)' : '(Nenhum - NÃO remover de localizador algum)';
+        arrIdsDesativarMinuta = aplicarLocalizadoresDesativarMinutas2G(document, window, codComportamento, []);
+        await sleep(200);
+        dados.locDesativarLista = [];
+        dados.locDesativar = codComportamento === '1'
+          ? 'Remover de todos os localizadores atuais (1)'
+          : (codComportamento === '2' ? 'Remover de todos (exceto sistema) (2)' : '(Nenhum - NÃO remover de localizador algum)');
       }
+      window._eprocMinutaLocsDesativarObjs = arrObjsDesativarMinuta;
       window._eprocMinutaLocsDesativar = arrIdsDesativarMinuta;
       window._eprocMinutaComportamentoLoc = codComportamento;
 
@@ -10512,6 +11078,12 @@
 
 
 
+      // [v3.5.7] Reafirma comportamento e localizadores a desativar ANTES e DEPOIS de #rdIndividuais
+      // porque marcarLocalizadorPrincipal()/selecionaCheckLocalizadores() apaga as options da Unidade
+      if (window._eprocMinutaComportamentoLoc !== null && window._eprocMinutaComportamentoLoc !== undefined && window._eprocMinutaComportamentoLoc !== '') {
+        aplicarLocalizadoresDesativarMinutas2G(document, window, window._eprocMinutaComportamentoLoc, window._eprocMinutaLocsDesativarObjs || []);
+      }
+
       // REAFIRMA "Localizadores selecionados" (o eproc pode ter trocado para Desmarcar/Marcar todos)
 
       for (let k = 0; k < 4; k++) {
@@ -10539,31 +11111,9 @@
       // GRAVAÇÃO DA PREFERÊNCIA: Aciona validação e salvamento
 
 
-      // [v3.5.6] Reafirmação estrita do comportamento e localizadores a desativar antes de validar
-      if (window._eprocMinutaComportamentoLoc) {
-        const selOpRef = document.getElementById('selOpcaoLocalizador');
-        if (selOpRef) {
-          selOpRef.value = window._eprocMinutaComportamentoLoc;
-          dispararEventos(selOpRef, ['change']);
-        }
-      }
-      if (Array.isArray(window._eprocMinutaLocsDesativar) && window._eprocMinutaLocsDesativar.length > 0) {
-        const selDesRef = document.getElementById('selLocalizadorDesativar');
-        if (selDesRef) {
-          selDesRef.disabled = false;
-          Array.from(selDesRef.options).forEach(o => {
-            if (window._eprocMinutaLocsDesativar.includes(String(o.value).trim())) {
-              o.selected = true;
-              o.setAttribute('selected', 'selected');
-            }
-          });
-          if (window.$) {
-            try { window.$('#selLocalizadorDesativar').val(window._eprocMinutaLocsDesativar).trigger('change'); } catch (e) {}
-          }
-          if (typeof window.salvaLocalizadoresMarcados === 'function') {
-            try { window.salvaLocalizadoresMarcados('', ''); } catch (e) {}
-          }
-        }
+      // [v3.5.7] Garantia final pós-#rdIndividuais de que #selLocalizadorDesativar e #hdnGuardaLocalizadoresAtuais estão exatos
+      if (window._eprocMinutaComportamentoLoc === '0') {
+        aplicarLocalizadoresDesativarMinutas2G(document, window, '0', window._eprocMinutaLocsDesativarObjs || []);
       }
       await sleep(150);
 
@@ -10930,6 +11480,66 @@
 
             }
 
+            // 3b. [v3.5.7] Garantia absoluta de comportamento/localizadores a desativar no payload Base64 de Minutas
+            if (window._eprocMinutaComportamentoLoc !== null && window._eprocMinutaComportamentoLoc !== undefined && window._eprocMinutaComportamentoLoc !== '') {
+              const rdLocCheckedHook = document.querySelector('input[name="rdPrefLocalizadores"]:checked');
+              const rdLocValHook = rdLocCheckedHook ? rdLocCheckedHook.value : 'L';
+              const idsDesativarHook = Array.isArray(window._eprocMinutaLocsDesativar) ? window._eprocMinutaLocsDesativar : [];
+              partes = partes.map(parte =>
+                aplicarLocalizadoresNoPayloadMinuta(parte, window._eprocMinutaComportamentoLoc, idsDesativarHook, rdLocValHook)
+              );
+            }
+
+            // 3c. Garantia absoluta de Intimação (Por Polo / Por Tipo de Parte / Urgente) no top-level (camposPersonalizados) e Base64 de Minutas
+            if (window._eprocItemAtual) {
+              const setChaveMinuta = (chave, valor) => {
+                const pfx = chave + '|';
+                const idx = partes.findIndex(p => p.startsWith(pfx));
+                if (idx !== -1) partes[idx] = pfx + valor;
+                else partes.push(pfx + valor);
+              };
+
+              if (window._eprocItemAtual.intimarPartes) {
+                const itMin = window._eprocItemAtual;
+                const modoKeyMin = ehModoPoloItemMinuta(itMin) ? 'porPolo' : 'porTipoDeParte';
+                const idEvIntMin = window._eprocEventoIntimacaoId ? String(window._eprocEventoIntimacaoId).trim() : '';
+
+                setChaveMinuta('chkEncadeamentoMarcarIntimacao', 'N');
+                setChaveMinuta('chkEncadeamentoIntimar', 'S');
+                if (idEvIntMin && idEvIntMin !== 'null') {
+                  setChaveMinuta('selEventoEncadeadoCitacaoIntimacao', idEvIntMin);
+                }
+                setChaveMinuta('opcoes_avancadas', modoKeyMin);
+                setChaveMinuta('txtPrazoIgual', '');
+                setChaveMinuta('chkSelTodosPolo', 'N');
+                setChaveMinuta('chkSelTodosTipoParte', 'N');
+                setChaveMinuta('chkSelPrazoIntimacaoUrgenteTodos', 'N');
+                setChaveMinuta('chkSelIntimacaoUrgenteTodos', 'N');
+
+                for (const sp of [...ESQUEMA_PRAZOS_INTIMACAO.porPolo, ...ESQUEMA_PRAZOS_INTIMACAO.porTipoDeParte]) {
+                  setChaveMinuta(sp.chk, 'N');
+                  setChaveMinuta(sp.txt, '');
+                  if (sp.chkUrg) setChaveMinuta(sp.chkUrg, 'N');
+                }
+                for (const sp of ESQUEMA_PRAZOS_INTIMACAO[modoKeyMin]) {
+                  const val = String(itMin[sp.prop] || '').trim();
+                  if (!val || val === '-') continue;
+                  setChaveMinuta(sp.chk, 'S');
+                  setChaveMinuta(sp.txt, val);
+                  if (sp.chkUrg) {
+                    setChaveMinuta(sp.chkUrg, itMin.intimacaoUrgente ? 'S' : 'N');
+                  }
+                }
+
+                partes = partes.map(parte =>
+                  aplicarIntimacaoNoPayloadMinuta(parte, itMin, window._eprocEventoIntimacaoId)
+                );
+              } else {
+                partes = partes.map(p => p.startsWith('chkEncadeamentoIntimar|') ? 'chkEncadeamentoIntimar|N' : p);
+                partes = partes.map(p => p.startsWith('selEventoEncadeadoCitacaoIntimacao|') ? 'selEventoEncadeadoCitacaoIntimacao|null' : p);
+              }
+            }
+
 
 
             // Diagnóstico: o que realmente será gravado
@@ -10939,23 +11549,8 @@
             const temRem = partes.some(p => p.startsWith('chkEncadeamentoRemessa|S'));
 
             try {
-
               const rdLoc = document.querySelector('input[name="rdPrefLocalizadores"]:checked');
-
               addLog('📤 Gravando: intimação=' + (temInt ? 'SIM' : 'não') + ', remessa=' + (temRem ? 'SIM' : 'não') + ', localizadores=' + (rdLoc ? rdLoc.value : '?'));
-
-              const ag = partes.find(p => p.startsWith('Agendamento|'));
-
-              if (ag) {
-
-                const q = new URLSearchParams(atob(ag.substring(12)));
-
-                const ks = ['chkEncadeamentoIntimar', 'selEventoEncadeadoCitacaoIntimacao', 'txtPrazoEntPrazoEspecial', 'chkEncadeamentoRemessa', 'selEventoEncadeadoRemessa', 'selOrgao'];
-
-                addLog('🧾 Payload agendamento: ' + ks.map(k => k + '=' + (q.get(k) === null ? '∅' : q.get(k))).join(', ') + ' | partes marcadas=' + Array.from(q.keys()).filter(k => k.startsWith('chkParte')).length + ' | compl=' + q.getAll('selEventoComplementar[]').join(';'));
-
-              }
-
             } catch (e) {}
 
 
@@ -11033,7 +11628,6 @@
                 }
               }
               setChave('txtPrazoIgual', '');
-              addLog(`📤 Payload Intimação confirmado: Evento=${ctxInt.idEventoSelecionado} | sinLoc=${ctxInt.sinLocalizadores || 'L'} | IdNovoLoc=${ctxInt.idNovoLocalizadorSelecionado || 'null'} | Desativar=[${(ctxInt.arrIdsDesativar || []).join(', ')}] | opcoes_avancadas=${ctxInt.modoPolo ? 'porPolo' : 'porTipoDeParte'} | MP=${itInt.prazoMP || '-'} dias`, 'info');
             }
 
 
@@ -11275,6 +11869,209 @@
 
         color: #0f172a;
 
+      }
+
+      .rito-ms-wrap {
+        margin-top: 9px;
+        position: relative;
+      }
+
+      .rito-ms-label-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3px;
+      }
+
+      .rito-ms-toggle {
+        width: 100%;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 9px;
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-radius: 5px;
+        color: #0f172a;
+        font-size: 11.5px;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+      }
+
+      .rito-ms-toggle:hover {
+        border-color: #0284c7;
+        background: #f0f9ff;
+      }
+
+      .rito-ms-toggle.rito-ms-empty {
+        border-color: #f59e0b;
+        background: #fffbeb;
+        color: #92400e;
+      }
+
+      .rito-ms-toggle-text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .rito-ms-toggle-arrow {
+        color: #475569;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+
+      .rito-ms-dropdown {
+        display: none;
+        margin-top: 4px;
+        border: 1px solid #94a3b8;
+        border-radius: 6px;
+        background: #ffffff;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+        overflow: hidden;
+      }
+
+      .rito-ms-dropdown.open {
+        display: block;
+      }
+
+      .rito-ms-toolbar {
+        padding: 6px;
+        background: #f1f5f9;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .rito-ms-search {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 4px 7px;
+        font-size: 11.5px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        color: #0f172a;
+        background: #ffffff;
+      }
+
+      .rito-ms-search:focus {
+        outline: none;
+        border-color: #0284c7;
+      }
+
+      .rito-ms-actions {
+        display: flex;
+        gap: 4px;
+        margin-top: 5px;
+      }
+
+      .rito-ms-act-btn {
+        flex: 1;
+        padding: 4px 5px;
+        font-size: 10.5px;
+        font-weight: 700;
+        border-radius: 4px;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #334155;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.12s, border-color 0.12s;
+      }
+
+      .rito-ms-act-btn:hover {
+        background: #e0f2fe;
+        border-color: #38bdf8;
+        color: #0369a1;
+      }
+
+      .rito-ms-list {
+        max-height: 190px;
+        overflow-y: auto;
+        padding: 2px 0;
+      }
+
+      .rito-ms-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 7px;
+        padding: 5px 8px;
+        cursor: pointer;
+        font-size: 11.5px;
+        line-height: 1.3;
+        border-bottom: 1px solid #f1f5f9;
+        color: #1e293b;
+        margin: 0;
+      }
+
+      .rito-ms-item:hover {
+        background: #f8fafc;
+      }
+
+      .rito-ms-item.checked {
+        background: #eff6ff;
+      }
+
+      .rito-ms-chk {
+        margin-top: 2px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .rito-ms-item-content {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .rito-ms-item-title {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+        word-break: break-word;
+      }
+
+      .rito-ms-item-num {
+        color: #0284c7;
+        font-weight: 700;
+        white-space: nowrap;
+        font-size: 11px;
+      }
+
+      .rito-ms-item-grupo {
+        display: block;
+        font-size: 10px;
+        color: #64748b;
+        margin-top: 1px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .rito-ms-empty-search {
+        padding: 10px 8px;
+        text-align: center;
+        font-size: 11px;
+        color: #64748b;
+      }
+
+      .rito-ms-hint {
+        margin-top: 4px;
+        font-size: 10.5px;
+        color: #64748b;
+        line-height: 1.3;
+      }
+
+      .rito-ms-hint.custom {
+        color: #0369a1;
+        font-weight: 600;
+      }
+
+      .rito-ms-hint.empty {
+        color: #b91c1c;
+        font-weight: 600;
       }
 
       .rito-dropzone {
@@ -11587,17 +12384,40 @@
       }
 
       .rito-log-card {
-
         background: #1e293b;
-
         border: 1px solid #334155;
-
         border-radius: 5px;
-
-        margin-bottom: 8px;
-
+        margin: 6px 0 12px 0;
         overflow: hidden;
+      }
 
+      .rito-log-run-divider {
+        margin: 16px 0 12px 0;
+        padding: 6px 8px;
+        border-top: 2px solid #38bdf8;
+        border-bottom: 1px solid #0284c7;
+        background: linear-gradient(90deg, rgba(14, 165, 233, 0.16), rgba(30, 41, 59, 0.85));
+        color: #7dd3fc;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        text-align: center;
+        border-radius: 4px;
+      }
+
+      .rito-log-item-divider {
+        margin: 14px 0 6px 0;
+        padding: 7px 8px 5px 8px;
+        border-top: 2px solid #475569;
+        border-left: 3px solid #38bdf8;
+        background: linear-gradient(90deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.4));
+        border-radius: 0 4px 4px 0;
+      }
+
+      .rito-log-item-divider-title {
+        color: #e2e8f0;
+        font-size: 11px;
+        font-weight: 700;
       }
 
       .rito-log-card-header {
@@ -11689,17 +12509,12 @@
       }
 
       .rito-log-card-summary {
-
         background: #1e293b;
-
-        border: 1px solid #475569;
-
+        border: 1px solid #64748b;
+        border-top: 2px solid #64748b;
         border-radius: 6px;
-
-        margin-top: 8px;
-
+        margin-top: 14px;
         overflow: hidden;
-
       }
 
       .rito-log-fallback-box {
@@ -11765,13 +12580,11 @@
       }
 
       .rito-log-simple-msg {
-
         padding: 3px 4px;
-
         font-size: 11px;
-
         color: #94a3b8;
-
+        white-space: pre-wrap;
+        line-height: 1.45;
       }
 
       .rito-log-msg-warn {
@@ -14336,6 +15149,7 @@
     const logsBox = document.getElementById('rito-logs');
     if (logsBox) logsBox.style.display = 'block';
 
+    adicionarSeparadorExecucaoNoLog('PERSONALIZAÇÃO DE SERVIDORES');
     addLog('🚀 INICIANDO PERSONALIZAÇÃO DE SERVIDORES DA UNIDADE...', 'info');
     addLog(`📋 Total de servidores configurados nos slots: ${slots.length}`);
 
@@ -14869,7 +15683,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.7.0</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.8.0</span></span>
 
         </div>
 
@@ -15021,6 +15835,29 @@
 
           </div>
 
+          <div class="rito-ms-wrap" id="rito-ms-wrap">
+            <div class="rito-ms-label-row">
+              <label for="btn-rito-ms-toggle" style="font-size:11px; font-weight:700; color:#475569;">Selecionar preferências:</label>
+              <span id="rito-ms-count-badge" style="font-size:10.5px; font-weight:700; color:#0284c7;">0 / 0</span>
+            </div>
+            <button type="button" id="btn-rito-ms-toggle" class="rito-ms-toggle" aria-expanded="false" aria-controls="rito-ms-dropdown">
+              <span id="rito-ms-toggle-text" class="rito-ms-toggle-text">Todas selecionadas (0)</span>
+              <span id="rito-ms-toggle-arrow" class="rito-ms-toggle-arrow">▾</span>
+            </button>
+            <div id="rito-ms-dropdown" class="rito-ms-dropdown" role="listbox" aria-multiselectable="true">
+              <div class="rito-ms-toolbar">
+                <input type="text" id="inp-rito-ms-search" class="rito-ms-search" placeholder="🔎 Filtrar por nº ou nome..." autocomplete="off" />
+                <div class="rito-ms-actions">
+                  <button type="button" id="btn-rito-ms-marcar" class="rito-ms-act-btn">✓ Marcar todas</button>
+                  <button type="button" id="btn-rito-ms-desmarcar" class="rito-ms-act-btn">✕ Desmarcar todas</button>
+                  <button type="button" id="btn-rito-ms-range" class="rito-ms-act-btn" title="Sincroniza os checkboxes com o intervalo De / Até">↺ Usar De–Até</button>
+                </div>
+              </div>
+              <div id="rito-ms-list" class="rito-ms-list"></div>
+            </div>
+            <div id="rito-ms-hint" class="rito-ms-hint"></div>
+          </div>
+
         </div>
 
 
@@ -15092,6 +15929,9 @@
 
 
         <div style="margin-top:8px; border-top:1px solid #e2e8f0; padding-top:6px;">
+          <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-visualizar-preferencias" style="width:100%; font-size:11.5px; margin-bottom:6px; background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; font-weight:700; display:${moduloAtivo === 'minutas' ? 'flex' : 'none'};" title="Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo">
+            <span>📊</span> Visualizar Preferências em Tabela (Minutas)
+          </button>
 
           <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-abrir-gerenciador" style="width:100%; font-size:11.5px;" title="Abre a tela oficial do eproc para visualizar ou editar preferências">
 
@@ -15321,6 +16161,9 @@
       window._eprocPrefsDocumentosServidores = null;
       window._eprocServidoresArquivoImportadoRef = null;
       window._eprocServidoresVerificadosNaoEncontrados = null;
+      window._eprocViewerParar = true;
+      window._eprocCacheDetalhesPrefsMinutas = null;
+      window._eprocCacheCatalogosMinutaViewer = null;
 
       execucaoLoteAtiva = false;
 
@@ -15361,6 +16204,12 @@
     };
 
 
+
+    const btnVisualizarPrefs = document.getElementById('btn-rito-visualizar-preferencias');
+    if (btnVisualizarPrefs) {
+      btnVisualizarPrefs.style.display = moduloAtivo === 'minutas' ? 'flex' : 'none';
+      btnVisualizarPrefs.onclick = () => abrirModalVisualizadorPreferencias(moduloAtivo);
+    }
 
     const btnGerenciador = document.getElementById('btn-rito-abrir-gerenciador');
 
@@ -15456,6 +16305,7 @@
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     if (btnDiag) btnDiag.onclick = executarDiagnosticoPreVoo;
     document.getElementById('btn-rito-iniciar').onclick = iniciarExecucao;
+    configurarEventosComboboxPreferencias();
 
 
 
@@ -15545,29 +16395,49 @@
 
 
   function addLog(msg, tipo = 'info') {
-
     const box = document.getElementById('rito-logs');
-
     if (!box) return;
-
+    const msgLimpa = sanitizarMensagemLogExecucao(msg);
+    if (!msgLimpa) return;
     if (box.textContent.trim() === 'Aguardando planilha...') {
-
       box.innerHTML = '';
-
     }
-
     const d = document.createElement('div');
-
     d.className = `rito-log-simple-msg rito-log-msg-${tipo}`;
-
-    d.textContent = msg;
-
+    d.textContent = msgLimpa;
     box.appendChild(d);
-
     /* rolagem automática do log desativada */
-
     salvarLogsNoStorage();
+  }
 
+  function adicionarSeparadorExecucaoNoLog(titulo = 'NOVA EXECUÇÃO') {
+    const box = document.getElementById('rito-logs');
+    if (!box) return;
+    const temConteudoAnterior = box.children.length > 0 && box.textContent.trim() !== 'Aguardando planilha...';
+    if (!temConteudoAnterior) return;
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const sep = document.createElement('div');
+    sep.className = 'rito-log-run-divider';
+    sep.setAttribute('role', 'separator');
+    sep.innerHTML = `<span>══════ 📌 ${esc(titulo)} • ${hora} ══════</span>`;
+    box.appendChild(sep);
+    salvarLogsNoStorage();
+  }
+
+  function adicionarSeparadorItemExecucaoNoLog(pos, total, item) {
+    const box = document.getElementById('rito-logs');
+    if (!box) return;
+    if (box.textContent.trim() === 'Aguardando planilha...') box.innerHTML = '';
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const linha = (item && item.linha !== undefined && item.linha !== null) ? item.linha : pos;
+    const nome = (item && item.nome) ? item.nome : '';
+    const div = document.createElement('div');
+    div.className = 'rito-log-item-divider';
+    div.setAttribute('role', 'separator');
+    div.innerHTML = `<div class="rito-log-item-divider-title">▶ Execução ${pos}/${total} • Linha ${linha} (Planilha): "${esc(nome)}"</div>`;
+    box.appendChild(div);
+    salvarLogsNoStorage();
   }
 
 
@@ -15624,7 +16494,7 @@
           <div><span class="rito-log-label">• Evento Lançado:</span> <span style="color:#38bdf8; font-weight:600;">${dados.evento}</span></div>
           <div><span class="rito-log-label">• Comportamento Loc.:</span> ${dados.comportamento}</div>
           <div><span class="rito-log-label">• Novo Localizador:</span> ${dados.locPrincipal || '(Nenhum)'}</div>
-          ${dados.locDesativar ? `<div><span class="rito-log-label">• Localizador a Desativar:</span> ${dados.locDesativar}</div>` : ''}
+          ${renderizarLocalizadoresRemoverHtml(dados, '• Localizador(es) a Remover')}
           ${dados.motivo ? `<div><span class="rito-log-label">• Motivo:</span> ${dados.motivo}</div>` : ''}
           ${dados.processoAberto ? `<div><span class="rito-log-label">• Processo Aberto:</span> ${dados.processoAberto}</div>` : ''}
         </div>
@@ -15678,7 +16548,7 @@
           <div><span class="rito-log-label">• Intimação Urgente:</span> ${dados.urgente ? 'Sim' : 'Não'}</div>
           <div><span class="rito-log-label">• Comportamento Loc.:</span> ${dados.comportamento}</div>
           <div><span class="rito-log-label">• Novo Localizador:</span> ${dados.locPrincipal || '(Nenhum)'}</div>
-          ${dados.locDesativar ? `<div><span class="rito-log-label">• Localizador a Desativar:</span> ${dados.locDesativar}</div>` : ''}
+          ${renderizarLocalizadoresRemoverHtml(dados, '• Localizador(es) a Remover')}
         </div>
       `;
       box.appendChild(card);
@@ -15714,14 +16584,13 @@
 
         <div><span class="rito-log-label">• Modelo:</span> ${dados.modelo}</div>
 
-        <div><span class="rito-log-label">• Agendamento:</span> ${dados.agendamento}</div>
+        <div><span class="rito-log-label">• Agendamento:</span> ${dados.agendamento}</div>${dados.intimacao ? `<div><span class="rito-log-label">• Intimação:</span> <span style="color:#38bdf8; font-weight:600;">${dados.intimacao}</span></div>` : ''}
 
         <div><span class="rito-log-label">• Evento:</span> ${dados.evento}</div>${dados.eventosComp && dados.eventosComp.length > 0 ? `<div><span class="rito-log-label">• Eventos Complementares:</span> <span style="color:#10b981; font-weight:600;">${dados.eventosComp.join('; ')}</span></div>` : ''}${dados.dadosComplementares ? `<div><span class="rito-log-label">• Dados Complementares:</span> <span style="color:#f59e0b; font-weight:600;">${dados.dadosComplementares}</span></div>` : ''}
 
         <div><span class="rito-log-label">• Comportamento:</span> ${dados.comportamento}</div>
-
+        ${(dados.locDesativarLista && dados.locDesativarLista.length > 0) || dados.locDesativar === '(Nenhum encontrado)' ? renderizarLocalizadoresRemoverHtml(dados, '• Localizadores a Remover') : ''}
         <div><span class="rito-log-label">• Localizador Principal:</span> ${dados.locPrincipal}</div>
-
         <div><span class="rito-log-label">• Localizadores Secundários:</span> ${secTxt || '(Nenhum)'}</div>
 
         <div><span class="rito-log-label">• Classificação:</span> ${dados.classificacao || '(Em branco)'}</div>${dados.urgenciaMandado ? `<div><span class="rito-log-label">• Urgência Mandado:</span> <span style="color:#60a5fa; font-weight:600;">${dados.urgenciaMandado}</span></div>` : ''}
@@ -16029,6 +16898,376 @@
 
 
   let itensCarregados = [];
+  let indicesSelecionadosPlanilha = new Set();
+  let comboboxListenersConfigurados = false;
+
+  function resolverIndicesPorIntervalo(totalItens, deRaw, ateRaw) {
+    const total = Math.max(0, parseInt(totalItens, 10) || 0);
+    if (total === 0) return [];
+    const deNum = parseInt(deRaw, 10);
+    const ateNum = parseInt(ateRaw, 10);
+    const de = Math.min(total, Math.max(1, Number.isFinite(deNum) && deNum >= 1 ? deNum : 1));
+    const ate = Math.min(total, Math.max(de, Number.isFinite(ateNum) && ateNum >= 1 ? ateNum : total));
+    const res = [];
+    for (let i = de - 1; i < ate; i++) {
+      res.push(i);
+    }
+    return res;
+  }
+
+  function filtrarItensCombobox(itens, termoBusca) {
+    const lista = Array.isArray(itens) ? itens : [];
+    const termoBruto = String(termoBusca ?? '').trim();
+    const temPrefixoHash = termoBruto.startsWith('#');
+    const termoNorm = normalizar(termoBruto);
+    const termoNum = termoBruto.replace(/^#/, '').trim();
+    const ehBuscaNumerica = /^\d+$/.test(termoNum);
+    return lista
+      .map((item, idx) => ({ item, idx }))
+      .filter(({ item, idx }) => {
+        if (!termoNorm && !termoNum) return true;
+        const posStr = String(idx + 1);
+        const numStr = item && item.num !== undefined && item.num !== null ? String(item.num).trim() : '';
+        const nomeNorm = normalizar((item && item.nome) || '');
+        const grupoNorm = normalizar((item && item.grupo) || '');
+        if (ehBuscaNumerica) {
+          if (temPrefixoHash) {
+            if (posStr === termoNum || numStr === termoNum) return true;
+          } else if (posStr.includes(termoNum) || numStr === termoNum) {
+            return true;
+          }
+        }
+        return !!(termoNorm && (nomeNorm.includes(termoNorm) || grupoNorm.includes(termoNorm)));
+      });
+  }
+
+  function descreverSelecaoPreferencias(indicesSet, itens) {
+    const lista = Array.isArray(itens) ? itens : [];
+    const total = lista.length;
+    const marcados = Array.from(indicesSet || [])
+      .filter(i => Number.isInteger(i) && i >= 0 && i < total)
+      .sort((a, b) => a - b);
+    const selecionadas = marcados.length;
+
+    if (total === 0) {
+      return {
+        total: 0,
+        selecionadas: 0,
+        marcados: [],
+        contiguo: false,
+        inicioNum: 0,
+        fimNum: 0,
+        textoBotao: 'Nenhuma preferência carregada',
+        hint: ''
+      };
+    }
+
+    if (selecionadas === 0) {
+      return {
+        total,
+        selecionadas: 0,
+        marcados: [],
+        contiguo: false,
+        inicioNum: 0,
+        fimNum: 0,
+        textoBotao: `Nenhuma selecionada (0 de ${total})`,
+        hint: '⚠️ Marque ao menos 1 preferência no combobox ou ajuste De / Até.'
+      };
+    }
+
+    let contiguo = true;
+    for (let i = 1; i < marcados.length; i++) {
+      if (marcados[i] !== marcados[i - 1] + 1) {
+        contiguo = false;
+        break;
+      }
+    }
+
+    const inicioNum = marcados[0] + 1;
+    const fimNum = marcados[marcados.length - 1] + 1;
+
+    let textoBotao = '';
+    let hint = '';
+    if (selecionadas === total) {
+      textoBotao = `Todas selecionadas (${total})`;
+      hint = `Todas as ${total} preferências da planilha serão consideradas.`;
+    } else if (contiguo) {
+      const faixa = inicioNum === fimNum ? `#${inicioNum}` : `#${inicioNum}–#${fimNum}`;
+      textoBotao = `${selecionadas} selecionada(s) de ${total} (${faixa})`;
+      hint = `Faixa contínua selecionada: ${faixa} (${selecionadas} de ${total}).`;
+    } else {
+      const amostra = marcados.slice(0, 4).map(idx => `#${idx + 1}`).join(', ') + (selecionadas > 4 ? ', ...' : '');
+      textoBotao = `${selecionadas} selecionada(s) de ${total} (${amostra})`;
+      hint = `Seleção personalizada no combobox (${selecionadas} de ${total}) — De / Até sobrescrito.`;
+    }
+
+    return {
+      total,
+      selecionadas,
+      marcados,
+      contiguo,
+      inicioNum,
+      fimNum,
+      textoBotao,
+      hint
+    };
+  }
+
+  function obterItensSelecionadosPlanilha() {
+    if (!Array.isArray(itensCarregados) || itensCarregados.length === 0) return [];
+    return itensCarregados.filter((_, idx) => indicesSelecionadosPlanilha.has(idx));
+  }
+
+  function exigirItensSelecionadosParaAcao(msgSemPlanilha) {
+    if (!Array.isArray(itensCarregados) || itensCarregados.length === 0) {
+      alertOriginal.call(window, msgSemPlanilha || 'Carregue primeiro a planilha antes de continuar.');
+      return null;
+    }
+    const sel = obterItensSelecionadosPlanilha();
+    if (sel.length === 0) {
+      alertOriginal.call(window, 'Nenhuma preferência selecionada no combobox. Marque ao menos uma preferência ou ajuste o intervalo De / Até.');
+      return null;
+    }
+    return sel;
+  }
+
+  function atualizarRotulosBotoesFiltroCombobox(termoBusca, qtdFiltrada) {
+    const btnMarcar = document.getElementById('btn-rito-ms-marcar');
+    const btnDesmarcar = document.getElementById('btn-rito-ms-desmarcar');
+    const temBusca = String(termoBusca ?? '').trim().length > 0;
+    if (btnMarcar) {
+      btnMarcar.textContent = temBusca ? `✓ Marcar filtradas (${qtdFiltrada})` : '✓ Marcar todas';
+    }
+    if (btnDesmarcar) {
+      btnDesmarcar.textContent = temBusca ? `✕ Limpar filtradas (${qtdFiltrada})` : '✕ Desmarcar todas';
+    }
+  }
+
+  function renderizarListaComboboxPreferencias(termoBusca = '') {
+    const listEl = document.getElementById('rito-ms-list');
+    if (!listEl) return;
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const filtrados = filtrarItensCombobox(itensCarregados, termoBusca);
+    atualizarRotulosBotoesFiltroCombobox(termoBusca, filtrados.length);
+
+    if (itensCarregados.length === 0) {
+      listEl.innerHTML = '<div class="rito-ms-empty-search">Nenhuma preferência carregada.</div>';
+      return;
+    }
+
+    if (filtrados.length === 0) {
+      listEl.innerHTML = `<div class="rito-ms-empty-search">Nenhuma preferência encontrada para "${esc(String(termoBusca).trim())}".</div>`;
+      return;
+    }
+
+    listEl.innerHTML = filtrados.map(({ item, idx }) => {
+      const checked = indicesSelecionadosPlanilha.has(idx);
+      const grupoTxt = (item && item.grupo && item.grupo !== '-') ? String(item.grupo).trim() : '';
+      const linhaTxt = (item && item.linha) ? `Linha ${item.linha}` : `Item ${idx + 1}`;
+      const titleAttr = `${linhaTxt}${grupoTxt ? ' • Grupo: ' + grupoTxt : ''}`;
+      return `
+        <label class="rito-ms-item${checked ? ' checked' : ''}" data-idx="${idx}" title="${esc(titleAttr)}">
+          <input type="checkbox" class="rito-ms-chk" data-idx="${idx}" ${checked ? 'checked' : ''} />
+          <span class="rito-ms-item-content">
+            <span class="rito-ms-item-title"><span class="rito-ms-item-num">#${idx + 1}</span><span>${esc(item && item.nome ? item.nome : '(Sem nome)')}</span></span>
+            ${grupoTxt ? `<span class="rito-ms-item-grupo">Grupo: ${esc(grupoTxt)}</span>` : ''}
+          </span>
+        </label>
+      `;
+    }).join('');
+  }
+
+  function sincronizarUiComboboxPreferencias(sincronizarInputsRange = true) {
+    const info = descreverSelecaoPreferencias(indicesSelecionadosPlanilha, itensCarregados);
+    const toggleBtn = document.getElementById('btn-rito-ms-toggle');
+    const toggleTxt = document.getElementById('rito-ms-toggle-text');
+    const countBadge = document.getElementById('rito-ms-count-badge');
+    const hintEl = document.getElementById('rito-ms-hint');
+    const inpDe = document.getElementById('inp-rito-de');
+    const inpAte = document.getElementById('inp-rito-ate');
+    const listEl = document.getElementById('rito-ms-list');
+
+    if (toggleTxt) toggleTxt.textContent = info.textoBotao;
+    if (toggleBtn) toggleBtn.classList.toggle('rito-ms-empty', info.total > 0 && info.selecionadas === 0);
+    if (countBadge) countBadge.textContent = `${info.selecionadas} / ${info.total}`;
+    if (hintEl) {
+      hintEl.textContent = info.hint;
+      hintEl.className = 'rito-ms-hint' + (info.total > 0 && info.selecionadas === 0 ? ' empty' : (!info.contiguo && info.selecionadas > 0 ? ' custom' : ''));
+    }
+
+    if (listEl && typeof listEl.querySelectorAll === 'function') {
+      listEl.querySelectorAll('.rito-ms-item').forEach(row => {
+        const idx = parseInt(row.getAttribute('data-idx'), 10);
+        const marcado = indicesSelecionadosPlanilha.has(idx);
+        row.classList.toggle('checked', marcado);
+        const chk = row.querySelector('.rito-ms-chk');
+        if (chk) chk.checked = marcado;
+      });
+    }
+
+    if (sincronizarInputsRange && inpDe && inpAte) {
+      if (info.selecionadas > 0 && info.contiguo) {
+        inpDe.value = info.inicioNum;
+        inpAte.value = info.fimNum;
+        inpDe.style.opacity = '1';
+        inpAte.style.opacity = '1';
+        inpDe.title = '';
+        inpAte.title = '';
+      } else if (info.total > 0) {
+        inpDe.style.opacity = '0.72';
+        inpAte.style.opacity = '0.72';
+        const avisoTitle = 'Substituído pela seleção no combobox — edite De/Até para redefinir por faixa contínua.';
+        inpDe.title = avisoTitle;
+        inpAte.title = avisoTitle;
+      }
+    }
+  }
+
+  function aplicarIntervaloDeAteNoCombobox(ajustarValoresInputs = true) {
+    const total = itensCarregados.length;
+    if (total === 0) return;
+    const inpDe = document.getElementById('inp-rito-de');
+    const inpAte = document.getElementById('inp-rito-ate');
+    const indices = resolverIndicesPorIntervalo(total, inpDe ? inpDe.value : 1, inpAte ? inpAte.value : total);
+    indicesSelecionadosPlanilha = new Set(indices);
+
+    if (ajustarValoresInputs && inpDe && inpAte && indices.length > 0) {
+      inpDe.value = indices[0] + 1;
+      inpAte.value = indices[indices.length - 1] + 1;
+    }
+    if (inpDe && inpAte) {
+      inpDe.style.opacity = '1';
+      inpAte.style.opacity = '1';
+      inpDe.title = '';
+      inpAte.title = '';
+    }
+    sincronizarUiComboboxPreferencias(false);
+  }
+
+  function definirAberturaDropdownCombobox(abrir) {
+    const drop = document.getElementById('rito-ms-dropdown');
+    const toggleBtn = document.getElementById('btn-rito-ms-toggle');
+    const arrow = document.getElementById('rito-ms-toggle-arrow');
+    if (!drop || !toggleBtn) return;
+    drop.classList.toggle('open', !!abrir);
+    toggleBtn.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    if (arrow) arrow.textContent = abrir ? '▴' : '▾';
+  }
+
+  function popularComboboxPreferencias(itens) {
+    const lista = Array.isArray(itens) ? itens : [];
+    indicesSelecionadosPlanilha = new Set(lista.map((_, idx) => idx));
+    const searchInp = document.getElementById('inp-rito-ms-search');
+    if (searchInp) searchInp.value = '';
+    const inpDe = document.getElementById('inp-rito-de');
+    const inpAte = document.getElementById('inp-rito-ate');
+    if (inpDe && inpAte) {
+      inpDe.style.opacity = '1';
+      inpAte.style.opacity = '1';
+      inpDe.title = '';
+      inpAte.title = '';
+    }
+    definirAberturaDropdownCombobox(false);
+    renderizarListaComboboxPreferencias('');
+    sincronizarUiComboboxPreferencias(false);
+  }
+
+  function configurarEventosComboboxPreferencias() {
+    const wrap = document.getElementById('rito-ms-wrap');
+    const toggleBtn = document.getElementById('btn-rito-ms-toggle');
+    const drop = document.getElementById('rito-ms-dropdown');
+    const searchInp = document.getElementById('inp-rito-ms-search');
+    const btnMarcar = document.getElementById('btn-rito-ms-marcar');
+    const btnDesmarcar = document.getElementById('btn-rito-ms-desmarcar');
+    const btnRange = document.getElementById('btn-rito-ms-range');
+    const listEl = document.getElementById('rito-ms-list');
+    const inpDe = document.getElementById('inp-rito-de');
+    const inpAte = document.getElementById('inp-rito-ate');
+
+    if (toggleBtn && drop) {
+      toggleBtn.onclick = (e) => {
+        if (e) e.stopPropagation();
+        if (itensCarregados.length === 0) return;
+        const vaiAbrir = !drop.classList.contains('open');
+        definirAberturaDropdownCombobox(vaiAbrir);
+        if (vaiAbrir && searchInp) {
+          setTimeout(() => { try { searchInp.focus(); } catch (err) {} }, 20);
+        }
+      };
+    }
+
+    if (searchInp) {
+      searchInp.oninput = () => {
+        renderizarListaComboboxPreferencias(searchInp.value);
+      };
+    }
+
+    if (listEl) {
+      listEl.onchange = (e) => {
+        const chk = e && e.target && e.target.classList && e.target.classList.contains('rito-ms-chk') ? e.target : null;
+        if (!chk) return;
+        const idx = parseInt(chk.getAttribute('data-idx'), 10);
+        if (!Number.isInteger(idx)) return;
+        if (chk.checked) {
+          indicesSelecionadosPlanilha.add(idx);
+        } else {
+          indicesSelecionadosPlanilha.delete(idx);
+        }
+        sincronizarUiComboboxPreferencias(true);
+      };
+    }
+
+    if (btnMarcar) {
+      btnMarcar.onclick = () => {
+        const termo = searchInp ? searchInp.value : '';
+        const visiveis = filtrarItensCombobox(itensCarregados, termo);
+        visiveis.forEach(({ idx }) => indicesSelecionadosPlanilha.add(idx));
+        sincronizarUiComboboxPreferencias(true);
+      };
+    }
+
+    if (btnDesmarcar) {
+      btnDesmarcar.onclick = () => {
+        const termo = searchInp ? searchInp.value : '';
+        const visiveis = filtrarItensCombobox(itensCarregados, termo);
+        visiveis.forEach(({ idx }) => indicesSelecionadosPlanilha.delete(idx));
+        sincronizarUiComboboxPreferencias(true);
+      };
+    }
+
+    if (btnRange) {
+      btnRange.onclick = () => {
+        aplicarIntervaloDeAteNoCombobox(true);
+      };
+    }
+
+    [inpDe, inpAte].forEach(inp => {
+      if (!inp) return;
+      inp.oninput = () => {
+        if (itensCarregados.length === 0) return;
+        const v = parseInt(inp.value, 10);
+        if (Number.isFinite(v) && v >= 1) {
+          aplicarIntervaloDeAteNoCombobox(false);
+        }
+      };
+      inp.onchange = () => {
+        if (itensCarregados.length === 0) return;
+        aplicarIntervaloDeAteNoCombobox(true);
+      };
+    });
+
+    if (!comboboxListenersConfigurados && wrap) {
+      comboboxListenersConfigurados = true;
+      document.addEventListener('click', (e) => {
+        const wrapAtual = document.getElementById('rito-ms-wrap');
+        const dropAtual = document.getElementById('rito-ms-dropdown');
+        if (!wrapAtual || !dropAtual || !dropAtual.classList.contains('open')) return;
+        if (!wrapAtual.contains(e.target)) {
+          definirAberturaDropdownCombobox(false);
+        }
+      });
+    }
+  }
 
 
 
@@ -16087,6 +17326,8 @@
         inpAte.value = total;
 
       }
+
+      popularComboboxPreferencias(itensCarregados);
 
 
 
@@ -16178,15 +17419,10 @@
 
     }
 
-    if (!itensCarregados.length) {
+    const listaParaExecutar = exigirItensSelecionadosParaAcao('Nenhuma preferência carregada da planilha.');
+    if (!listaParaExecutar) return;
 
-      alertOriginal.call(window, 'Nenhuma preferência carregada da planilha.');
-
-      return;
-
-    }
-
-
+    definirAberturaDropdownCombobox(false);
 
     window._eprocPararLote = false;
 
@@ -16211,21 +17447,9 @@
 
     await sleep(200);
 
-
-
-    const de = parseInt(document.getElementById('inp-rito-de').value, 10) || 1;
-
-    const ate = parseInt(document.getElementById('inp-rito-ate').value, 10) || itensCarregados.length;
-
-
-
-    const ini = Math.max(0, de - 1);
-
-    const fim = Math.min(itensCarregados.length, Math.max(de, ate));
-
-
-
-    const listaParaExecutar = itensCarregados.slice(ini, fim);
+    const selInfo = descreverSelecaoPreferencias(indicesSelecionadosPlanilha, itensCarregados);
+    const de = selInfo.inicioNum || (parseInt(document.getElementById('inp-rito-de')?.value, 10) || 1);
+    const ate = selInfo.fimNum || (parseInt(document.getElementById('inp-rito-ate')?.value, 10) || itensCarregados.length);
 
 
 
@@ -16287,9 +17511,14 @@
 
     saveState(st);
 
+    adicionarSeparadorExecucaoNoLog('EXECUÇÃO DE LOTE');
 
-
-    addLog(`=== INICIANDO LOTE: preferências de ${de} até ${ate} (${st.total} itens) ===`);
+    if (selInfo.contiguo) {
+      addLog(`=== INICIANDO LOTE: preferências de ${de} até ${ate} (${st.total} itens) ===`);
+    } else {
+      const listaNums = selInfo.marcados.slice(0, 8).map(i => '#' + (i + 1)).join(', ') + (selInfo.selecionadas > 8 ? ', ...' : '');
+      addLog(`=== INICIANDO LOTE: seleção do combobox (${st.total} de ${itensCarregados.length} itens: ${listaNums}) ===`);
+    }
 
     executarLoopLote(st);
 
@@ -16468,6 +17697,7 @@
       // Executa os 13 passos para criar a preferência
 
       try {
+        adicionarSeparadorItemExecucaoNoLog(pos, st.total, item);
 
         const dados = await executarPassoAPassoItem(item);
 
@@ -17182,10 +18412,8 @@
   }
 
   async function executarDiagnosticoPreVooAreaMinutas() {
-    if (!itensCarregados || itensCarregados.length === 0) {
-      alertOriginal.call(window, 'Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
-      return;
-    }
+    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itensSel) return;
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     const btnIni = document.getElementById('btn-rito-iniciar');
@@ -17197,6 +18425,7 @@
     if (btnIni) btnIni.disabled = true;
 
     try {
+      adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • ÁREA DE MINUTAS');
       addLog('🔍 Iniciando Verificação prévia: Módulo Documentos / Área de Minutas...', 'info');
       atualizarProgressoDiagnostico(15, 'Etapa 1/3', '1. Verificando Localizadores da Unidade...', true);
       await sleep(80);
@@ -17217,9 +18446,9 @@
       }
       addLog(`✓ ${locsDisponiveis.length} localizador(es) encontrados na Área de Minutas.`);
 
-      // Identifica localizadores da planilha ausentes
+      // Identifica localizadores da seleção ausentes
       const locsNaoEncontrados = new Set();
-      itensCarregados.forEach(it => {
+      itensSel.forEach(it => {
         const l = (it.localizador || '').trim();
         if (l && l !== '-') {
           const optLoc = acharOpcaoLocalizador(selLoc, l, false) || acharOpcaoLocalizador(selLoc, l, true);
@@ -17231,11 +18460,11 @@
       atualizarProgressoDiagnostico(55, 'Etapa 2/3', '2. Verificando Grupos de Preferências...', true);
       await sleep(80);
       const gruposPlanilha = new Set();
-      itensCarregados.forEach(it => {
+      itensSel.forEach(it => {
         const g = (it.grupo || '').trim();
         if (g && g !== '-') gruposPlanilha.add(g);
       });
-      addLog(`📁 Identificando grupos de preferências da planilha (${gruposPlanilha.size} grupo(s))...`);
+      addLog(`📁 Identificando grupos das preferências selecionadas (${gruposPlanilha.size} grupo(s))...`);
 
       const gruposCadastrados = await obterGruposCadastradosNoEproc2G();
       const gruposNovos = [];
@@ -17248,7 +18477,7 @@
           gruposNovos.push(g);
         }
       }
-      addLog(`✓ Grupos da planilha: ${gruposMapeados.length} mapeados (${gruposNovos.length} novos a serem criados no eproc).`);
+      addLog(`✓ Grupos das selecionadas: ${gruposMapeados.length} mapeados (${gruposNovos.length} novos a serem criados no eproc).`);
 
       // Etapa 3: Preferências já salvas na Unidade
       atualizarProgressoDiagnostico(85, 'Etapa 3/3', '3. Consultando preferências já salvas na Unidade...', true);
@@ -17257,7 +18486,7 @@
       const prefsExistentes = await obterPreferenciaAreaMinutasExistentes();
       const duplicadas = [];
       const novas = [];
-      itensCarregados.forEach(it => {
+      itensSel.forEach(it => {
         if (preferenciaJaExiste(it.nome, prefsExistentes)) {
           duplicadas.push(it.nome);
         } else {
@@ -17269,7 +18498,7 @@
       atualizarProgressoDiagnostico(100, 'Concluído', 'Verificação prévia de Documentos concluída!', false);
 
       addLog('=== RELATÓRIO DA VERIFICAÇÃO PRÉVIA (DOCUMENTOS / ÁREA DE MINUTAS) ===');
-      addLog(`• Total de preferências na planilha: ${itensCarregados.length}`);
+      addLog(`• Preferências auditadas (seleção): ${itensSel.length}${itensSel.length !== itensCarregados.length ? ' de ' + itensCarregados.length + ' na planilha' : ''}`);
       addLog(`• Grupos mapeados: ${gruposPlanilha.size} (${gruposNovos.length} serão criados automaticamente)`);
       if (gruposNovos.length > 0) {
         addLog(`  ↳ Novos grupos: ${gruposNovos.join(', ')}`);
@@ -18661,7 +19890,11 @@
   }
 
   async function executarDiagnosticoPreVooIntimacoes() {
-    addLog('🧪 Iniciando Verificação Prévia de Auditoria do Módulo de Intimações...', 'info');
+    const itens = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itens) return false;
+
+    adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • INTIMAÇÕES');
+    addLog(`🧪 Iniciando Verificação Prévia de Auditoria do Módulo de Intimações (${itens.length}${itens.length !== itensCarregados.length ? ' de ' + itensCarregados.length : ''} preferência(s))...`, 'info');
 
     if (!ehTelaDeIntimacao()) {
       addLog('❌ Tela atual não é de Intimação Eletrônica (processo_intimacao).', 'error');
@@ -18681,7 +19914,6 @@
 
     addLog(`✓ ${eventosDisponiveis.length} evento(s) judicial(is) mapeado(s) na combo.`, 'info');
 
-    const itens = itensCarregados || [];
     let faltantes = 0;
     for (const item of itens) {
       const codEv = String(item.codigoEvento || '').trim();
@@ -18710,7 +19942,7 @@
         if (item.novoLocalizador && item.novoLocalizador !== '-' && !normalizar(item.novoLocalizador).includes('manter')) {
           const matchLoc = catLocs.find(c => normalizar(c.text).includes(normalizar(item.novoLocalizador)) || normalizar(item.novoLocalizador).includes(normalizar(c.text)));
           if (matchLoc) {
-            addLog(`✓ Item #${item.num} ("${item.nome}"): Novo localizador "${matchLoc.text}" (ID: ${matchLoc.value}) validado.`, 'info');
+            addLog(`✓ Item #${item.num} ("${item.nome}"): Novo localizador "${matchLoc.text}" validado.`, 'info');
           } else {
             addLog(`⚠️ Item #${item.num} ("${item.nome}"): Novo localizador "${item.novoLocalizador}" não encontrado no catálogo da Unidade.`, 'warn');
           }
@@ -19053,7 +20285,7 @@
             dados.locPrincipal = optLoc.text.trim();
             destacarCampoAtivo(selNovoLoc, 'Novo Localizador (Destino)', optLoc.text.trim());
             dispararEventos(selNovoLoc, ['change']);
-            addLog(`✓ Passo 6: Novo localizador selecionado: "${optLoc.text.trim()}" (ID: ${idNovoLocalizadorSelecionado})`, 'info');
+            addLog(`✓ Passo 6: Novo localizador selecionado: "${optLoc.text.trim()}"`, 'info');
           } else {
             dados.locPrincipal = `⚠️ "${item.novoLocalizador}" não encontrado no catálogo da Unidade`;
             dados.locPrincipalFallback = true;
@@ -19112,9 +20344,11 @@
             } catch (e) {}
           }
 
+          dados.locDesativarLista = desativadosNomes;
           dados.locDesativar = desativadosNomes.length > 0 ? desativadosNomes.join('; ') : '(Nenhum encontrado)';
-          addLog(`✓ Passo 6: Localizador(es) a desativar marcado(s): ${dados.locDesativar} (IDs: ${arrIdsDesativar.join(', ')})`, 'info');
+          addLog(`✓ Passo 6: Localizador(es) a desativar marcado(s)${formatarListaLocalizadoresRemoverLog(desativadosNomes)}`, 'info');
         } else {
+          dados.locDesativarLista = [];
           dados.locDesativar = '(Nenhum - NÃO remover de localizador algum)';
         }
       }
@@ -19240,13 +20474,8 @@
 
   async function executarDiagnosticoPreVooMinutas() {
 
-    if (!itensCarregados || itensCarregados.length === 0) {
-
-      alertOriginal.call(window, 'Carregue primeiro uma planilha Excel (.xlsx) antes de executar a verificação prévia.');
-
-      return;
-
-    }
+    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro uma planilha Excel (.xlsx) antes de executar a verificação prévia.');
+    if (!itensSel) return;
 
 
 
@@ -19268,9 +20497,9 @@
 
     if (btnIni) btnIni.disabled = true;
 
+    adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • MINUTAS');
 
-
-    addLog('🔍 Iniciando Verificação prévia da planilha...');
+    addLog(`🔍 Iniciando Verificação prévia (${itensSel.length}${itensSel.length !== itensCarregados.length ? ' de ' + itensCarregados.length : ''} preferência(s) selecionadas)...`);
 
     atualizarProgressoDiagnostico(5, 'Etapa 1/4', '1. Varrendo Localizadores da Unidade...', true);
 
@@ -19296,7 +20525,7 @@
 
 
 
-    for (const item of itensCarregados) {
+    for (const item of itensSel) {
 
       const locP = item.localizadores && item.localizadores[0] ? item.localizadores[0] : null;
 
@@ -19392,7 +20621,7 @@
 
 
 
-    await escanearModelosDaUnidade(itensCarregados, (atual, total, desc) => {
+    await escanearModelosDaUnidade(itensSel, (atual, total, desc) => {
 
       const pctMod = 15 + Math.round((atual / Math.max(1, total)) * 63);
 
@@ -19410,7 +20639,7 @@
 
 
 
-    for (const item of itensCarregados) {
+    for (const item of itensSel) {
 
       const temModEspecifico = !!(item.modeloNome && item.modeloNome !== '-');
 
@@ -19482,7 +20711,7 @@
 
     const eventosMapa = new Map();
 
-    for (const item of itensCarregados) {
+    for (const item of itensSel) {
 
       const cod = (item.eventoCod || '').trim();
 
@@ -19765,7 +20994,7 @@
 
 
     const classifPlanilhaMapa = new Map();
-    for (const item of itensCarregados) {
+    for (const item of itensSel) {
       const cNome = (item.classificacao || '').trim();
       if (!cNome || cNome === '-') continue;
 
@@ -19865,7 +21094,7 @@
 
       dataCompleta: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR'),
 
-      totalItens: itensCarregados.length,
+      totalItens: itensSel.length,
 
       locResultados,
 
@@ -19967,7 +21196,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.7.0</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.8.0</span>
 
           </h3>
 
@@ -20965,9 +22194,2634 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
 
   }
 
+  /* ================== VISUALIZADOR DE PREFERÊNCIAS CRIADAS (EM GRADE) — v3.8.0 ================== */
 
+  function escapeHtmlViewer(val) {
+    if (val === null || val === undefined) return '';
+    return String(val)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
+  function decodificarBytesQuerySafe(bytesArr) {
+    if (!bytesArr || bytesArr.length === 0) return '';
+    const u8 = new Uint8Array(bytesArr);
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(u8);
+    } catch (e) {
+      const cp1252 = {
+        0x80: 0x20AC, 0x82: 0x201A, 0x83: 0x0192, 0x84: 0x201E, 0x85: 0x2026,
+        0x86: 0x2020, 0x87: 0x2021, 0x88: 0x02C6, 0x89: 0x2030, 0x8A: 0x0160,
+        0x8B: 0x2039, 0x8C: 0x0152, 0x8E: 0x017D, 0x91: 0x2018, 0x92: 0x2019,
+        0x93: 0x201C, 0x94: 0x201D, 0x95: 0x2022, 0x96: 0x2013, 0x97: 0x2014,
+        0x98: 0x02DC, 0x99: 0x2122, 0x9A: 0x0161, 0x9B: 0x203A, 0x9C: 0x0153,
+        0x9E: 0x017E, 0x9F: 0x0178
+      };
+      let out = '';
+      for (let i = 0; i < u8.length; i++) {
+        const b = u8[i];
+        out += String.fromCharCode(cp1252[b] || b);
+      }
+      return out;
+    }
+  }
 
+  function decodificarComponenteQuerySeguro(raw) {
+    if (raw === null || raw === undefined) return '';
+    const str = String(raw).replace(/\+/g, ' ');
+    let out = '';
+    let byteBuf = [];
+    const flushBytes = () => {
+      if (byteBuf.length > 0) {
+        out += decodificarBytesQuerySafe(byteBuf);
+        byteBuf = [];
+      }
+    };
+    for (let i = 0; i < str.length; i++) {
+      if (str[i] === '%' && /^[0-9a-fA-F]{2}$/.test(str.slice(i + 1, i + 3))) {
+        byteBuf.push(parseInt(str.slice(i + 1, i + 3), 16));
+        i += 2;
+      } else {
+        flushBytes();
+        out += str[i];
+      }
+    }
+    flushBytes();
+    return /&#\d+;|&#x[0-9a-fA-F]+;|&[a-zA-Z]+;/.test(out)
+      ? decodificarEntidadesHtml(decodeEntities(out))
+      : out;
+  }
+
+  function parseQueryStringSegura(qs) {
+    const mapa = new Map();
+    if (!qs || typeof qs !== 'string') {
+      return { mapa, get: () => null, getAll: () => [], entries: () => [] };
+    }
+    const pares = qs.split('&');
+    for (const par of pares) {
+      if (!par) continue;
+      const eq = par.indexOf('=');
+      const rawK = eq === -1 ? par : par.slice(0, eq);
+      const rawV = eq === -1 ? '' : par.slice(eq + 1);
+      const k = decodificarComponenteQuerySeguro(rawK);
+      const v = decodificarComponenteQuerySeguro(rawV);
+      if (!mapa.has(k)) mapa.set(k, []);
+      mapa.get(k).push(v);
+    }
+    return {
+      mapa,
+      get: (k) => {
+        const arr = mapa.get(k);
+        return arr && arr.length > 0 ? arr[arr.length - 1] : null;
+      },
+      getAll: (k) => mapa.get(k) || [],
+      entries: () => Array.from(mapa.entries())
+    };
+  }
+
+  function decodificarBase64QuerySeguro(b64) {
+    if (!b64 || typeof b64 !== 'string') return '';
+    try {
+      const bin = atob(b64.trim());
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return decodificarBytesQuerySafe(bytes);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // Extrai string literal JS (ex.: var mc_txtModelo = '...';) evitando que if ('' != '') var x = '' sobrescreva o valor real
+  function extrairLiteralJsString(code, varName) {
+    if (!code || !varName) return '';
+    const re = new RegExp(`(?:var|let|const)\\s+${varName}\\s*=\\s*`, 'g');
+    let primeiroNaoVazio = '';
+    let match;
+    while ((match = re.exec(code)) !== null) {
+      let i = match.index + match[0].length;
+      while (i < code.length && /\s/.test(code[i])) i++;
+      const quote = code[i];
+      if (quote === "'" || quote === '"') {
+        i++;
+        let raw = '';
+        let escaped = false;
+        while (i < code.length) {
+          const ch = code[i];
+          if (escaped) {
+            raw += ch === 'n' ? '\n' : (ch === 'r' ? '\r' : (ch === 't' ? '\t' : ch));
+            escaped = false;
+          } else if (ch === '\\') {
+            escaped = true;
+          } else if (ch === quote) {
+            break;
+          } else {
+            raw += ch;
+          }
+          i++;
+        }
+        const decoded = decodificarEntidadesHtml(decodeEntities(raw));
+        if (decoded && !primeiroNaoVazio) {
+          primeiroNaoVazio = decoded;
+        }
+      } else {
+        const semi = code.indexOf(';', i);
+        const token = (semi !== -1 ? code.slice(i, semi) : code.slice(i, i + 20)).trim();
+        if (token === 'true' || token === 'false' || /^\d+$/.test(token)) {
+          if (!primeiroNaoVazio) primeiroNaoVazio = token;
+        }
+      }
+    }
+    return primeiroNaoVazio;
+  }
+
+  function extrairObjetoJsJson(code, varName) {
+    if (!code || !varName) return null;
+    const re = new RegExp(`(?:var|let|const)\\s+${varName}\\s*=\\s*`, 'g');
+    let melhorResultado = null;
+    let match;
+    while ((match = re.exec(code)) !== null) {
+      let i = match.index + match[0].length;
+      while (i < code.length && /\s/.test(code[i])) i++;
+      const openCh = code[i];
+      if (openCh !== '{' && openCh !== '[') continue;
+      const closeCh = openCh === '{' ? '}' : ']';
+      let depth = 0;
+      let inStr = false;
+      let strCh = '';
+      let escaped = false;
+      let endIdx = -1;
+      for (let p = i; p < code.length; p++) {
+        const c = code[p];
+        if (inStr) {
+          if (escaped) escaped = false;
+          else if (c === '\\') escaped = true;
+          else if (c === strCh) inStr = false;
+        } else {
+          if (c === '"' || c === "'") {
+            inStr = true;
+            strCh = c;
+          } else if (c === openCh) {
+            depth++;
+          } else if (c === closeCh) {
+            depth--;
+            if (depth === 0) {
+              endIdx = p;
+              break;
+            }
+          }
+        }
+      }
+      if (endIdx > i) {
+        const sliceJson = code.slice(i, endIdx + 1);
+        for (const tentativa of [sliceJson, sliceJson.replace(/[\x00-\x1F]/g, ' ')]) {
+          try {
+            const parsed = JSON.parse(tentativa);
+            const keys = parsed && typeof parsed === 'object' ? Object.keys(parsed) : [];
+            if (keys.length > 0) return parsed;
+            if (!melhorResultado) melhorResultado = parsed;
+            break;
+          } catch (e) {}
+        }
+      }
+    }
+    return melhorResultado;
+  }
+
+  // Parser leve para strings serialize() do PHP (ex.: mc_arrDadosEventoEncadeado)
+  function parsePhpSerializedAssoc(rawStr) {
+    if (!rawStr || typeof rawStr !== 'string') return {};
+    let str = rawStr.trim();
+    if (/^[aibdsN](?:%3A|:)/.test(str) && str.includes('%')) {
+      str = decodificarComponenteQuerySeguro(str);
+    }
+    let pos = 0;
+    const lerAte = (delim) => {
+      const idx = str.indexOf(delim, pos);
+      if (idx === -1) return '';
+      const val = str.slice(pos, idx);
+      pos = idx + delim.length;
+      return val;
+    };
+    const lerValor = () => {
+      if (pos >= str.length) return undefined;
+      const tipo = str[pos++];
+      if (tipo === 'N') {
+        if (str[pos] === ';') pos++;
+        return null;
+      }
+      if (tipo === 'b') {
+        pos++; // ':'
+        const v = lerAte(';');
+        return v === '1';
+      }
+      if (tipo === 'i' || tipo === 'd') {
+        pos++; // ':'
+        const v = lerAte(';');
+        return Number(v);
+      }
+      if (tipo === 's') {
+        pos++; // ':'
+        const len = parseInt(lerAte(':'), 10) || 0;
+        if (str[pos] === '"') pos++;
+        let val = '';
+        if (str.slice(pos + len, pos + len + 2) === '";') {
+          val = str.slice(pos, pos + len);
+          pos += len + 2;
+        } else {
+          // Fallback para divergência entre bytes UTF-8 e code units JS
+          const endM = str.indexOf('";', pos);
+          if (endM !== -1) {
+            val = str.slice(pos, endM);
+            pos = endM + 2;
+          } else {
+            val = str.slice(pos, pos + len);
+            pos += len + 2;
+          }
+        }
+        return val;
+      }
+      if (tipo === 'a') {
+        pos++; // ':'
+        const count = parseInt(lerAte(':'), 10) || 0;
+        if (str[pos] === '{') pos++;
+        const obj = {};
+        for (let i = 0; i < count && pos < str.length; i++) {
+          if (str[pos] === '}') break;
+          const k = lerValor();
+          const v = lerValor();
+          if (k !== undefined) obj[String(k)] = v;
+        }
+        if (str[pos] === '}') pos++;
+        return obj;
+      }
+      return undefined;
+    };
+    const res = lerValor();
+    return res && typeof res === 'object' ? res : {};
+  }
+
+  function parseTabelaFormularioPersonalizacaoListar(doc) {
+    if (!doc) return [];
+    const resultados = [];
+    const idsVistos = new Set();
+
+    const limpar = (s) => decodificarEntidadesHtml(decodeEntities((s || '').replace(/\s+/g, ' '))).trim();
+    const encontrarIndiceCabecalho = (tbl) => {
+      const idx = { desc: -1, padrao: -1, painel: -1, tipo: -1, grupo: -1 };
+      if (!tbl) return idx;
+      const ths = Array.from(tbl.querySelectorAll('tr th'));
+      ths.forEach((th, i) => {
+        const norm = normalizar(limpar(th.textContent));
+        if (idx.desc === -1 && (norm.includes('descri') || norm === 'nome')) idx.desc = i;
+        else if (idx.padrao === -1 && norm.includes('padrao')) idx.padrao = i;
+        else if (idx.painel === -1 && norm.includes('painel')) idx.painel = i;
+        else if (idx.tipo === -1 && norm.includes('tipo')) idx.tipo = i;
+        else if (idx.grupo === -1 && norm.includes('grupo')) idx.grupo = i;
+      });
+      return idx;
+    };
+
+    const tabelas = Array.from(doc.querySelectorAll('table'));
+    const tabelasComPrefs = tabelas.filter(t => {
+      if (t.querySelector('input[name^="chkInfraItem"], input[id^="chkInfraItem"], a[onclick*="btnAlterarPreferenciaClick"], a[href*="id_preferencia="]')) return true;
+      const ths = Array.from(t.querySelectorAll('th'));
+      return ths.some(th => {
+        const n = normalizar(limpar(th.textContent));
+        return n.includes('descri') || n === 'nome';
+      });
+    });
+    const alvos = tabelasComPrefs.length > 0 ? tabelasComPrefs : [doc];
+
+    for (const container of alvos) {
+      const idxCols = container.tagName === 'TABLE' ? encontrarIndiceCabecalho(container) : { desc: -1, padrao: -1, painel: -1, tipo: -1, grupo: -1 };
+      const rows = Array.from(container.querySelectorAll('tr'));
+      for (const tr of rows) {
+        if (tr.querySelector('th') || tr.classList.contains('infraTrOrdenacao')) continue;
+        const chk = tr.querySelector('input[name^="chkInfraItem"], input[id^="chkInfraItem"], input[type="checkbox"]:not([id*="SelecionarTodos"]):not([name*="SelecionarTodos"])');
+        const tds = Array.from(tr.querySelectorAll('td'));
+        if (!chk && tds.length < 2) continue;
+
+        let linkEdit = tr.querySelector('a[href*="formulario_personalizacao"], a[onclick*="btnAlterarPreferenciaClick"], a[onclick*="Alterar"], a[title*="Alterar"], a[href*="id_preferencia="], a[href*="modal_edit_preferencia"]');
+        let urlEditar = '';
+        if (linkEdit) {
+          const href = linkEdit.getAttribute('href') || '';
+          const oncl = linkEdit.getAttribute('onclick') || '';
+          const mClickUrl = oncl.match(/btnAlterarPreferenciaClick\(\s*['"][^'"]*['"]\s*,\s*['"]([^'"]+)['"]/i);
+          const mGenUrl = oncl.match(/['"]([^'"]*controlador\.php\?[^'"]+)['"]/i);
+          urlEditar = (mClickUrl && mClickUrl[1])
+            ? mClickUrl[1]
+            : ((mGenUrl && mGenUrl[1]) ? mGenUrl[1] : (href && !href.startsWith('#') && !href.startsWith('javascript:') ? href : ''));
+        }
+        if (!urlEditar && tr.innerHTML) {
+          const mTrUrl = tr.innerHTML.match(/controlador\.php\?acao=(?:formulario_personalizacao_subfrm_salvar_consulta|ui_preferencias\/modal_edit_preferencia)[^'"]+/i);
+          if (mTrUrl) urlEditar = mTrUrl[0];
+        }
+
+        let id = chk ? (chk.value || '').trim() : '';
+        if (!id || /^(on|true|false)$/i.test(id)) id = '';
+        if (!id && urlEditar) {
+          const mIdUrl = urlEditar.match(/(?:id_preferencia|id_formulario_personalizacao|id)=([0-9a-zA-Z_-]+)/i);
+          if (mIdUrl) id = mIdUrl[1];
+        }
+        if (!id && tr.innerHTML) {
+          const mIdHtml = tr.innerHTML.match(/btnAlterarPreferenciaClick\(\s*['"]([0-9]+)['"]/i)
+            || tr.innerHTML.match(/(?:id_preferencia|id_formulario_personalizacao)=(\d+)/i);
+          if (mIdHtml) id = mIdHtml[1];
+        }
+        if (!id) {
+          const attrId = (tr.getAttribute('data-id') || tr.getAttribute('id') || '').trim();
+          if (/^\d+$/.test(attrId)) id = attrId;
+        }
+        if (!id || idsVistos.has(id)) continue;
+
+        let nome = '';
+        if (idxCols.desc !== -1 && tds[idxCols.desc]) {
+          nome = limpar(tds[idxCols.desc].textContent);
+        }
+        if (!nome) {
+          // Fallback: primeira célula não-vazia que não seja o checkbox nem ações
+          const startCol = chk ? 1 : 0;
+          for (let c = startCol; c < tds.length; c++) {
+            const cand = limpar(tds[c].textContent);
+            if (cand && !/^(sim|nao|unidade|individual|usu[aá]rio)$/i.test(normalizar(cand))) {
+              nome = cand;
+              break;
+            }
+          }
+          if (!nome && tds[1]) nome = limpar(tds[1].textContent);
+        }
+        if (!nome) continue;
+
+        const normSN = (v) => /^s$/i.test(v) ? 'Sim' : (/^n$/i.test(v) ? 'Não' : v);
+        const padrao = normSN(idxCols.padrao !== -1 && tds[idxCols.padrao] ? limpar(tds[idxCols.padrao].textContent) : '');
+        const painelInicial = normSN(idxCols.painel !== -1 && tds[idxCols.painel] ? limpar(tds[idxCols.painel].textContent) : '');
+        const tipo = idxCols.tipo !== -1 && tds[idxCols.tipo] ? limpar(tds[idxCols.tipo].textContent) : '';
+        const grupo = idxCols.grupo !== -1 && tds[idxCols.grupo] ? limpar(tds[idxCols.grupo].textContent) : '';
+
+        idsVistos.add(id);
+        resultados.push({
+          id,
+          nome,
+          padrao: padrao || '',
+          painelInicial: painelInicial || '',
+          tipo: tipo || '',
+          grupo: grupo || '',
+          urlEditar: urlEditar ? urlEditar.replace(/&amp;/g, '&') : ''
+        });
+      }
+    }
+    return resultados;
+  }
+
+  function parseXmlPreferenciasAutoCompletar(xmlText) {
+    const mapa = new Map();
+    if (!xmlText || typeof xmlText !== 'string') return mapa;
+    const dec = (s) => decodificarEntidadesHtml(decodeEntities(s || '')).trim();
+    try {
+      const xml = new DOMParser().parseFromString(xmlText, 'text/xml');
+      xml.querySelectorAll('item').forEach(it => {
+        const id = (it.getAttribute('id') || '').trim();
+        const desc = dec(it.getAttribute('descricao') || it.textContent || '');
+        const complemento = (it.getAttribute('complemento') || '').trim();
+        if (id && desc) {
+          mapa.set(id, { id, nome: desc, complemento });
+        }
+      });
+    } catch (e) {}
+
+    if (mapa.size === 0) {
+      const reItem = /<item\b((?:[^>"']|"[^"]*"|'[^']*')*)\/?>/gi;
+      let m;
+      while ((m = reItem.exec(xmlText)) !== null) {
+        const attrs = m[1];
+        const mId = attrs.match(/\bid=["']([^"']+)["']/i);
+        const mDesc = attrs.match(/\bdescricao=["']([^"']*)["']/i);
+        const mComp = attrs.match(/\bcomplemento=["']([^"']*)["']/i);
+        if (mId && mDesc && mDesc[1]) {
+          const id = mId[1].trim();
+          const nome = dec(mDesc[1]);
+          const complemento = mComp ? mComp[1].trim() : '';
+          if (id && nome) mapa.set(id, { id, nome, complemento });
+        }
+      }
+    }
+    return mapa;
+  }
+
+  function mesclarListaPreferenciasMinutas(itensTabela, mapaXml, itensMemoria) {
+    const mapaFinal = new Map();
+    const aplicarComplemento = (alvo, comp) => {
+      if (!comp) return;
+      alvo.complemento = alvo.complemento || comp;
+      const parts = comp.split(';');
+      if (!alvo.tipo && parts[0]) {
+        alvo.tipo = parts[0] === 'U' ? 'Unidade' : (parts[0] === 'I' ? 'Individual' : alvo.tipo);
+      }
+      if (!alvo.padrao && parts[2]) {
+        alvo.padrao = parts[2] === 'S' ? 'Sim' : (parts[2] === 'N' ? 'Não' : alvo.padrao);
+      }
+      if (!alvo.acaoPreferencial && parts[4]) {
+        alvo.acaoPreferencial = parts[4] === 'S' ? 'Sim' : 'Não';
+      }
+    };
+
+    for (const item of (itensTabela || [])) {
+      const clone = { ...item };
+      if (mapaXml && mapaXml.has(clone.id)) {
+        aplicarComplemento(clone, mapaXml.get(clone.id).complemento);
+      }
+      mapaFinal.set(clone.id, clone);
+    }
+
+    if (mapaXml) {
+      for (const [id, info] of mapaXml.entries()) {
+        if (!mapaFinal.has(id)) {
+          const novo = {
+            id,
+            nome: info.nome,
+            padrao: '',
+            painelInicial: '',
+            tipo: '',
+            grupo: '',
+            complemento: info.complemento || '',
+            urlEditar: ''
+          };
+          aplicarComplemento(novo, info.complemento);
+          mapaFinal.set(id, novo);
+        } else {
+          aplicarComplemento(mapaFinal.get(id), info.complemento);
+        }
+      }
+    }
+
+    if (Array.isArray(itensMemoria)) {
+      for (const it of itensMemoria) {
+        const id = String(it.id || '').trim();
+        const nome = decodificarEntidadesHtml(decodeEntities(String(it.descricao || it.text || it.value || ''))).trim();
+        if (!id || !nome) continue;
+        if (!mapaFinal.has(id)) {
+          const novo = {
+            id,
+            nome,
+            padrao: '',
+            painelInicial: '',
+            tipo: '',
+            grupo: '',
+            complemento: String(it.complemento || '').trim(),
+            urlEditar: ''
+          };
+          aplicarComplemento(novo, novo.complemento);
+          mapaFinal.set(id, novo);
+        } else {
+          aplicarComplemento(mapaFinal.get(id), String(it.complemento || '').trim());
+        }
+      }
+    }
+
+    return Array.from(mapaFinal.values());
+  }
+
+  function extrairUrlsAjaxNovaMinuta(html, doc, baseHref) {
+    const abs = (u) => {
+      if (!u) return '';
+      try {
+        return new URL(String(u).replace(/&amp;/g, '&').trim(), baseHref || 'https://eproc2g.tjsp.jus.br/eproc/').href;
+      } catch (e) {
+        return String(u).replace(/&amp;/g, '&').trim();
+      }
+    };
+
+    let urlListar = '';
+    if (doc) {
+      const btn = doc.getElementById('listaPreferencias')
+        || doc.getElementById('selPreferencia-list')
+        || doc.querySelector('[onclick*="formulario_personalizacao_listar"], [data-url*="ui_preferencias"]');
+      if (btn) {
+        const oncl = btn.getAttribute('onclick') || '';
+        const m = oncl.match(/exibirSubFrm\(\s*['"]([^'"]+)['"]/) || oncl.match(/['"]([^'"]*controlador\.php\?[^'"]*(?:formulario_personalizacao_listar|ui_preferencias)[^'"]*)['"]/i);
+        urlListar = (m && m[1]) ? m[1] : (btn.getAttribute('data-url') || btn.getAttribute('href') || '');
+      }
+    }
+    if (!urlListar && html) {
+      const m = html.match(/['"](controlador\.php\?[^'"]*acao=formulario_personalizacao_listar[^'"]*minuta_cadastrar[^'"]*)['"]/i)
+        || html.match(/['"](controlador\.php\?[^'"]*acao=ui_preferencias\/modal_lista_preferencias[^'"]*)['"]/i);
+      if (m && m[1]) urlListar = m[1];
+    }
+
+    let urlAutoComp = '';
+    if (typeof window !== 'undefined' && doc === (typeof document !== 'undefined' ? document : null) && window.objAjaxAutoCompPreferencia) {
+      urlAutoComp = window.objAjaxAutoCompPreferencia.ajaxTarget || window.objAjaxAutoCompPreferencia.urlServico || '';
+    }
+    if (!urlAutoComp && html) {
+      const m = html.match(/['"](controlador_ajax\.php\?[^'"]*acao_ajax=preferencia_auto_completar[^'"]+)['"]/i);
+      if (m && m[1]) urlAutoComp = m[1];
+    }
+
+    let urlPrepararMov = extrairLiteralJsString(html, 'mc_link_preparar_movimentacao');
+    if (!urlPrepararMov && html) {
+      const m = html.match(/['"](controlador_ajax\.php\?acao_ajax=preparar_movimentacao[^'"]*)['"]/i);
+      if (m && m[1]) urlPrepararMov = m[1];
+    }
+
+    let urlEncadearEvento = '';
+    if (html) {
+      const m = html.match(/['"](controlador_ajax\.php\?[^'"]*acao_ajax=encadear_evento[^'"]*)['"]/i);
+      if (m && m[1]) urlEncadearEvento = m[1];
+    }
+
+    let urlEventosComp = '';
+    if (html) {
+      const m = html.match(/['"](controlador_ajax\.php\?acao_ajax=lista_eventos_complementares[^'"]*)['"]/i);
+      if (m && m[1]) urlEventosComp = m[1];
+    }
+
+    let urlListarClassif = extrairLiteralJsString(html, 'mc_strLink');
+    if ((!urlListarClassif || !urlListarClassif.includes('classificacao_conteudo_listar')) && html) {
+      const m = html.match(/['"](controlador\.php\?acao=classificacao_conteudo_listar[^'"]*)['"]/i);
+      if (m && m[1]) urlListarClassif = m[1];
+    }
+
+    const buscarUrlMenu = (acao) => {
+      if (doc && typeof doc.querySelector === 'function') {
+        const links = doc.querySelectorAll(`a[href*="acao=${acao}"]`);
+        for (const a of links) {
+          const href = (a.getAttribute('href') || '').replace(/&amp;/gi, '&');
+          if (new RegExp(`[?&]acao=${acao}(?:&|$)`, 'i').test(href)) return href;
+        }
+      }
+      if (html) {
+        const re = new RegExp(`["']([^"']*controlador\\.php\\?[^"']*acao=${acao}(?:&|&amp;)[^"']*|[^"']*controlador\\.php\\?[^"']*acao=${acao})["']`, 'i');
+        const m = html.match(re);
+        if (m && m[1]) return m[1];
+      }
+      if (typeof obterUrlAcaoMenu === 'function' && (!doc || doc === (typeof document !== 'undefined' ? document : null))) {
+        try { return obterUrlAcaoMenu(acao) || ''; } catch (e) {}
+      }
+      return '';
+    };
+
+    return {
+      urlListar: abs(urlListar),
+      urlAutoComp: abs(urlAutoComp),
+      urlPrepararMov: abs(urlPrepararMov),
+      urlEncadearEvento: abs(urlEncadearEvento),
+      urlEventosComp: abs(urlEventosComp),
+      urlListarClassif: abs(urlListarClassif),
+      urlMinutaAreaTrabalho: abs(buscarUrlMenu('minuta_area_trabalho')),
+      urlAutomatizarLoc: abs(buscarUrlMenu('automatizar_localizadores')),
+      urlLocalizadoresOrgao: abs(buscarUrlMenu('localizador_orgao_listar'))
+    };
+  }
+
+  function construirMapaSelectOptions(doc, selectId) {
+    const mapa = new Map();
+    if (!doc) return mapa;
+    const sel = doc.getElementById(selectId);
+    if (!sel) return mapa;
+    sel.querySelectorAll('option').forEach(opt => {
+      const val = (opt.value || opt.getAttribute('value') || '').trim();
+      const txt = decodificarEntidadesHtml(decodeEntities(opt.textContent || '')).replace(/\s+/g, ' ').trim();
+      if (val && val !== 'null' && txt && !/^\[?\s*(desmarcar|selecione)/i.test(txt)) {
+        mapa.set(val, txt);
+      }
+    });
+    return mapa;
+  }
+
+  function obterValoresSelecionadosSelect(doc, selectId) {
+    if (!doc) return [];
+    const sel = doc.getElementById(selectId);
+    if (!sel) return [];
+    const out = [];
+    sel.querySelectorAll('option').forEach(opt => {
+      if (opt.selected || opt.hasAttribute('selected')) {
+        const val = (opt.value || opt.getAttribute('value') || '').trim();
+        if (val && val !== 'null') out.push(val);
+      }
+    });
+    return out;
+  }
+
+  function mesclarMapasStrings(mapaPrimario, mapaSecundario) {
+    const out = new Map(mapaSecundario || []);
+    if (mapaPrimario) {
+      for (const [k, v] of mapaPrimario.entries()) {
+        if (v) out.set(k, v);
+      }
+    }
+    return out;
+  }
+
+  function resolverIdsParaTextos(ids, mapaOpcoes) {
+    const limpos = [];
+    const vistos = new Set();
+    for (const rawId of (ids || [])) {
+      const id = String(rawId || '').trim();
+      if (!id || id === 'null' || id === 'undefined' || vistos.has(id)) continue;
+      vistos.add(id);
+      const nome = mapaOpcoes && mapaOpcoes.get(id);
+      limpos.push(nome || `ID: ${id}`);
+    }
+    return limpos;
+  }
+
+  function extrairCamposBaseFormMinuta(doc, baseHref, htmlBase = '') {
+    if (!doc) return null;
+    const form = doc.getElementById('frmMinutaCadastro') || doc.querySelector('form[action*="minuta_cadastrar"]');
+    if (!form) return null;
+
+    const rawAction = form.getAttribute('action') || (baseHref || '');
+    const actionUrl = rawAction
+      ? new URL(rawAction.replace(/&amp;/g, '&'), baseHref || 'https://eproc2g.tjsp.jus.br/eproc/').href
+      : (baseHref || '');
+
+    const basePairs = [];
+    const camposIgnorar = new Set([
+      'hdnNumIdValorSelecionadoCombo',
+      'isChangePreferencia',
+      'hdnStrDescricaoPreferencia',
+      'hdnStrPreferenciaUsuario',
+      'hdnAcaoPreferencia',
+      'hdnPreferencia',
+      'txtPreferencia',
+      'hdnPreferenciaUsuario',
+      'txtDescricaoCadastro',
+      'selClassificacaoConteudoIds',
+      'hdnDadosComplementares',
+      'hdnDadosAutuacao',
+      'hdnEvento',
+      'hdnEventoCitacaoIntimacao',
+      'hdnIdModelo',
+      'hdnTxtModelo',
+      'hdnIdModeloPadrao',
+      'hdnModeloPadrao',
+      'hdnIdDocumentoBase',
+      'hdnTextoPadrao1',
+      'hdnTextoPadrao2',
+      'hdnTextoPadrao3',
+      'hdnCodStatusMinuta',
+      'hdnSinAssinaturaRestritaMagistrado',
+      'hdnAgendamentoAudiencia',
+      'hdnSelEventoAudiencia'
+    ]);
+
+    form.querySelectorAll('input[type="hidden"]').forEach(inp => {
+      const name = (inp.name || inp.getAttribute('name') || '').trim();
+      if (!name || camposIgnorar.has(name)) return;
+      basePairs.push([name, inp.value || inp.getAttribute('value') || '']);
+    });
+
+    const getFieldVal = (id, def = '') => {
+      const el = doc.getElementById(id);
+      return el ? (el.value || el.getAttribute('value') || def) : def;
+    };
+
+    const mProcUrl = (baseHref || '').match(/[?&]num_processo=([^&]+)/i);
+    const numProcesso = getFieldVal('numProcesso', '')
+      || getFieldVal('hdnNumProcessoLista', '')
+      || (htmlBase ? extrairLiteralJsString(htmlBase, 'mc_numProcesso') : '')
+      || (mProcUrl && mProcUrl[1] ? decodeURIComponent(mProcUrl[1]).trim() : '');
+
+    const catalogosBasicos = {
+      localizadores: mesclarMapasStrings(
+        construirMapaSelectOptions(doc, 'selNovoLocalizador'),
+        mesclarMapasStrings(
+          construirMapaSelectOptions(doc, 'selLocalizadorSecundario'),
+          construirMapaSelectOptions(doc, 'selLocalizadorDesativar')
+        )
+      ),
+      comportamentos: construirMapaSelectOptions(doc, 'selOpcaoLocalizador'),
+      grupos: construirMapaSelectOptions(doc, 'selFormularioPersonalizacaoGrupo'),
+      assinantes: construirMapaSelectOptions(doc, 'selAssinante'),
+      tratamentos: construirMapaSelectOptions(doc, 'selTratamento'),
+      sigilos: construirMapaSelectOptions(doc, 'selSigilo'),
+      statusMinuta: construirMapaSelectOptions(doc, 'selStatusMinuta')
+    };
+
+    return {
+      actionUrl,
+      basePairs,
+      numProcesso,
+      catalogosBasicos
+    };
+  }
+
+  function formatarPrazosIntimacaoMinuta(agQuery, arrPrefIntimacao, camposP = null) {
+    const lerCampo = (key) => {
+      if (agQuery && agQuery.get(key)) return String(agQuery.get(key)).trim();
+      if (Array.isArray(arrPrefIntimacao)) {
+        for (const bloco of arrPrefIntimacao) {
+          const hit = (bloco.arrDados || []).find(d => d.key === key && d.value);
+          if (hit) return String(hit.value).trim();
+        }
+      }
+      if (camposP && camposP[key] !== undefined && camposP[key] !== null) {
+        const s = String(camposP[key]).trim();
+        if (s && s !== 'null' && s !== 'N') return s;
+      }
+      return '';
+    };
+
+    let opAvancada = lerCampo('opcoes_avancadas');
+    if (!opAvancada && Array.isArray(arrPrefIntimacao) && arrPrefIntimacao[0] && arrPrefIntimacao[0].evento) {
+      opAvancada = arrPrefIntimacao[0].evento.opAvancada || '';
+    }
+
+    const camposPrazo = [
+      ['txtPrazoTodos', 'Todos'],
+      ['txtPrazoIgual', 'Igual'],
+      ['txtPrazoTodosPolo', 'Todos polos'],
+      ['txtPrazoEntPrazoEspecial', 'Ent. Pz Especial'],
+      ['txtPrazoEntPrazoSimples', 'Ent. Pz Simples'],
+      ['txtPrazoEntQQPrazo', 'Ent. Qq Prazo'],
+      ['txtPrazoNaoEntPrazoSimples', 'Demais Pz Simples'],
+      ['txtPrazoDPU', 'DPU'],
+      ['txtPrazoPeritosECia', 'Peritos/Aux.'],
+      ['txtPrazoPeritosECiaPolo', 'Peritos/Aux. (Polo)'],
+      ['txtPrazoAPS_CEF', 'APS/CEF'],
+      ['txtPrazoAPS_CEFPolo', 'APS/CEF (Polo)'],
+      ['txtPrazoAutores', 'Autores'],
+      ['txtPrazoReus', 'Réus'],
+      ['txtPrazoInteressados', 'Interessados'],
+      ['txtPrazoMPF', 'MPF'],
+      ['txtPrazoOutros', 'Outros']
+    ];
+
+    const partes = [];
+    for (const [k, label] of camposPrazo) {
+      const val = lerCampo(k);
+      if (val && val !== 'null') {
+        const suf = /^\d+$/.test(val) ? 'd' : '';
+        partes.push(`${label}: ${val}${suf}`);
+      }
+    }
+
+    let temUrgente = false;
+    const chksUrgente = [
+      'chkIntimacaoUrgente',
+      'chkSelPrazoIntimacaoUrgenteTodos', 'chkSelIntimacaoUrgenteTodos',
+      'chkSelPrazoIntimacaoUrgenteAutores', 'chkSelPrazoIntimacaoUrgenteReus',
+      'chkSelPrazoIntimacaoUrgenteInteressados', 'chkSelPrazoIntimacaoUrgenteMPF',
+      'chkSelParteIntimacaoUrgenteEntPrazoEspecial', 'chkSelParteIntimacaoUrgenteEntPrazoSimples',
+      'chkSelParteIntimacaoUrgenteNaoEntPrazoSimples', 'chkSelParteIntimacaoUrgenteDPU'
+    ];
+    for (const kUrg of chksUrgente) {
+      const vUrg = lerCampo(kUrg);
+      if (vUrg === 'S' || vUrg === 'on' || vUrg === '1' || vUrg === 'true') {
+        temUrgente = true;
+        break;
+      }
+    }
+    if (!temUrgente && agQuery) {
+      for (const [k, v] of agQuery.entries()) {
+        if (/Urgente/i.test(k) && (v === 'S' || v === 'on' || v === '1' || v === 'true')) {
+          temUrgente = true;
+          break;
+        }
+      }
+    }
+    if (temUrgente) partes.push('Urgente');
+
+    const mapOpcoes = {
+      igual: 'Mesmo prazo',
+      porEntidade: 'Por entidade',
+      porPolo: 'Por polo',
+      porTipoDeParte: 'Por tipo de parte',
+      porTipoParte: 'Por tipo de parte',
+      porParte: 'Por parte'
+    };
+
+    const modoLabel = opAvancada ? (mapOpcoes[opAvancada] || opAvancada) : '';
+    if (partes.length === 0) return modoLabel || '';
+    return modoLabel ? `${modoLabel} (${partes.join(' | ')})` : partes.join(' | ');
+  }
+
+  function parseRegistrosDadosComplementaresCodificados(bruto) {
+    if (!bruto || typeof bruto !== 'string') return [];
+    const limpo = decodificarComponenteQuerySeguro(bruto).trim();
+    if (!limpo || !limpo.includes('±')) return [];
+    const out = [];
+    for (const seg of limpo.split(';')) {
+      const s = seg.trim();
+      if (!s) continue;
+      const partes = s.split('±').map(p => p.trim());
+      if (partes.length >= 2 && (partes[0] || partes[1] || partes[2])) {
+        out.push({
+          idCampo: partes[0] || '',
+          idValor: partes[1] || '',
+          extra: partes.slice(2).filter(Boolean).join(' ')
+        });
+      }
+    }
+    return out;
+  }
+
+  function resolverCampoCatalogoDadosComp(mapasSel, keyOrId) {
+    if (!mapasSel || !(mapasSel instanceof Map) || !keyOrId) return null;
+    const raw = String(keyOrId).replace(/\[\]$/, '').trim();
+    if (mapasSel.has(raw)) return mapasSel.get(raw);
+    const digits = raw.match(/(\d+)$/);
+    if (digits) {
+      const suf = digits[1];
+      for (const [k, info] of mapasSel.entries()) {
+        if (k === suf || new RegExp(`(?:^|\\D)${suf}$`).test(k)) return info;
+      }
+    }
+    return null;
+  }
+
+  function formatarDadosComplementaresMinuta(rawMcStr, agQuery, catalogos) {
+    const blocos = [];
+    const textosVistos = new Set();
+    const adicionar = (t) => {
+      const s = decodificarEntidadesHtml(decodeEntities(String(t || ''))).replace(/\s+/g, ' ').trim();
+      if (s && !textosVistos.has(s)) {
+        textosVistos.add(s);
+        blocos.push(s);
+      }
+    };
+
+    if (catalogos && catalogos.descDadosDom) {
+      adicionar(catalogos.descDadosDom);
+    }
+    if (catalogos && catalogos.descDadosPrepMov) {
+      adicionar(catalogos.descDadosPrepMov);
+    }
+
+    const catGlobal = (catalogos && catalogos.dadosCompCatalogo) || null;
+    const mapasSel = (catalogos && catalogos.dadosCompSelects) || new Map();
+    if (blocos.length === 0 && agQuery) {
+      for (const [k, vals] of agQuery.entries()) {
+        if (/^(sel|txt|chk|rdo)DadoComplementar/i.test(k)) {
+          const validos = vals.filter(v => v && v !== 'null');
+          if (validos.length === 0) continue;
+          const info = resolverCampoCatalogoDadosComp(mapasSel, k);
+          if (info && info.options && info.options.size > 0) {
+            const nomes = validos.map(v => info.options.get(v) || v);
+            adicionar(`${info.label || k}: ${nomes.join(', ')}`);
+          } else {
+            adicionar(`${k.replace(/\[\]$/, '')}: ${validos.join(', ')}`);
+          }
+        }
+      }
+    }
+
+    const bruto = rawMcStr || (agQuery ? agQuery.get('hdnDadosComplementares') : '') || '';
+    if (blocos.length === 0 && bruto && bruto.trim()) {
+      const registros = parseRegistrosDadosComplementaresCodificados(bruto);
+      if (registros.length > 0) {
+        for (const reg of registros) {
+          const chavePar = `${reg.idCampo}|${reg.idValor}`;
+          const textoPar = catGlobal && catGlobal.pares && catGlobal.pares.get(chavePar);
+          if (textoPar) {
+            const sufixo = (reg.extra && !textoPar.includes(reg.extra)) ? ` (${reg.extra})` : '';
+            adicionar(`${textoPar}${sufixo}`);
+            continue;
+          }
+
+          const infoGlobal = catGlobal && catGlobal.campos && catGlobal.campos.get(reg.idCampo);
+          const info = resolverCampoCatalogoDadosComp(mapasSel, reg.idCampo) || infoGlobal || null;
+          const nomeCampo = (info && info.label) ? info.label : `Dado #${reg.idCampo || '?'}`;
+          const valorBruto = reg.idValor || reg.extra || '';
+          const nomeValor = (info && info.options && info.options.get(reg.idValor))
+            ? info.options.get(reg.idValor)
+            : (valorBruto ? (info && info.options ? valorBruto : (reg.extra || `Valor #${reg.idValor}`)) : '');
+          adicionar(nomeValor ? `${nomeCampo}: ${nomeValor}${reg.extra && nomeValor !== reg.extra ? ` (${reg.extra})` : ''}` : nomeCampo);
+        }
+      } else {
+        adicionar(decodificarComponenteQuerySeguro(bruto));
+      }
+    }
+
+    return blocos.join(' | ');
+  }
+
+  function extrairModeloECodigo(modeloTexto, camposP, mcModeloCod) {
+    const texto = (modeloTexto || '').trim();
+    let cod = (mcModeloCod || '').trim();
+    if (!cod && camposP && camposP.ModeloPadrao) {
+      cod = String(camposP.ModeloPadrao).split(';')[0].trim();
+    }
+    if (!cod && texto) {
+      const mTraço = texto.match(/-\s*(\d{8,})\s*$/) || texto.match(/\(m(\d+)\)/i);
+      if (mTraço) cod = mTraço[1];
+    }
+    let nomeLimpo = texto;
+    if (cod && nomeLimpo) {
+      nomeLimpo = nomeLimpo.replace(new RegExp(`\\s*-\\s*${cod.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`), '').trim();
+      nomeLimpo = nomeLimpo.replace(/\s*-\s*\d{8,}\s*$/, '').trim();
+      nomeLimpo = nomeLimpo.replace(/\s*\(m\d+\)\s*$/i, '').trim();
+    }
+    return { modeloNome: nomeLimpo || texto, modeloCod: cod };
+  }
+
+  function extrairItensSelect2OuIds(valorBruto, mapaDestino) {
+    if (valorBruto === null || valorBruto === undefined) return [];
+    const ids = [];
+    const registrarObj = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+      const id = obj.id !== undefined && obj.id !== null ? String(obj.id).trim() : '';
+      const txtRaw = obj.text !== undefined && obj.text !== null ? String(obj.text) : (obj.descricao !== undefined ? String(obj.descricao) : '');
+      const txt = decodificarEntidadesHtml(decodeEntities(txtRaw)).replace(/\s+/g, ' ').trim();
+      if (id && id !== 'null') {
+        ids.push(id);
+        if (txt && mapaDestino instanceof Map && !mapaDestino.has(id)) {
+          mapaDestino.set(id, txt);
+        }
+      }
+    };
+
+    if (Array.isArray(valorBruto)) {
+      valorBruto.forEach(item => {
+        if (item && typeof item === 'object') registrarObj(item);
+        else {
+          const s = String(item || '').trim();
+          if (s && s !== 'null') ids.push(s);
+        }
+      });
+      return ids;
+    }
+
+    const brutoStr = String(valorBruto).trim();
+    if (!brutoStr || brutoStr === 'null') return [];
+
+    if (/^\s*[\[{]/.test(brutoStr) || brutoStr.includes('{')) {
+      let parseOk = false;
+      try {
+        const parsed = JSON.parse(brutoStr);
+        (Array.isArray(parsed) ? parsed : [parsed]).forEach(registrarObj);
+        parseOk = true;
+      } catch (e) {}
+
+      if (!parseOk) {
+        const blocos = brutoStr.match(/\{[^{}]*\}/g) || [];
+        for (const bloco of blocos) {
+          const mId = bloco.match(/['"]id['"]\s*:\s*(['"])([\s\S]*?)\1/i);
+          const mTxt = bloco.match(/['"](?:text|descricao)['"]\s*:\s*(['"])([\s\S]*?)\1/i);
+          if (mId && mId[2]) {
+            registrarObj({ id: mId[2], text: mTxt ? mTxt[2] : '' });
+            parseOk = true;
+          }
+        }
+      }
+      if (parseOk || brutoStr.includes('{')) return ids;
+    }
+
+    return brutoStr.split(',').map(s => s.trim()).filter(s => s && s !== 'null');
+  }
+
+  function parseDetalhesPreferenciaMinutaHtml(htmlResp, prefItem, ctxBase, catalogosExtras = {}) {
+    const html = htmlResp || '';
+    const docResp = new DOMParser().parseFromString(html, 'text/html');
+    const baseCat = (ctxBase && (ctxBase.catalogosBasicos || (ctxBase.formInfo && ctxBase.formInfo.catalogosBasicos))) || {};
+
+    const camposP = extrairObjetoJsJson(html, 'camposPersonalizadosOrdem') || {};
+    const rawAgendamento = camposP.Agendamento
+      ? decodificarComponenteQuerySeguro(camposP.Agendamento)
+      : (camposP.frmDadosMinutaParaATP ? decodificarBase64QuerySeguro(camposP.frmDadosMinutaParaATP) : '');
+    const agQuery = parseQueryStringSegura(rawAgendamento);
+
+    // Catálogos combinados (DOM retornado tem prioridade; baseline como apoio; caches AJAX por último)
+    const mapaLocs = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selNovoLocalizador'),
+      mesclarMapasStrings(
+        construirMapaSelectOptions(docResp, 'selLocalizadorSecundario'),
+        mesclarMapasStrings(
+          construirMapaSelectOptions(docResp, 'selLocalizadorDesativar'),
+          mesclarMapasStrings(catalogosExtras.localizadoresExtras, baseCat.localizadores)
+        )
+      )
+    );
+    const mapaComport = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selOpcaoLocalizador'), baseCat.comportamentos);
+    if (!mapaComport.has('0')) mapaComport.set('0', 'Remover o processo do(s) localizador(es) informado(s)');
+    if (!mapaComport.has('1')) mapaComport.set('1', 'Remover o processo de TODOS localizadores');
+    if (!mapaComport.has('2')) mapaComport.set('2', 'Remover o processo de TODOS localizadores, EXCETO os de sistema');
+    if (!mapaComport.has('3')) mapaComport.set('3', 'NÃO remover o processo de localizador algum (apenas acrescentar o indicado)');
+    if (!mapaComport.has('5')) mapaComport.set('5', 'Apenas substituir o localizador PRINCIPAL pelo indicado');
+
+    const mapaGrupos = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selFormularioPersonalizacaoGrupo'), baseCat.grupos);
+    const mapaAssinantes = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selAssinante'), baseCat.assinantes);
+    const mapaTratamentos = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selTratamento'), baseCat.tratamentos);
+    const mapaSigilos = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selSigilo'), baseCat.sigilos);
+    const mapaStatus = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selStatusMinuta'), baseCat.statusMinuta);
+    if (!mapaStatus.has('1')) mapaStatus.set('1', 'Rascunho');
+    if (!mapaStatus.has('2')) mapaStatus.set('2', 'Para conferir');
+    if (!mapaStatus.has('3')) mapaStatus.set('3', 'Conferida');
+    if (!mapaStatus.has('4')) mapaStatus.set('4', 'Para assinar');
+
+    // Metadados gerais da preferência
+    const radioTipoChecked = docResp.querySelector('input[name="rdPrefTipo"][checked], input[name="rdPrefTipo"]:checked');
+    const rawTipo = agQuery.get('rdPrefTipo') || (radioTipoChecked ? radioTipoChecked.value : '') || (prefItem.complemento ? prefItem.complemento.split(';')[0] : '');
+    const tipo = rawTipo === 'U' ? 'Unidade' : (rawTipo === 'I' ? 'Individual' : (prefItem.tipo || ''));
+
+    const padrao = prefItem.padrao || (prefItem.complemento && prefItem.complemento.split(';')[2] === 'S' ? 'Sim' : (prefItem.complemento && prefItem.complemento.split(';')[2] === 'N' ? 'Não' : ''));
+
+    const grupoSelIds = obterValoresSelecionadosSelect(docResp, 'selFormularioPersonalizacaoGrupo');
+    const grupoId = agQuery.get('selFormularioPersonalizacaoGrupo') || grupoSelIds[0] || '';
+    const grupo = (grupoId && grupoId !== 'null' ? (mapaGrupos.get(grupoId) || '') : '') || prefItem.grupo || '';
+
+    const chkMovPref = docResp.getElementById('chkMovPreferencial');
+    const movPrefFlag = agQuery.get('chkMovPreferencial')
+      || ((chkMovPref && (chkMovPref.checked || chkMovPref.hasAttribute('checked'))) ? 'S' : '')
+      || (prefItem.complemento ? prefItem.complemento.split(';')[4] : '');
+    const acaoPreferencial = movPrefFlag === 'S' ? 'Sim' : 'Não';
+
+    // Localizadores
+    const radioLocChecked = docResp.querySelector('input[name="rdPrefLocalizadores"][checked], input[name="rdPrefLocalizadores"]:checked');
+    const rdLoc = agQuery.get('rdPrefLocalizadores')
+      || extrairLiteralJsString(html, 'mc_strRdPrefLocalizadores')
+      || (radioLocChecked ? radioLocChecked.value : '');
+    const mapModoLoc = { L: 'Localizadores selecionados', M: 'Marcar todos atuais', D: 'Desmarcar todos atuais' };
+    const modoLocalizadores = mapModoLoc[rdLoc] || rdLoc || '';
+
+    const comportIds = obterValoresSelecionadosSelect(docResp, 'selOpcaoLocalizador');
+    const comportCod = agQuery.get('selOpcaoLocalizador') !== null ? agQuery.get('selOpcaoLocalizador') : (comportIds[0] || '');
+    const comportamentoLocalizador = (comportCod !== '' && comportCod !== 'null') ? (mapaComport.get(comportCod) || `Código ${comportCod}`) : '';
+
+    const locPrincIds = obterValoresSelecionadosSelect(docResp, 'selNovoLocalizador');
+    const locPrincId = agQuery.get('selNovoLocalizador') || locPrincIds[0] || '';
+    const localizadorPrincipal = (locPrincId && locPrincId !== 'null') ? (mapaLocs.get(locPrincId) || `ID: ${locPrincId}`) : '';
+
+    const locSecDomIds = obterValoresSelecionadosSelect(docResp, 'selLocalizadorSecundario');
+    const locSecAgIds = agQuery.getAll('selLocalizadorSecundario[]');
+    const localizadoresSecundarios = resolverIdsParaTextos([...locSecDomIds, ...locSecAgIds], mapaLocs);
+
+    const mcLocDesativarRaw = extrairLiteralJsString(html, 'mc_selLocalizadorDesativar');
+    const locDesDomIds = obterValoresSelecionadosSelect(docResp, 'selLocalizadorDesativar');
+    const locDesAgIds = agQuery.getAll('selLocalizadorDesativar[]');
+    const locDesMcIds = mcLocDesativarRaw ? mcLocDesativarRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const localizadoresRemover = resolverIdsParaTextos([...locDesMcIds, ...locDesDomIds, ...locDesAgIds], mapaLocs);
+
+    // Modelo e Matriz
+    const inpTxtModelo = docResp.getElementById('txtModelo');
+    const rawModeloTxt = extrairLiteralJsString(html, 'mc_txtModelo')
+      || agQuery.get('txtModelo')
+      || (inpTxtModelo ? (inpTxtModelo.value || inpTxtModelo.getAttribute('value') || '') : '');
+    const rawModeloCod = extrairLiteralJsString(html, 'mc_modelo')
+      || agQuery.get('txtModeloPadrao')
+      || '';
+    const { modeloNome, modeloCod } = extrairModeloECodigo(rawModeloTxt, camposP, rawModeloCod);
+    const inpHdnModelo = docResp.getElementById('hdnIdModelo');
+    const modeloMatrizId = extrairLiteralJsString(html, 'mc_numIdModeloMatriz')
+      || extrairLiteralJsString(html, 'mc_idModelo')
+      || agQuery.get('hdnIdModelo')
+      || (inpHdnModelo ? (inpHdnModelo.value || inpHdnModelo.getAttribute('value') || '') : '')
+      || String(camposP.TipoDocumento || '');
+
+    // Evento Principal e Complementares
+    const inpTxtEv = docResp.getElementById('txtEvento');
+    const inpHdnEv = docResp.getElementById('hdnEvento');
+    const eventoNome = extrairLiteralJsString(html, 'mc_txtEvento')
+      || agQuery.get('txtEvento')
+      || (inpTxtEv ? (inpTxtEv.value || inpTxtEv.getAttribute('value') || '') : '');
+    const eventoCod = extrairLiteralJsString(html, 'mc_hdnEvento')
+      || agQuery.get('hdnEvento')
+      || (inpHdnEv ? (inpHdnEv.value || inpHdnEv.getAttribute('value') || '') : '');
+
+    const chkEvAgDom = docResp.getElementById('chkEventoAgendamento');
+    const mcChkEvAg = extrairLiteralJsString(html, 'mc_chkEventoAgendamento');
+    const temAgendamento = agQuery.get('chkEventoAgendamento') === 'S'
+      || camposP.SinAgendamento === 'S'
+      || mcChkEvAg === 'true'
+      || (chkEvAgDom && (chkEvAgDom.checked || chkEvAgDom.hasAttribute('checked')));
+    const eventoAgendado = temAgendamento ? 'Sim' : 'Não';
+
+    const mcEvCompRaw = extrairLiteralJsString(html, 'mc_hdnEventosComplementares');
+    const evCompMcIds = mcEvCompRaw ? mcEvCompRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const evCompAgIds = agQuery.getAll('selEventoComplementar[]');
+    const evCompDomIds = obterValoresSelecionadosSelect(docResp, 'selEventoComplementar');
+    const mapaEvComp = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selEventoComplementar'), catalogosExtras.eventosComp);
+    const eventosComplementares = resolverIdsParaTextos([...evCompMcIds, ...evCompAgIds, ...evCompDomIds], mapaEvComp);
+
+    // Dados Complementares
+    const mcDadosComp = extrairLiteralJsString(html, 'mc_strDadosComplementares');
+    const hdnDadosCompEl = docResp.getElementById('hdnDadosComplementares');
+    const docHdnDadosComp = hdnDadosCompEl ? (hdnDadosCompEl.value || hdnDadosCompEl.getAttribute('value') || '').trim() : '';
+    const rawDadosComp = mcDadosComp || agQuery.get('hdnDadosComplementares') || docHdnDadosComp || '';
+    const descDadosEl = docResp.getElementById('descDadosComplementares');
+    const descDadosDom = descDadosEl ? decodificarEntidadesHtml(decodeEntities(descDadosEl.textContent || '')).replace(/\s+/g, ' ').trim() : '';
+    const dadosComplementares = formatarDadosComplementaresMinuta(rawDadosComp, agQuery, {
+      descDadosDom,
+      descDadosPrepMov: catalogosExtras.prepararMov ? catalogosExtras.prepararMov.descDadosComplementares : '',
+      dadosCompSelects: catalogosExtras.prepararMov ? catalogosExtras.prepararMov.dadosCompSelects : null,
+      dadosCompCatalogo: catalogosExtras.dadosCompCatalogo || null
+    });
+
+    // Encadeamento Intimação e Remessa
+    const phpEncadeado = parsePhpSerializedAssoc(extrairLiteralJsString(html, 'mc_arrDadosEventoEncadeado'));
+    const arrPrefIntimacao = extrairObjetoJsJson(html, 'arrPrefIntimacaoCitacao') || [];
+    const prepMov = catalogosExtras.prepararMov || {};
+    const prepMovRemessa = catalogosExtras.prepararMovRemessa || {};
+
+    const mcIntimar = extrairLiteralJsString(html, 'mc_chkEncadeamentoIntimar');
+    const evIntId = agQuery.get('selEventoEncadeadoCitacaoIntimacao')
+      || agQuery.get('hdnEventoCitacaoIntimacao')
+      || phpEncadeado.IdEventoCitacaoIntimacao
+      || (camposP && camposP.selEventoEncadeadoCitacaoIntimacao && camposP.selEventoEncadeadoCitacaoIntimacao !== 'null' ? String(camposP.selEventoEncadeadoCitacaoIntimacao).trim() : '')
+      || (arrPrefIntimacao[0] && arrPrefIntimacao[0].evento ? String(arrPrefIntimacao[0].evento.idEvento || '') : '')
+      || '';
+    const flagInt = agQuery.get('chkEncadeamentoIntimar') || phpEncadeado.chkEncadeamentoIntimar || mcIntimar || String(camposP.chkEncadeamentoIntimar || '');
+    const deveIntimar = flagInt === '1' || flagInt === 'S' || flagInt === 'on' || (!!evIntId && evIntId !== 'null') || arrPrefIntimacao.length > 0;
+    const mapaEvInt = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selEventoEncadeadoCitacaoIntimacao'),
+      mesclarMapasStrings(catalogosExtras.eventosEncadeadosT, prepMov.eventosIntimacao)
+    );
+    const eventoIntimacao = (deveIntimar && evIntId && evIntId !== 'null')
+      ? (mapaEvInt.get(evIntId) || `Cód. Evento Intimação: ${evIntId}`)
+      : '';
+    const prazosIntimacao = deveIntimar ? formatarPrazosIntimacaoMinuta(agQuery, arrPrefIntimacao, camposP) : '';
+
+    const mcRemessa = extrairLiteralJsString(html, 'mc_chkEncadeamentoRemessa');
+    const evRemId = agQuery.get('selEventoEncadeadoRemessa') || phpEncadeado.IdEventoRemessa || String(camposP.selEventoEncadeadoRemessa || '');
+    const orgRemId = agQuery.get('selOrgao') || phpEncadeado.IdOrgaoDestino || extrairLiteralJsString(html, 'mc_selOrgao') || '';
+    const flagRem = agQuery.get('chkEncadeamentoRemessa') || phpEncadeado.chkEncadeamentoRemessa || mcRemessa || String(camposP.chkEncadeamentoRemessa || '');
+    const deveRemeter = flagRem === '1' || flagRem === 'S' || flagRem === 'on' || (!!evRemId && evRemId !== 'null') || (!!orgRemId && orgRemId !== 'null');
+    const mapaEvRem = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selEventoEncadeadoRemessa'),
+      mesclarMapasStrings(catalogosExtras.eventosEncadeadosR, prepMov.eventosRemessa)
+    );
+    const mapaOrgaos = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selOrgao'),
+      mesclarMapasStrings(prepMovRemessa.orgaos, prepMov.orgaos)
+    );
+    const eventoRemessa = (deveRemeter && evRemId && evRemId !== 'null') ? (mapaEvRem.get(evRemId) || `ID: ${evRemId}`) : '';
+    const orgaoRemessa = (deveRemeter && orgRemId && orgRemId !== 'null') ? (mapaOrgaos.get(orgRemId) || `ID: ${orgRemId}`) : '';
+
+    // Classificações de Conteúdo: prioriza apenas a fonte oficial carregada pelo eproc
+    // (camposPersonalizadosOrdem.IdClassificacao ou #selClassificacaoConteudo no DOM),
+    // ignorando selClassificacaoConteudoIds legado dentro de Agendamento.
+    const classifsResolvidas = [];
+    const mapaClassif = new Map(catalogosExtras.classificacoes || []);
+    const mSelect2Classif = html.match(/selClassificacaoConteudo[^)]*\)\s*\.select2\(\s*['"]data['"]\s*,\s*(\[[\s\S]*?\])\s*\)/);
+    const idsSelect2 = (mSelect2Classif && mSelect2Classif[1])
+      ? extrairItensSelect2OuIds(mSelect2Classif[1], mapaClassif)
+      : [];
+    const inpClassif = docResp.getElementById('selClassificacaoConteudo') || docResp.querySelector('input[name="selClassificacaoConteudoIds"]');
+    const valInpClassif = inpClassif ? (inpClassif.value || inpClassif.getAttribute('value') || '') : '';
+    const idsDomInp = valInpClassif ? extrairItensSelect2OuIds(valInpClassif, mapaClassif) : [];
+    const temCamposIdClassif = camposP && Object.prototype.hasOwnProperty.call(camposP, 'IdClassificacao');
+    const idsCamposP = (camposP && camposP.IdClassificacao)
+      ? extrairItensSelect2OuIds(camposP.IdClassificacao, mapaClassif)
+      : [];
+
+    const classifRawIds = (
+      idsDomInp.length > 0
+        ? idsDomInp
+        : (idsCamposP.length > 0 ? idsCamposP : idsSelect2)
+    ).map(s => s.trim()).filter(s => s && s !== 'null');
+
+    const classifTextosDom = [];
+    docResp.querySelectorAll('#s2id_selClassificacaoConteudo .select2-search-choice div').forEach(el => {
+      const t = decodificarEntidadesHtml(decodeEntities(el.textContent || '')).trim();
+      if (t) classifTextosDom.push(t);
+    });
+    if (classifRawIds.length > 0) {
+      classifsResolvidas.push(...resolverIdsParaTextos(classifRawIds, mapaClassif));
+    } else if (!temCamposIdClassif && classifTextosDom.length > 0) {
+      classifsResolvidas.push(...classifTextosDom);
+    }
+
+    // Descrição da Minuta, Assinante, Tratamento, Sigilo, Status Destino e Extras
+    const inpDesc = docResp.getElementById('txtDescricao');
+    const descricaoMinuta = decodificarEntidadesHtml(decodeEntities(
+      agQuery.get('txtDescricao')
+      || (camposP.Descricao !== undefined ? String(camposP.Descricao) : '')
+      || (inpDesc ? (inpDesc.value || inpDesc.getAttribute('value') || '') : '')
+    )).trim();
+
+    const assinIds = obterValoresSelecionadosSelect(docResp, 'selAssinante');
+    const assinId = agQuery.get('selAssinante')
+      || extrairLiteralJsString(html, 'mc_usuarioAssinanteIndicado')
+      || String(camposP.IdUsuarioAssinanteIndicado || '')
+      || assinIds[0]
+      || 'null';
+    const assinante = (assinId && assinId !== 'null')
+      ? (mapaAssinantes.get(assinId) || `ID: ${assinId}`)
+      : 'Magistrado atuante no juízo';
+
+    const tratIds = obterValoresSelecionadosSelect(docResp, 'selTratamento');
+    const tratCod = agQuery.get('selTratamento')
+      || extrairLiteralJsString(html, 'mc_numIdTratamentoAssinanteIndicado')
+      || String(camposP.CodTratamentoAssinante ?? '')
+      || tratIds[0]
+      || '';
+    const tratamento = (tratCod && tratCod !== '-1' && tratCod !== 'null')
+      ? (mapaTratamentos.get(tratCod) || `Código ${tratCod}`)
+      : '';
+
+    const sigIds = obterValoresSelecionadosSelect(docResp, 'selSigilo');
+    const rawSigAg = agQuery.get('selSigilo');
+    const sigCod = (rawSigAg !== null && rawSigAg !== '')
+      ? rawSigAg
+      : ((camposP.IdSigilo !== undefined && camposP.IdSigilo !== '') ? String(camposP.IdSigilo) : (sigIds[0] || '0'));
+    const sigilo = mapaSigilos.get(String(sigCod)) || (sigCod === '0' ? 'Sem Sigilo (Nível 0)' : `Nível ${sigCod}`);
+
+    const stIds = obterValoresSelecionadosSelect(docResp, 'selStatusMinuta');
+    const stCod = agQuery.get('selStatusMinuta') || agQuery.get('hdnCodStatusMinuta') || String(camposP.CodStatusMinuta || '') || stIds[0] || '';
+    const statusDestino = stCod ? (mapaStatus.get(String(stCod)) || `Código ${stCod}`) : '';
+
+    const extras = [];
+    const chkPrec = docResp.getElementById('chkPrecedenteRelevante');
+    if (camposP.SinPrecedenteRelevante === 'S' || agQuery.get('chkPrecedenteRelevante') === 'on' || (chkPrec && chkPrec.hasAttribute('checked'))) {
+      extras.push('Precedente relevante');
+    }
+    const chkJur = docResp.getElementById('chkRemeterJurisprudencia');
+    if (camposP.SinJurisprudencia === 'S' || agQuery.get('chkRemeterJurisprudencia') === 'on' || (chkJur && chkJur.hasAttribute('checked'))) {
+      extras.push('Enviar p/ Jurisprudência');
+    }
+    const destMin = agQuery.get('selDestMinuta');
+    if (destMin && destMin !== '0' && destMin !== 'null') {
+      extras.push(destMin === '2' ? '1 minuta por destinatário' : (destMin === '3' ? '1 minuta por endereço' : `Destinatários: ${destMin}`));
+    }
+    if (tratamento) {
+      extras.push(`Tratamento: ${tratamento}`);
+    }
+
+    return {
+      ...prefItem,
+      detalhado: true,
+      erroDetalhe: '',
+      tipo,
+      padrao,
+      grupo,
+      acaoPreferencial,
+      modoLocalizadores,
+      comportamentoLocalizador,
+      localizadorPrincipal,
+      localizadoresSecundarios,
+      localizadoresRemover,
+      modeloNome,
+      modeloCod,
+      modeloMatrizId,
+      eventoAgendado,
+      eventoNome,
+      eventoCod,
+      eventosComplementares,
+      dadosComplementares,
+      _rawDadosComp: rawDadosComp,
+      _temDescDadosDom: Boolean(descDadosDom),
+      intimarPartes: deveIntimar ? 'Sim' : 'Não',
+      eventoIntimacao,
+      prazosIntimacao,
+      remeterProcesso: deveRemeter ? 'Sim' : 'Não',
+      eventoRemessa,
+      orgaoRemessa,
+      _evIntId: (evIntId && evIntId !== 'null') ? evIntId : '',
+      _evRemId: (evRemId && evRemId !== 'null') ? evRemId : '',
+      _orgRemId: (orgRemId && orgRemId !== 'null') ? orgRemId : '',
+      classificacao: classifsResolvidas,
+      descricaoMinuta,
+      assinante,
+      tratamento,
+      sigilo,
+      statusDestino,
+      opcoesExtras: extras.join(' | ')
+    };
+  }
+
+  // Orquestrador de rede e cache para Módulo Minutas
+  async function obterContextoMinutaVisualizador() {
+    let docBase = null;
+    let htmlBase = '';
+    let baseHref = window.location.href;
+
+    if (document.getElementById('frmMinutaCadastro')) {
+      docBase = document;
+      htmlBase = document.documentElement ? document.documentElement.innerHTML : '';
+    } else {
+      const urlMenu = obterUrlAcaoMenu('minuta_cadastrar');
+      const temProcessoNaUrl = urlMenu && /[?&]num_processo=/i.test(urlMenu) && /[?&]hash=/i.test(urlMenu);
+      if (!temProcessoNaUrl) {
+        return {
+          disponivel: false,
+          motivo: 'Para inspecionar os campos completos das preferências de Minutas, abra a tela de "Nova Minuta" (ou a tela de qualquer processo com o menu Nova Minuta disponível).'
+        };
+      }
+      const resp = await fetch(urlMenu, { credentials: 'same-origin' });
+      if (!resp.ok) {
+        return {
+          disponivel: false,
+          motivo: `Não foi possível acessar a tela Nova Minuta em segundo plano (HTTP ${resp.status}). Abra a tela Nova Minuta e tente novamente.`
+        };
+      }
+      htmlBase = await lerRespostaTexto(resp);
+      baseHref = urlMenu;
+      docBase = new DOMParser().parseFromString(htmlBase, 'text/html');
+    }
+
+    const formInfo = extrairCamposBaseFormMinuta(docBase, baseHref, htmlBase);
+    const urls = extrairUrlsAjaxNovaMinuta(htmlBase, docBase, baseHref);
+    if (!formInfo || !urls.urlListar) {
+      return {
+        disponivel: false,
+        motivo: 'Formulário de Nova Minuta ou link do gerenciador (#listaPreferencias) não localizado nesta página.'
+      };
+    }
+
+    return {
+      disponivel: true,
+      docBase,
+      htmlBase,
+      baseHref,
+      formInfo,
+      urls
+    };
+  }
+
+  async function obterListaCompletaPreferenciasMinutas(ctx) {
+    const itensTabela = [];
+    const idsTabela = new Set();
+    const diag = {
+      urlListar: (ctx && ctx.urls && ctx.urls.urlListar) || '',
+      statusListar: '',
+      bytesListar: 0,
+      dtRows: 0,
+      qtdTabela: 0,
+      erroListar: '',
+      urlAutoComp: (ctx && ctx.urls && ctx.urls.urlAutoComp) || '',
+      statusAutoPost: '',
+      statusAutoGet: '',
+      qtdXml: 0,
+      erroAuto: '',
+      qtdMemoria: 0,
+      qtdFallbackUnidade: 0,
+      trechoHtmlListar: ''
+    };
+    const registrarItemTabela = (it) => {
+      if (it && it.id && it.nome && !idsTabela.has(it.id)) {
+        idsTabela.add(it.id);
+        itensTabela.push(it);
+      }
+    };
+
+    if (diag.urlListar) {
+      try {
+        const resp = await fetch(diag.urlListar, { credentials: 'same-origin' });
+        diag.statusListar = `${resp.status}`;
+        if (resp.ok) {
+          const html = await lerRespostaTexto(resp);
+          diag.bytesListar = html ? html.length : 0;
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          parseTabelaFormularioPersonalizacaoListar(doc).forEach(registrarItemTabela);
+
+          // Suporte à tabela DataTables moderna (#tbl_preferencias com data-url AJAX JSON)
+          const tblDt = doc.getElementById('tbl_preferencias');
+          const urlDtRaw = tblDt ? (tblDt.getAttribute('data-url') || '') : '';
+          if (itensTabela.length === 0 && urlDtRaw && typeof serializarObjetoAjaxEproc === 'function') {
+            const urlDt = new URL(urlDtRaw.replace(/&amp;/g, '&'), ctx.baseHref || 'https://eproc2g.tjsp.jus.br/eproc/').href;
+            const acaoReqEl = doc.getElementById('acao_request');
+            const acaoReq = (acaoReqEl && acaoReqEl.value) ? acaoReqEl.value : 'minuta_cadastrar';
+            const colsDt = [
+              { data: 'col_checkbox', orderable: 'false' },
+              { data: 'Descricao', orderable: 'true' },
+              { data: 'SinValorPadrao', orderable: 'true' },
+              { data: 'SinPainelInicial', orderable: 'true' },
+              { data: 'SinPreferenciaIndividual', orderable: 'true' },
+              { data: 'DescricaoGrupoFormularioPersonalizacaoGrupo', orderable: 'true' },
+              { data: 'col_acoes', orderable: 'false' }
+            ];
+            let start = 0;
+            const pageLen = 500;
+            let totalRecs = Infinity;
+            let draw = 1;
+            while (start < totalRecs && draw <= 20) {
+              const payloadDt = {
+                draw: String(draw),
+                start: String(start),
+                length: String(pageLen),
+                'search[value]': '',
+                'search[regex]': 'false',
+                'order[0][column]': '1',
+                'order[0][dir]': 'asc',
+                acao_request: acaoReq
+              };
+              colsDt.forEach((c, idx) => {
+                payloadDt[`columns[${idx}][data]`] = c.data;
+                payloadDt[`columns[${idx}][name]`] = '';
+                payloadDt[`columns[${idx}][searchable]`] = 'true';
+                payloadDt[`columns[${idx}][orderable]`] = c.orderable;
+                payloadDt[`columns[${idx}][search][value]`] = '';
+                payloadDt[`columns[${idx}][search][regex]`] = 'false';
+              });
+              const respDt = await fetch(urlDt, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                  'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: serializarObjetoAjaxEproc(payloadDt)
+              });
+              if (!respDt.ok) break;
+              const txtDt = await lerRespostaTexto(respDt);
+              const jsonDt = JSON.parse(txtDt);
+              const rowsDt = Array.isArray(jsonDt.data) ? jsonDt.data : [];
+              if (typeof jsonDt.recordsTotal === 'number') totalRecs = jsonDt.recordsTotal;
+              if (rowsDt.length === 0) break;
+              rowsDt.forEach(r => {
+                const id = String(r.IdFormularioPersonalizacao || r.DT_RowId || '').trim();
+                const nome = decodificarEntidadesHtml(decodeEntities(String(r.Descricao || '').replace(/<[^>]+>/g, ''))).trim();
+                const normFlag = (v, simLabel, naoLabel) => {
+                  const s = normalizar(String(v || ''));
+                  if (!s) return '';
+                  return (s === 's' || s === 'sim' || s === '1') ? simLabel : ((s === 'n' || s === 'nao' || s === '0') ? naoLabel : String(v).trim());
+                };
+                const rawTipo = normalizar(String(r.SinPreferenciaIndividual || ''));
+                const tipoTxt = (rawTipo === 'n' || rawTipo === 'nao' || rawTipo === 'u' || rawTipo === 'unidade')
+                  ? 'Unidade'
+                  : ((rawTipo === 's' || rawTipo === 'sim' || rawTipo === 'i' || rawTipo === 'individual') ? 'Individual' : '');
+                registrarItemTabela({
+                  id,
+                  nome,
+                  padrao: normFlag(r.SinValorPadrao, 'Sim', 'Não'),
+                  painelInicial: normFlag(r.SinPainelInicial, 'Sim', 'Não'),
+                  tipo: tipoTxt,
+                  grupo: decodificarEntidadesHtml(decodeEntities(r.DescricaoGrupoFormularioPersonalizacaoGrupo || '')).trim(),
+                  urlEditar: ''
+                });
+                diag.dtRows++;
+              });
+              start += rowsDt.length;
+              draw++;
+              if (rowsDt.length < pageLen && start >= totalRecs) break;
+            }
+          }
+
+          // Paginação clássica de formulario_personalizacao_listar quando houver mais de 1 página
+          const selPag = doc.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+          const frmPag = doc.getElementById('frmFormularioPersonalizacaoLista') || doc.querySelector('form[action*="formulario_personalizacao_listar"]');
+          if (selPag && selPag.options && selPag.options.length > 1 && frmPag) {
+            const actionPag = new URL((frmPag.getAttribute('action') || diag.urlListar).replace(/&amp;/g, '&'), ctx.baseHref).href;
+            for (let p = 1; p < selPag.options.length; p++) {
+              const pairsPag = [];
+              frmPag.querySelectorAll('input[type="hidden"]').forEach(inp => {
+                if (inp.name) pairsPag.push([inp.name, inp.name === 'hdnInfraPaginaAtual' ? selPag.options[p].value : inp.value]);
+              });
+              const respP = await fetch(actionPag, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: encodeWindows1252Body(pairsPag),
+                credentials: 'same-origin'
+              });
+              if (respP.ok) {
+                const htmlP = await lerRespostaTexto(respP);
+                const docP = new DOMParser().parseFromString(htmlP, 'text/html');
+                parseTabelaFormularioPersonalizacaoListar(docP).forEach(registrarItemTabela);
+              }
+            }
+          }
+
+          if (itensTabela.length === 0 && html) {
+            const plain = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            diag.trechoHtmlListar = plain.slice(0, 140);
+          }
+        }
+      } catch (e) {
+        diag.erroListar = e.message || String(e);
+        console.warn('[Visualizador Minutas] Falha ao ler formulario_personalizacao_listar:', e);
+      }
+    }
+    diag.qtdTabela = itensTabela.length;
+
+    let mapaXml = new Map();
+    if (diag.urlAutoComp) {
+      try {
+        // 1. Tenta POST padrão com txtPreferencia= (mesmo protocolo usado em obterPreferenciaRelatorioExistentes)
+        const respPost = await fetch(diag.urlAutoComp, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: 'txtPreferencia='
+        });
+        diag.statusAutoPost = `${respPost.status}`;
+        if (respPost.ok) {
+          const txtPost = await lerRespostaTexto(respPost);
+          mapaXml = parseXmlPreferenciasAutoCompletar(txtPost);
+        }
+
+        // 2. Fallback GET (como InfraAjax.listarPreferencias faz quando txtPreferencia está vazio)
+        if (mapaXml.size === 0) {
+          const respGet = await fetch(diag.urlAutoComp, {
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+          });
+          diag.statusAutoGet = `${respGet.status}`;
+          if (respGet.ok) {
+            const txtGet = await lerRespostaTexto(respGet);
+            mapaXml = parseXmlPreferenciasAutoCompletar(txtGet);
+          }
+        }
+      } catch (e) {
+        diag.erroAuto = e.message || String(e);
+        console.warn('[Visualizador Minutas] Falha ao ler XML autocomplete:', e);
+      }
+    }
+    diag.qtdXml = mapaXml.size;
+
+    const itensMemoria = (window.objAjaxAutoCompPreferencia && Array.isArray(window.objAjaxAutoCompPreferencia.arrItens))
+      ? window.objAjaxAutoCompPreferencia.arrItens
+      : [];
+    diag.qtdMemoria = itensMemoria.length;
+
+    let resultadoFinal = mesclarListaPreferenciasMinutas(itensTabela, mapaXml, itensMemoria);
+
+    // 3. Fallback adicional usando obterTodasPreferenciasUnidade() do próprio script se ainda vier vazio
+    if (resultadoFinal.length === 0 && typeof obterTodasPreferenciasUnidade === 'function' && (!ctx || ctx.docBase === document)) {
+      try {
+        const legadas = await obterTodasPreferenciasUnidade();
+        if (Array.isArray(legadas) && legadas.length > 0) {
+          resultadoFinal = legadas.map(it => ({
+            id: String(it.id || '').trim(),
+            nome: String(it.nome || '').trim(),
+            padrao: '',
+            painelInicial: '',
+            tipo: '',
+            grupo: '',
+            urlEditar: ''
+          })).filter(it => it.id && it.nome);
+          diag.qtdFallbackUnidade = resultadoFinal.length;
+        }
+      } catch (eLeg) {}
+    }
+
+    if (ctx) ctx._diagLista = diag;
+    if (resultadoFinal.length === 0) {
+      console.warn('[Visualizador Minutas] Nenhuma preferência retornada. Diagnóstico:', diag);
+    }
+    return resultadoFinal;
+  }
+
+  function obterCacheCatalogosMinutaViewer() {
+    if (!window._eprocCacheCatalogosMinutaViewer) {
+      window._eprocCacheCatalogosMinutaViewer = {
+        classificacoes: null,
+        eventosCompPorEvento: new Map(),
+        prepararMovPorEvento: new Map(),
+        eventosEncadeadosPorTipo: new Map(),
+        dadosCompCatalogo: null,
+        localizadoresExtra: null,
+        subframeDadosComp: new Map()
+      };
+    }
+    return window._eprocCacheCatalogosMinutaViewer;
+  }
+
+  async function obterCatalogoEncadeadoViewer(tipo /* 'T' | 'R' */, ctx) {
+    const t = String(tipo || '').toUpperCase() === 'R' ? 'R' : 'T';
+    const selectId = t === 'R' ? 'selEventoEncadeadoRemessa' : 'selEventoEncadeadoCitacaoIntimacao';
+    const cache = obterCacheCatalogosMinutaViewer();
+    if (!cache.eventosEncadeadosPorTipo) cache.eventosEncadeadosPorTipo = new Map();
+    if (cache.eventosEncadeadosPorTipo.has(t)) return cache.eventosEncadeadosPorTipo.get(t);
+
+    let mapa = new Map();
+    const lerDocSelect = (d) => {
+      if (!d) return;
+      const mId = construirMapaSelectOptions(d, selectId);
+      mId.forEach((v, k) => { if (!mapa.has(k)) mapa.set(k, v); });
+      if (mId.size === 0 && typeof d.querySelectorAll === 'function') {
+        d.querySelectorAll('select').forEach(sel => {
+          const idLow = (sel.id || sel.name || '').toLowerCase();
+          if (t === 'R' && !idLow.includes('remessa') && d.querySelectorAll('select').length > 1) return;
+          if (t === 'T' && !idLow.includes('intimacao') && !idLow.includes('citacao') && d.querySelectorAll('select').length > 1) return;
+          sel.querySelectorAll('option').forEach(opt => {
+            const val = (opt.value || opt.getAttribute('value') || '').trim();
+            const txt = decodificarEntidadesHtml(decodeEntities(opt.textContent || '')).replace(/\s+/g, ' ').trim();
+            if (val && val !== 'null' && txt && !/^\[?\s*(desmarcar|selecione)/i.test(txt) && !mapa.has(val)) {
+              mapa.set(val, txt);
+            }
+          });
+        });
+      }
+    };
+
+    if (typeof document !== 'undefined') lerDocSelect(document);
+    if (ctx && ctx.docBase && ctx.docBase !== (typeof document !== 'undefined' ? document : null)) {
+      lerDocSelect(ctx.docBase);
+    }
+
+    if (mapa.size === 0 && ctx && ctx.urls && ctx.urls.urlEncadearEvento) {
+      try {
+        const resp = await fetch(ctx.urls.urlEncadearEvento, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `strTipo=${encodeURIComponent(t)}&strValor=1&strSinAutomatizacao=`,
+          credentials: 'same-origin'
+        });
+        if (resp.ok) {
+          let htmlRet = await lerRespostaTexto(resp);
+          if (htmlRet.includes('<resultado>') || htmlRet.includes('menorque')) {
+            const xml = new DOMParser().parseFromString(htmlRet, 'text/xml');
+            const resEl = xml.querySelector('resultado');
+            htmlRet = (resEl ? (resEl.textContent || '') : htmlRet)
+              .replace(/&nbsp/gi, '&nbsp;')
+              .replace(/menorque/gi, '<')
+              .replace(/maiorque/gi, '>')
+              .replace(/ecomercial/gi, '&');
+          }
+          const docRet = new DOMParser().parseFromString(htmlRet, 'text/html');
+          lerDocSelect(docRet);
+        }
+      } catch (e) {}
+    }
+
+    cache.eventosEncadeadosPorTipo.set(t, mapa);
+    return mapa;
+  }
+
+  async function obterCatalogoDadosComplementaresViewer(ctx) {
+    const cache = obterCacheCatalogosMinutaViewer();
+    if (cache.dadosCompCatalogo) return cache.dadosCompCatalogo;
+
+    const pares = new Map();
+    const campos = new Map();
+    const registrarSelect = (docTarget) => {
+      if (!docTarget || typeof docTarget.getElementById !== 'function') return false;
+      const sel = docTarget.getElementById('selDadoComplementar');
+      if (!sel || typeof sel.querySelectorAll !== 'function') return false;
+      let qtd = 0;
+      sel.querySelectorAll('option').forEach(opt => {
+        const val = (opt.value || opt.getAttribute('value') || '').trim();
+        const txt = decodificarEntidadesHtml(decodeEntities(opt.textContent || '')).replace(/\s+/g, ' ').trim();
+        if (!val || val === 'null' || !val.includes('|') || !txt) return;
+        const [idCampo, idValor] = val.split('|').map(s => s.trim());
+        if (!idCampo || !idValor) return;
+        const ultTraco = txt.lastIndexOf('-');
+        let campoNome = txt;
+        let valorNome = '';
+        let formatado = txt;
+        if (ultTraco > 0 && ultTraco < txt.length - 1) {
+          campoNome = txt.slice(0, ultTraco).trim();
+          valorNome = txt.slice(ultTraco + 1).trim();
+          formatado = `${campoNome}: ${valorNome}`;
+        }
+        pares.set(`${idCampo}|${idValor}`, formatado);
+        if (!campos.has(idCampo)) campos.set(idCampo, { label: campoNome, options: new Map() });
+        if (valorNome) campos.get(idCampo).options.set(idValor, valorNome);
+        qtd++;
+      });
+      return qtd > 0;
+    };
+
+    let achou = false;
+    if (typeof document !== 'undefined') achou = registrarSelect(document);
+    if (!achou && ctx && ctx.docBase) achou = registrarSelect(ctx.docBase);
+
+    if (!achou && ctx && ctx.urls) {
+      const candidatas = [ctx.urls.urlMinutaAreaTrabalho, ctx.urls.urlAutomatizarLoc].filter(Boolean);
+      for (const urlCat of candidatas) {
+        try {
+          const resp = await fetch(urlCat, { credentials: 'same-origin' });
+          if (resp.ok) {
+            const html = await lerRespostaTexto(resp);
+            const docCat = new DOMParser().parseFromString(html, 'text/html');
+            if (registrarSelect(docCat)) {
+              achou = true;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    const res = { pares, campos };
+    cache.dadosCompCatalogo = res;
+    return res;
+  }
+
+  async function obterCatalogoLocalizadoresExtraViewer(ctx) {
+    const cache = obterCacheCatalogosMinutaViewer();
+    if (cache.localizadoresExtra) return cache.localizadoresExtra;
+    const mapa = new Map();
+
+    try {
+      if (typeof obterLocalizadoresOrgaoEproc === 'function') {
+        const lista = await obterLocalizadoresOrgaoEproc();
+        (lista || []).forEach(it => {
+          if (it && it.id && (it.nomeCurto || it.nomeCompleto)) {
+            const rot = (it.nomeCurto && it.nomeCompleto && it.nomeCurto !== it.nomeCompleto)
+              ? `${it.nomeCurto} - ${it.nomeCompleto}`
+              : (it.nomeCompleto || it.nomeCurto);
+            mapa.set(String(it.id), decodificarEntidadesHtml(decodeEntities(rot)).trim());
+          }
+        });
+      } else if (ctx && ctx.urls && ctx.urls.urlLocalizadoresOrgao) {
+        const resp = await fetch(ctx.urls.urlLocalizadoresOrgao, { credentials: 'same-origin' });
+        if (resp.ok) {
+          const html = await lerRespostaTexto(resp);
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          doc.querySelectorAll('tr').forEach(tr => {
+            const mId = (tr.innerHTML || '').match(/id_localizador_orgao=(\d+)/i);
+            const tds = tr.querySelectorAll('td');
+            if (mId && tds.length >= 3) {
+              const col1 = decodificarEntidadesHtml(decodeEntities(tds[1].textContent || '')).replace(/\u00a0/g, ' ').trim();
+              const col2 = decodificarEntidadesHtml(decodeEntities(tds[2].textContent || '')).replace(/\u00a0/g, ' ').trim();
+              const rot = (col2 && col1 && col2 !== col1) ? `${col2} - ${col1}` : (col1 || col2);
+              if (rot) mapa.set(mId[1], rot);
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    cache.localizadoresExtra = mapa;
+    return mapa;
+  }
+
+  async function obterCatalogoClassificacoesViewer(ctx) {
+    const cache = obterCacheCatalogosMinutaViewer();
+    if (cache.classificacoes) return cache.classificacoes;
+
+    const mapaPorId = new Map();
+    const registrar = (obj) => {
+      if (obj && obj.id && obj.text && !mapaPorId.has(String(obj.id))) {
+        mapaPorId.set(String(obj.id), String(obj.text));
+      }
+    };
+
+    if (typeof cacheClassificacoesUnidade !== 'undefined' && cacheClassificacoesUnidade instanceof Map) {
+      cacheClassificacoesUnidade.forEach(v => registrar(v));
+    }
+
+    if (mapaPorId.size === 0 && ctx && ctx.urls && ctx.urls.urlListarClassif) {
+      try {
+        if (document.getElementById('frmMinutaCadastro') && typeof carregarTodasClassificacoesDaTabela === 'function') {
+          const mapaNomes = await carregarTodasClassificacoesDaTabela();
+          mapaNomes.forEach(v => registrar(v));
+        }
+        if (mapaPorId.size === 0) {
+          const resp = await fetch(ctx.urls.urlListarClassif, { credentials: 'same-origin' });
+          if (resp.ok) {
+            const html = await lerRespostaTexto(resp);
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            doc.querySelectorAll('tr').forEach(tr => {
+              if (tr.querySelector('th')) return;
+              const chk = tr.querySelector('input[type="checkbox"]:not([id*="SelecionarTodos"]):not([name*="SelecionarTodos"])');
+              let id = chk ? (chk.value || '').trim() : '';
+              if (!/^\d+$/.test(id)) {
+                const m = tr.innerHTML.match(/id_classificacao(?:_conteudo)?=(\d+)/i) || tr.innerHTML.match(/[?&]id=(\d+)/i);
+                if (m) id = m[1];
+              }
+              const tds = Array.from(tr.querySelectorAll('td'));
+              let nome = tds[1] ? decodificarEntidadesHtml(decodeEntities(tds[1].textContent || '')).trim() : '';
+              if (!nome) {
+                for (let i = 1; i < tds.length; i++) {
+                  const cand = decodificarEntidadesHtml(decodeEntities(tds[i].textContent || '')).trim();
+                  if (cand && !tds[i].querySelector('input[type="checkbox"]')) { nome = cand; break; }
+                }
+              }
+              if (/^\d+$/.test(id) && nome) registrar({ id, text: nome });
+            });
+          }
+        }
+      } catch (e) {}
+    }
+
+    cache.classificacoes = mapaPorId;
+    return mapaPorId;
+  }
+
+  async function obterCatalogoEventosCompViewer(idEvento, ctx) {
+    const ev = String(idEvento || '').trim();
+    if (!ev || !ctx || !ctx.urls || !ctx.urls.urlEventosComp) return new Map();
+    const cache = obterCacheCatalogosMinutaViewer();
+    if (cache.eventosCompPorEvento.has(ev)) return cache.eventosCompPorEvento.get(ev);
+
+    const mapa = new Map();
+    try {
+      const resp = await fetch(ctx.urls.urlEventosComp, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `IdEvento=${encodeURIComponent(ev)}`,
+        credentials: 'same-origin'
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json && Array.isArray(json.Eventos)) {
+          json.Eventos.forEach(it => {
+            if (it && it.id !== undefined && it.descricao) {
+              mapa.set(String(it.id).trim(), decodificarEntidadesHtml(decodeEntities(it.descricao)).trim());
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    cache.eventosCompPorEvento.set(ev, mapa);
+    return mapa;
+  }
+
+  function extrairTextoDescDadosComplementaresFrag(docFrag, fragHtml) {
+    if (!docFrag) return '';
+    const limparFrag = (htmlOuTexto) => {
+      return decodificarEntidadesHtml(decodeEntities(
+        String(htmlOuTexto || '')
+          .replace(/<br\s*\/?>/gi, ' | ')
+          .replace(/<\/(?:p|div|li|tr)>/gi, ' | ')
+          .replace(/<\/(?:td|th|b|strong|span)>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+      ))
+        .replace(/\s+/g, ' ')
+        .replace(/(?:\s*\|\s*){2,}/g, ' | ')
+        .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
+        .trim();
+    };
+
+    const elDesc = docFrag.getElementById('descDadosComplementares') || docFrag.getElementById('descDadosAutuacao');
+    if (elDesc) {
+      const txt = limparFrag(elDesc.innerHTML || elDesc.textContent || '');
+      if (txt) return txt;
+    }
+
+    if (fragHtml) {
+      const mJs = fragHtml.match(/descDadosComplementares['"]\s*\)\s*\.\s*(?:html|text)\(\s*(['"])([\s\S]*?)\1\s*\)/i)
+        || fragHtml.match(/getElementById\(\s*['"]descDadosComplementares['"]\s*\)\s*\.\s*(?:innerHTML|textContent)\s*=\s*(['"])([\s\S]*?)\1/i);
+      if (mJs && mJs[2]) {
+        const txtJs = limparFrag(mJs[2].replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\//g, '/'));
+        if (txtJs) return txtJs;
+      }
+    }
+    return '';
+  }
+
+  function extrairUrlSubframeDadosComplementares(docFrag, fragHtml, baseUrl) {
+    const candidatos = [];
+    if (docFrag && typeof docFrag.querySelectorAll === 'function') {
+      docFrag.querySelectorAll('button[onclick*="exibirSubFrm"], input[onclick*="exibirSubFrm"], a[onclick*="exibirSubFrm"]').forEach(el => {
+        const on = el.getAttribute('onclick') || '';
+        const m = on.match(/exibirSubFrm\s*\(\s*['"]([^'"]+)['"]/i);
+        if (m && m[1]) candidatos.push(m[1]);
+      });
+    }
+    if (fragHtml) {
+      const reSub = /exibirSubFrm\s*\(\s*['"]([^'"]+)['"]/gi;
+      let m;
+      while ((m = reSub.exec(fragHtml)) !== null) {
+        if (m[1]) candidatos.push(m[1]);
+      }
+      const reUrlDir = /controlador\.php\?[^'"\s<>)]*(?:dados_complementares|agendar_alteracao|alterar_dados)[^'"\s<>)]*/gi;
+      while ((m = reUrlDir.exec(fragHtml)) !== null) {
+        if (m[0]) candidatos.push(m[0]);
+      }
+    }
+    const escolhido = candidatos.find(u => /dados_complementares|agendar_alteracao|alterar_dados|autuacao/i.test(u))
+      || candidatos.find(u => !/localizador|intimacao/i.test(u))
+      || '';
+    if (!escolhido) return '';
+    const unescaped = escolhido.replace(/&amp;/gi, '&').trim();
+    try {
+      const refBase = baseUrl || (typeof location !== 'undefined' ? location.href : 'https://eproc2g.tjsp.jus.br/eproc/');
+      return new URL(unescaped, refBase).href;
+    } catch (e) {
+      return unescaped;
+    }
+  }
+
+  function indexarSelectsDadosComplementaresDeDoc(docTarget, destino, incluirTodosSelects = false) {
+    if (!docTarget || typeof docTarget.querySelectorAll !== 'function' || !destino) return;
+    const selects = docTarget.querySelectorAll(
+      incluirTodosSelects
+        ? 'select'
+        : 'select[id*="DadoComplementar"], select[name*="DadoComplementar"], select[id*="DadosComplementares"], select[name*="DadosComplementares"]'
+    );
+    selects.forEach(sel => {
+      const rawId = (sel.id || '').trim();
+      const rawName = (sel.name || '').trim();
+      const chaveBase = (rawId || rawName).replace(/\[\]$/, '').trim();
+      if (!chaveBase) return;
+      if (/^(?:selInfra|selEvento|selOrgao|selNovoLocalizador|selLocalizador|selModelo|selAssinante|selTratamento|selSigilo|selStatusMinuta|selFormulario|selOpcaoLocalizador|selDestMinuta)/i.test(chaveBase)) {
+        return;
+      }
+
+      const lblEl = rawId ? docTarget.querySelector(`label[for="${rawId}"]`) : null;
+      let label = lblEl ? decodificarEntidadesHtml(decodeEntities(lblEl.textContent || '')).replace(/:$/, '').trim() : '';
+      if (!label && typeof sel.getAttribute === 'function') {
+        label = (sel.getAttribute('aria-label') || sel.getAttribute('data-label') || sel.getAttribute('title') || '').trim();
+      }
+      if (!label && typeof sel.closest === 'function') {
+        const tr = sel.closest('tr');
+        if (tr) {
+          const ancestrais = new Set();
+          for (let p = sel; p; p = p.parentNode) ancestrais.add(p);
+          const tdLabel = Array.from(tr.querySelectorAll('td, th, label')).find(cel => !ancestrais.has(cel) && (cel.textContent || '').trim());
+          if (tdLabel) {
+            label = decodificarEntidadesHtml(decodeEntities(tdLabel.textContent || '')).replace(/:$/, '').trim();
+          }
+        }
+      }
+      if (!label) label = chaveBase;
+
+      const opts = rawId ? construirMapaSelectOptions(docTarget, rawId) : new Map();
+      if (opts.size === 0 && typeof sel.querySelectorAll === 'function') {
+        sel.querySelectorAll('option').forEach(opt => {
+          const val = (opt.value || opt.getAttribute('value') || '').trim();
+          const txt = decodificarEntidadesHtml(decodeEntities(opt.textContent || '')).replace(/\s+/g, ' ').trim();
+          if (val && val !== 'null' && txt && !/^selecione/i.test(txt)) {
+            opts.set(val, txt);
+          }
+        });
+      }
+
+      const info = { label, options: opts };
+      destino.set(chaveBase, info);
+      const mColchete = chaveBase.match(/\[(\d+)\]$/);
+      if (mColchete && mColchete[1] && !destino.has(mColchete[1])) {
+        destino.set(mColchete[1], info);
+      }
+    });
+  }
+
+  async function obterCatalogoPrepararMovViewer(idEvento, ctx, rawDadosComp = '', opcoes = {}) {
+    const ev = String(idEvento || '').trim();
+    const rawComp = String(rawDadosComp || '').trim();
+    const vazio = {
+      eventosIntimacao: new Map(),
+      eventosRemessa: new Map(),
+      orgaos: new Map(),
+      dadosCompSelects: new Map(),
+      descDadosComplementares: ''
+    };
+    if (!ev || !ctx || !ctx.urls || !ctx.urls.urlPrepararMov) return vazio;
+
+    const cache = obterCacheCatalogosMinutaViewer();
+    if (!cache.subframeDadosComp) cache.subframeDadosComp = new Map();
+    const chaveCache = `${ev}::${rawComp}`;
+    if (cache.prepararMovPorEvento.has(chaveCache)) return cache.prepararMovPorEvento.get(chaveCache);
+
+    try {
+      const numProc = (ctx.formInfo && ctx.formInfo.numProcesso) || '';
+      const pairs = [
+        ['idEvento', ev],
+        ['numProcesso', numProc],
+        ['movimentarProcesso', ''],
+        ['bolPrepararMovimentacao', ''],
+        ['idOrgaoJuizo', ''],
+        ['bolControleMagistradoExterno', 'S'],
+        ['acao', 'minuta_cadastrar']
+      ];
+      if (rawComp) {
+        pairs.push(['dadosComplementares', rawComp]);
+      }
+
+      const resp = await fetch(ctx.urls.urlPrepararMov, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: encodeWindows1252Body(pairs),
+        credentials: 'same-origin'
+      });
+      if (resp.ok) {
+        const txtXml = await lerRespostaTexto(resp);
+        const xml = new DOMParser().parseFromString(txtXml, 'text/xml');
+        const resEl = xml.querySelector('resultado');
+        let fragHtml = resEl ? (resEl.textContent || '') : txtXml;
+        fragHtml = fragHtml
+          .replace(/&nbsp/gi, '&nbsp;')
+          .replace(/menorque/gi, '<')
+          .replace(/maiorque/gi, '>')
+          .replace(/ecomercial/gi, '&');
+
+        const docFrag = new DOMParser().parseFromString(fragHtml, 'text/html');
+        const dadosCompSelects = new Map();
+        indexarSelectsDadosComplementaresDeDoc(docFrag, dadosCompSelects, false);
+
+        let descDadosComplementares = extrairTextoDescDadosComplementaresFrag(docFrag, fragHtml);
+
+        const precisaSubframe = (rawComp.includes('±') || Boolean(opcoes && opcoes.precisaDadosComp))
+          && !descDadosComplementares
+          && dadosCompSelects.size === 0;
+
+        if (precisaSubframe) {
+          const baseRef = (ctx.formInfo && ctx.formInfo.actionUrl) || ctx.urls.urlPrepararMov;
+          const urlSub = extrairUrlSubframeDadosComplementares(docFrag, fragHtml, baseRef);
+          if (urlSub) {
+            const chaveSub = `${ev}::${urlSub}`;
+            let subInfo = cache.subframeDadosComp.get(chaveSub);
+            if (!subInfo) {
+              subInfo = { selects: new Map(), desc: '' };
+              try {
+                const respSub = await fetch(urlSub, { credentials: 'same-origin' });
+                if (respSub.ok) {
+                  const subHtml = await lerRespostaTexto(respSub);
+                  const subDoc = new DOMParser().parseFromString(subHtml, 'text/html');
+                  indexarSelectsDadosComplementaresDeDoc(subDoc, subInfo.selects, true);
+                  subInfo.desc = extrairTextoDescDadosComplementaresFrag(subDoc, subHtml);
+                }
+              } catch (eSub) {}
+              cache.subframeDadosComp.set(chaveSub, subInfo);
+            }
+            subInfo.selects.forEach((v, k) => {
+              if (!dadosCompSelects.has(k)) dadosCompSelects.set(k, v);
+            });
+            if (!descDadosComplementares && subInfo.desc) {
+              descDadosComplementares = subInfo.desc;
+            }
+          }
+        }
+
+        const resultado = {
+          eventosIntimacao: construirMapaSelectOptions(docFrag, 'selEventoEncadeadoCitacaoIntimacao'),
+          eventosRemessa: construirMapaSelectOptions(docFrag, 'selEventoEncadeadoRemessa'),
+          orgaos: construirMapaSelectOptions(docFrag, 'selOrgao'),
+          dadosCompSelects,
+          descDadosComplementares
+        };
+        cache.prepararMovPorEvento.set(chaveCache, resultado);
+        return resultado;
+      }
+    } catch (e) {}
+
+    cache.prepararMovPorEvento.set(chaveCache, vazio);
+    return vazio;
+  }
+
+  async function carregarDetalhesPreferenciaMinuta(prefItem, ctx, options = {}) {
+    if (!window._eprocCacheDetalhesPrefsMinutas) {
+      window._eprocCacheDetalhesPrefsMinutas = new Map();
+    }
+    const cacheMap = window._eprocCacheDetalhesPrefsMinutas;
+    if (!options.forcarRecarga && cacheMap.has(prefItem.id)) {
+      return cacheMap.get(prefItem.id);
+    }
+
+    const pairs = [
+      ...(ctx.formInfo.basePairs || []),
+      ['hdnAcaoPreferencia', ''],
+      ['hdnPreferencia', prefItem.id],
+      ['txtPreferencia', prefItem.nome],
+      ['hdnPreferenciaUsuario', prefItem.complemento || ''],
+      ['hdnNumIdValorSelecionadoCombo', prefItem.id],
+      ['hdnStrDescricaoPreferencia', prefItem.nome],
+      ['hdnStrPreferenciaUsuario', prefItem.complemento || ''],
+      ['isChangePreferencia', '1']
+    ];
+
+    const resp = await fetch(ctx.formInfo.actionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encodeWindows1252Body(pairs),
+      credentials: 'same-origin'
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status} ao carregar preferência "${prefItem.nome}"`);
+    }
+
+    const htmlResp = await lerRespostaTexto(resp);
+    // Inspeção rápida para saber se precisa buscar catálogos auxiliares em cache
+    const preParsed = parseDetalhesPreferenciaMinutaHtml(htmlResp, prefItem, ctx, {});
+    const precisaClassif = (preParsed.classificacao || []).some(c => /^ID:\s*\S+$/.test(c));
+    const precisaComp = (preParsed.eventosComplementares || []).some(c => /^ID:\s*\d+$/.test(c));
+    const precisaDadosComp = Boolean(preParsed.dadosComplementares && /DadoComplementar|Dado #/i.test(preParsed.dadosComplementares))
+      || Boolean(preParsed._rawDadosComp && !preParsed._temDescDadosDom);
+    const precisaEncInt = preParsed.intimarPartes === 'Sim' && (!preParsed.eventoIntimacao || /^Cód\./.test(preParsed.eventoIntimacao));
+    const precisaEncRem = preParsed.remeterProcesso === 'Sim' && Boolean(preParsed._evRemId) && (!preParsed.eventoRemessa || /^ID:/.test(preParsed.eventoRemessa));
+    const precisaOrgRem = preParsed.remeterProcesso === 'Sim' && Boolean(preParsed._evRemId) && /^ID:/.test(preParsed.orgaoRemessa);
+    const precisaLocExtra = [
+      preParsed.localizadorPrincipal,
+      ...(preParsed.localizadoresSecundarios || []),
+      ...(preParsed.localizadoresRemover || [])
+    ].some(v => typeof v === 'string' && /^ID:\s*/.test(v));
+    const precisaPrepMovMain = (precisaDadosComp || precisaEncInt || precisaEncRem || precisaOrgRem) && Boolean(preParsed.eventoCod);
+    const precisaQualquerCatalogo = precisaClassif || precisaComp || precisaDadosComp || precisaEncInt || precisaEncRem || precisaOrgRem || precisaLocExtra;
+
+    const [
+      classificacoes,
+      eventosComp,
+      prepararMov,
+      prepararMovRemessa,
+      eventosEncadeadosT,
+      eventosEncadeadosR,
+      dadosCompCatalogo,
+      localizadoresExtras
+    ] = await Promise.all([
+      precisaClassif ? obterCatalogoClassificacoesViewer(ctx) : Promise.resolve(null),
+      (precisaComp && preParsed.eventoCod) ? obterCatalogoEventosCompViewer(preParsed.eventoCod, ctx) : Promise.resolve(null),
+      precisaPrepMovMain
+        ? obterCatalogoPrepararMovViewer(preParsed.eventoCod, ctx, preParsed._rawDadosComp || '', { precisaDadosComp })
+        : Promise.resolve(null),
+      (precisaOrgRem && preParsed._evRemId && preParsed._evRemId !== preParsed.eventoCod)
+        ? obterCatalogoPrepararMovViewer(preParsed._evRemId, ctx)
+        : Promise.resolve(null),
+      precisaEncInt ? obterCatalogoEncadeadoViewer('T', ctx) : Promise.resolve(null),
+      precisaEncRem ? obterCatalogoEncadeadoViewer('R', ctx) : Promise.resolve(null),
+      precisaDadosComp ? obterCatalogoDadosComplementaresViewer(ctx) : Promise.resolve(null),
+      precisaLocExtra ? obterCatalogoLocalizadoresExtraViewer(ctx) : Promise.resolve(null)
+    ]);
+
+    const detalhado = precisaQualquerCatalogo
+      ? parseDetalhesPreferenciaMinutaHtml(htmlResp, prefItem, ctx, {
+        classificacoes,
+        eventosComp,
+        prepararMov,
+        prepararMovRemessa,
+        eventosEncadeadosT,
+        eventosEncadeadosR,
+        dadosCompCatalogo,
+        localizadoresExtras
+      })
+      : preParsed;
+
+    cacheMap.set(prefItem.id, detalhado);
+    return detalhado;
+  }
+
+  function resolverTextoCelulaViewer(row, col) {
+    const val = row[col.key];
+    if (Array.isArray(val)) return val.join('; ');
+    return val === null || val === undefined ? '' : String(val);
+  }
+
+  function gerarCsvPreferenciasViewer(colunas, linhas) {
+    const esc = (txt) => {
+      const s = String(txt === null || txt === undefined ? '' : txt).replace(/\r?\n/g, ' ');
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const header = colunas.map(c => esc(c.label)).join(';');
+    const body = (linhas || []).map((row, idx) => {
+      return colunas.map(c => {
+        if (c.key === '_indice') return esc(idx + 1);
+        return esc(resolverTextoCelulaViewer(row, c));
+      }).join(';');
+    });
+    return '\uFEFF' + [header, ...body].join('\r\n');
+  }
+
+  const MINUTAS_VIEWER_COLUNAS = [
+    { key: '_indice', label: '#', sticky: 'num' },
+    { key: 'nome', label: 'Preferência (Descrição)', sticky: 'nome' },
+    { key: 'tipo', label: 'Tipo', pillType: 'tipo' },
+    { key: 'padrao', label: 'Padrão', pillType: 'simNao' },
+    { key: 'grupo', label: 'Grupo de Preferência', pillType: 'grupo' },
+    { key: 'acaoPreferencial', label: 'Ação Pref.', pillType: 'simNao' },
+    { key: 'modoLocalizadores', label: 'Localizadores (Modo)' },
+    { key: 'comportamentoLocalizador', label: 'Comportamento Localizador' },
+    { key: 'localizadorPrincipal', label: 'Localizador Principal', pillType: 'loc' },
+    { key: 'localizadoresSecundarios', label: 'Localizadores Secundários', pillType: 'locList' },
+    { key: 'localizadoresRemover', label: 'Remover Localizadores', pillType: 'locList' },
+    { key: 'modeloNome', label: 'Modelo de Documento' },
+    { key: 'modeloCod', label: 'Cód. Modelo' },
+    { key: 'eventoAgendado', label: 'Agendar Evento', pillType: 'simNao' },
+    { key: 'eventoNome', label: 'Evento a Lançar' },
+    { key: 'eventoCod', label: 'Cód. Evento' },
+    { key: 'eventosComplementares', label: 'Eventos Complementares', pillType: 'locList' },
+    { key: 'dadosComplementares', label: 'Dados Complementares' },
+    { key: 'intimarPartes', label: 'Intimar Partes', pillType: 'simNao' },
+    { key: 'eventoIntimacao', label: 'Evento Intimação' },
+    { key: 'prazosIntimacao', label: 'Prazos / Config. Intimação' },
+    { key: 'remeterProcesso', label: 'Remeter Processo', pillType: 'simNao' },
+    { key: 'eventoRemessa', label: 'Evento Remessa' },
+    { key: 'orgaoRemessa', label: 'Órgão Destino' },
+    { key: 'classificacao', label: 'Classificação Conteúdo', pillType: 'locList' },
+    { key: 'descricaoMinuta', label: 'Descrição da Minuta' },
+    { key: 'assinante', label: 'Assinante Indicado' },
+    { key: 'sigilo', label: 'Sigilo' },
+    { key: 'statusDestino', label: 'Status Destino' },
+    { key: 'opcoesExtras', label: 'Opções Extras' }
+  ];
+
+  const VISUALIZADORES_MODULOS_CONFIG = {
+    minutas: {
+      titulo: 'Preferências Criadas — Módulo Minutas (Nova Minuta)',
+      subtitulo: 'Visualização tabular completa de todos os campos gravados no eproc',
+      nomeArquivoCsv: 'preferencias_minutas_2g.csv',
+      colunas: MINUTAS_VIEWER_COLUNAS,
+      obterContexto: obterContextoMinutaVisualizador,
+      obterLista: obterListaCompletaPreferenciasMinutas,
+      carregarDetalhe: carregarDetalhesPreferenciaMinuta
+    }
+  };
+
+  function renderizarConteudoCelulaViewer(row, col) {
+    if (!row.detalhado && !['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial'].includes(col.key)) {
+      if (row.erroDetalhe) {
+        return col.key === 'modoLocalizadores'
+          ? `<span class="eproc-v-pill eproc-v-pill-err" title="${escapeHtmlViewer(row.erroDetalhe)}">Erro ao ler</span>`
+          : '<span style="color:#cbd5e1;">—</span>';
+      }
+      return '<span class="eproc-v-pill eproc-v-pill-pend">Não carregado</span>';
+    }
+
+    const bruto = row[col.key];
+    if (Array.isArray(bruto)) {
+      if (bruto.length === 0) return '<span style="color:#94a3b8;">—</span>';
+      return bruto.map(v => `<span class="eproc-v-pill eproc-v-pill-loc" title="${escapeHtmlViewer(v)}">${escapeHtmlViewer(v)}</span>`).join('');
+    }
+
+    const texto = bruto === null || bruto === undefined ? '' : String(bruto).trim();
+    if (!texto) return '<span style="color:#94a3b8;">—</span>';
+
+    if (col.pillType === 'simNao') {
+      const cls = texto === 'Sim' ? 'eproc-v-pill-sim' : 'eproc-v-pill-nao';
+      return `<span class="eproc-v-pill ${cls}">${escapeHtmlViewer(texto)}</span>`;
+    }
+    if (col.pillType === 'tipo') {
+      const cls = /unidade/i.test(texto) ? 'eproc-v-pill-unidade' : 'eproc-v-pill-indiv';
+      return `<span class="eproc-v-pill ${cls}">${escapeHtmlViewer(texto)}</span>`;
+    }
+    if (col.pillType === 'grupo') {
+      return `<span class="eproc-v-pill eproc-v-pill-grupo">${escapeHtmlViewer(texto)}</span>`;
+    }
+    if (col.pillType === 'loc') {
+      return `<span class="eproc-v-pill eproc-v-pill-loc" title="${escapeHtmlViewer(texto)}">${escapeHtmlViewer(texto)}</span>`;
+    }
+    return `<span title="${escapeHtmlViewer(texto)}">${escapeHtmlViewer(texto)}</span>`;
+  }
+
+  async function abrirModalVisualizadorPreferencias(modulo = 'minutas') {
+    const config = VISUALIZADORES_MODULOS_CONFIG[modulo];
+    if (!config) {
+      addLog(`ℹ️ Visualizador em tabela completa ainda disponível apenas no Módulo Minutas.`, 'warn');
+      return;
+    }
+
+    window._eprocViewerParar = false;
+    const overlay = obterOuCriarModalOverlay();
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.padding = '16px';
+    overlay.style.overflow = 'hidden';
+
+    overlay.innerHTML = `
+      <div id="eproc-pref-modal-container" class="eproc-viewer-modal">
+        <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #005b8f 0%, #003e63 100%); padding: 12px 18px;">
+          <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
+            <span>📊</span> ${escapeHtmlViewer(config.titulo)}
+            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.8.0</span>
+          </h3>
+          <button type="button" class="eproc-pref-modal-close" id="btn-viewer-fechar-topo" title="Fechar visualização">✕</button>
+        </div>
+
+        <div class="eproc-viewer-toolbar">
+          <input type="text" id="viewer-filtro-texto" class="eproc-viewer-input" style="flex:1; min-width:220px;" placeholder="🔍 Buscar por nome, grupo, modelo, evento, localizador, prazo, classificação...">
+          <select id="viewer-filtro-tipo" class="eproc-viewer-select">
+            <option value="" selected>Tipo: Todos</option>
+            <option value="Unidade">Unidade</option>
+            <option value="Individual">Individual</option>
+          </select>
+          <select id="viewer-filtro-grupo" class="eproc-viewer-select">
+            <option value="" selected>Grupo: Todos</option>
+          </select>
+          <select id="viewer-filtro-status" class="eproc-viewer-select">
+            <option value="" selected>Detalhes: Todos</option>
+            <option value="detalhado">Somente Detalhados</option>
+            <option value="pendente">Não carregados</option>
+          </select>
+          <button type="button" id="btn-viewer-carregar-filtradas" class="eproc-viewer-btn eproc-viewer-btn-primary" title="Carrega os detalhes completos apenas das linhas visíveis no filtro atual">🔄 Carregar Filtradas</button>
+          <button type="button" id="btn-viewer-carregar-todas" class="eproc-viewer-btn eproc-viewer-btn-success" title="Busca os campos completos de todas as preferências em lotes seguros">⚡ Carregar Detalhes de Todas</button>
+          <button type="button" id="btn-viewer-parar" class="eproc-viewer-btn eproc-viewer-btn-danger" style="display:none;">🛑 Parar</button>
+          <button type="button" id="btn-viewer-exportar-csv" class="eproc-viewer-btn eproc-viewer-btn-soft">📥 Exportar CSV</button>
+          <button type="button" id="btn-viewer-recarregar-lista" class="eproc-viewer-btn eproc-viewer-btn-soft" title="Atualiza a lista oficial do eproc">↻ Lista</button>
+        </div>
+
+        <div id="viewer-prog-wrap" class="eproc-viewer-prog-wrap">
+          <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:700; color:#1e40af;">
+            <span id="viewer-prog-label">Carregando detalhes...</span>
+            <span id="viewer-prog-pct">0%</span>
+          </div>
+          <div class="eproc-viewer-prog-track"><div id="viewer-prog-fill" class="eproc-viewer-prog-fill"></div></div>
+        </div>
+
+        <div id="viewer-table-wrap" class="eproc-viewer-table-wrap">
+          <div id="viewer-estado-inicial" style="padding:36px 20px; text-align:center; color:#475569; font-size:13px;">
+            ⏳ Carregando lista de preferências cadastradas no eproc 2G...
+          </div>
+          <table id="viewer-table" class="eproc-viewer-table" style="display:none;">
+            <thead id="viewer-thead"></thead>
+            <tbody id="viewer-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="viewer-detail-drawer" class="eproc-viewer-detail-drawer"></div>
+
+        <div class="eproc-pref-modal-footer">
+          <div id="viewer-footer-stats" class="eproc-modal-footer-stats">Inicializando...</div>
+          <div class="eproc-modal-footer-btns">
+            <button type="button" id="btn-viewer-fechar-rodape" class="eproc-viewer-btn eproc-viewer-btn-soft">Fechar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const fechar = () => {
+      window._eprocViewerParar = true;
+      overlay.style.display = 'none';
+      document.removeEventListener('keydown', onEsc);
+    };
+    const onEsc = (e) => { if (e.key === 'Escape') fechar(); };
+    document.addEventListener('keydown', onEsc);
+    overlay.querySelector('#btn-viewer-fechar-topo').onclick = fechar;
+    overlay.querySelector('#btn-viewer-fechar-rodape').onclick = fechar;
+
+    const estadoEl = overlay.querySelector('#viewer-estado-inicial');
+    const tableEl = overlay.querySelector('#viewer-table');
+    const theadEl = overlay.querySelector('#viewer-thead');
+    const tbodyEl = overlay.querySelector('#viewer-tbody');
+    const drawerEl = overlay.querySelector('#viewer-detail-drawer');
+    const statsEl = overlay.querySelector('#viewer-footer-stats');
+    const progWrap = overlay.querySelector('#viewer-prog-wrap');
+    const progLabel = overlay.querySelector('#viewer-prog-label');
+    const progPct = overlay.querySelector('#viewer-prog-pct');
+    const progFill = overlay.querySelector('#viewer-prog-fill');
+    const inpBusca = overlay.querySelector('#viewer-filtro-texto');
+    const selTipo = overlay.querySelector('#viewer-filtro-tipo');
+    const selGrupo = overlay.querySelector('#viewer-filtro-grupo');
+    const selStatus = overlay.querySelector('#viewer-filtro-status');
+    if (selTipo) selTipo.value = '';
+    if (selGrupo) selGrupo.value = '';
+    if (selStatus) selStatus.value = '';
+    const btnCarregarTodas = overlay.querySelector('#btn-viewer-carregar-todas');
+    const btnCarregarFiltradas = overlay.querySelector('#btn-viewer-carregar-filtradas');
+    const btnParar = overlay.querySelector('#btn-viewer-parar');
+    const btnCsv = overlay.querySelector('#btn-viewer-exportar-csv');
+    const btnRecarregar = overlay.querySelector('#btn-viewer-recarregar-lista');
+
+    let contexto = null;
+    let todasLinhas = [];
+    let carregandoEmLote = false;
+
+    const preencherFiltroGrupos = () => {
+      const atual = selGrupo.value;
+      const grupos = Array.from(new Set(todasLinhas.map(r => (r.grupo || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      selGrupo.innerHTML = '<option value="">Grupo: Todos</option><option value="__sem_grupo__">(Sem grupo)</option>'
+        + grupos.map(g => `<option value="${escapeHtmlViewer(g)}">${escapeHtmlViewer(g)}</option>`).join('');
+      if (atual) selGrupo.value = atual;
+    };
+
+    const obterLinhasFiltradas = () => {
+      const termo = normalizar(inpBusca.value || '');
+      const tipoFiltro = selTipo.value;
+      const grupoFiltro = selGrupo.value;
+      const statusFiltro = selStatus.value;
+
+      return todasLinhas.filter(r => {
+        if (tipoFiltro && normalizar(r.tipo) !== normalizar(tipoFiltro)) return false;
+        if (grupoFiltro === '__sem_grupo__' && (r.grupo || '').trim() !== '') return false;
+        if (grupoFiltro && grupoFiltro !== '__sem_grupo__' && (r.grupo || '').trim() !== grupoFiltro) return false;
+        if (statusFiltro === 'detalhado' && !r.detalhado) return false;
+        if (statusFiltro === 'pendente' && r.detalhado) return false;
+        if (termo) {
+          const textoConcat = config.colunas
+            .map(c => c.key === '_indice' ? '' : resolverTextoCelulaViewer(r, c))
+            .join(' ');
+          if (!normalizar(textoConcat).includes(termo)) return false;
+        }
+        return true;
+      });
+    };
+
+    const atualizarStats = (filtradas) => {
+      const total = todasLinhas.length;
+      const detalhadas = todasLinhas.filter(r => r.detalhado).length;
+      const erros = todasLinhas.filter(r => r.erroDetalhe).length;
+      statsEl.textContent = `Total: ${total} preferências | Exibindo: ${filtradas.length} | Detalhadas: ${detalhadas}/${total}` + (erros > 0 ? ` | Erros: ${erros}` : '');
+    };
+
+    const abrirDrawerLinha = (row) => {
+      drawerEl.style.display = 'block';
+      const cardsHtml = config.colunas
+        .filter(c => c.key !== '_indice')
+        .map(c => {
+          const valHtml = renderizarConteudoCelulaViewer(row, c);
+          return `<div class="eproc-viewer-detail-item"><div class="eproc-viewer-detail-label">${escapeHtmlViewer(c.label)}</div><div>${valHtml}</div></div>`;
+        }).join('');
+      drawerEl.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <strong style="font-size:12.5px; color:#0f172a;">👁️ Ficha Completa — ${escapeHtmlViewer(row.nome)} <span style="font-weight:400; color:#64748b;">(ID: ${escapeHtmlViewer(row.id)})</span></strong>
+          <button type="button" id="btn-viewer-fechar-drawer" class="eproc-v-mini-btn">✕ Fechar ficha</button>
+        </div>
+        <div class="eproc-viewer-detail-grid">${cardsHtml}</div>
+      `;
+      const btnF = drawerEl.querySelector('#btn-viewer-fechar-drawer');
+      if (btnF) btnF.onclick = () => { drawerEl.style.display = 'none'; };
+    };
+
+    const renderizarTabela = () => {
+      const filtradas = obterLinhasFiltradas();
+      atualizarStats(filtradas);
+
+      if (todasLinhas.length === 0) return;
+      estadoEl.style.display = 'none';
+      tableEl.style.display = 'table';
+
+      theadEl.innerHTML = '<tr>' + config.colunas.map(col => {
+        const cls = col.sticky === 'num' ? 'eproc-v-col-sticky-num' : (col.sticky === 'nome' ? 'eproc-v-col-sticky-nome' : '');
+        return `<th class="${cls}">${escapeHtmlViewer(col.label)}</th>`;
+      }).join('') + '</tr>';
+
+      if (filtradas.length === 0) {
+        tbodyEl.innerHTML = `<tr><td colspan="${config.colunas.length}" style="text-align:center; padding:24px; color:#64748b;">Nenhuma preferência corresponde aos filtros aplicados.</td></tr>`;
+        return;
+      }
+
+      tbodyEl.innerHTML = filtradas.map((row, idx) => {
+        const tds = config.colunas.map(col => {
+          if (col.key === '_indice') {
+            return `<td class="eproc-v-col-sticky-num">${idx + 1}</td>`;
+          }
+          if (col.key === 'nome') {
+            return `
+              <td class="eproc-v-col-sticky-nome">
+                <div class="eproc-v-nome-wrap">
+                  <div class="eproc-v-nome-titulo">${escapeHtmlViewer(row.nome)}</div>
+                  <div class="eproc-v-row-actions">
+                    <button type="button" class="eproc-v-mini-btn btn-viewer-row-load" data-pref-id="${escapeHtmlViewer(row.id)}" title="${row.detalhado ? 'Recarregar dados desta preferência no eproc' : 'Carregar todos os campos desta preferência'}">${row.detalhado ? '↻ Atualizar' : '🔍 Detalhar'}</button>
+                    <button type="button" class="eproc-v-mini-btn btn-viewer-row-ficha" data-pref-id="${escapeHtmlViewer(row.id)}" title="Abrir ficha detalhada em cartões">👁️ Ficha</button>
+                  </div>
+                </div>
+              </td>
+            `;
+          }
+          return `<td>${renderizarConteudoCelulaViewer(row, col)}</td>`;
+        }).join('');
+        return `<tr data-row-id="${escapeHtmlViewer(row.id)}">${tds}</tr>`;
+      }).join('');
+
+      tbodyEl.querySelectorAll('.btn-viewer-row-load').forEach(btn => {
+        btn.onclick = async () => {
+          const prefId = btn.getAttribute('data-pref-id');
+          const idxLinha = todasLinhas.findIndex(r => r.id === prefId);
+          if (idxLinha === -1 || !contexto) return;
+          btn.disabled = true;
+          btn.textContent = '⏳...';
+          try {
+            const det = await config.carregarDetalhe(todasLinhas[idxLinha], contexto, { forcarRecarga: true });
+            todasLinhas[idxLinha] = det;
+            preencherFiltroGrupos();
+            renderizarTabela();
+          } catch (e) {
+            todasLinhas[idxLinha] = { ...todasLinhas[idxLinha], erroDetalhe: e.message || String(e) };
+            renderizarTabela();
+          }
+        };
+      });
+
+      tbodyEl.querySelectorAll('.btn-viewer-row-ficha').forEach(btn => {
+        btn.onclick = () => {
+          const prefId = btn.getAttribute('data-pref-id');
+          const row = todasLinhas.find(r => r.id === prefId);
+          if (row) abrirDrawerLinha(row);
+        };
+      });
+    };
+
+    const executarCarregamentoLote = async (alvos) => {
+      if (carregandoEmLote || !contexto) return;
+      const listaAlvos = (alvos || []).filter(r => !r.detalhado);
+      if (listaAlvos.length === 0) {
+        statsEl.textContent += ' • Todas as linhas selecionadas já estão detalhadas!';
+        return;
+      }
+
+      carregandoEmLote = true;
+      window._eprocViewerParar = false;
+      btnCarregarTodas.disabled = true;
+      btnCarregarFiltradas.disabled = true;
+      btnRecarregar.disabled = true;
+      btnParar.style.display = 'inline-flex';
+      progWrap.style.display = 'block';
+
+      let concluidas = 0;
+      const total = listaAlvos.length;
+      let cursor = 0;
+      const concorrencia = 3;
+
+      const atualizarProg = (nomeAtual) => {
+        const pct = Math.round((concluidas / Math.max(1, total)) * 100);
+        progLabel.textContent = `Carregando detalhes (${concluidas}/${total}): ${nomeAtual || ''}`;
+        progPct.textContent = `${pct}%`;
+        progFill.style.width = `${pct}%`;
+      };
+      atualizarProg('Iniciando...');
+
+      const worker = async () => {
+        while (!window._eprocViewerParar) {
+          const idx = cursor++;
+          if (idx >= total) break;
+          const item = listaAlvos[idx];
+          try {
+            const det = await config.carregarDetalhe(item, contexto, { forcarRecarga: false });
+            const posReal = todasLinhas.findIndex(r => r.id === item.id);
+            if (posReal !== -1) todasLinhas[posReal] = det;
+          } catch (e) {
+            const posReal = todasLinhas.findIndex(r => r.id === item.id);
+            if (posReal !== -1) {
+              todasLinhas[posReal] = { ...todasLinhas[posReal], erroDetalhe: e.message || String(e) };
+            }
+          }
+          concluidas++;
+          atualizarProg(item.nome);
+          if (concluidas % 3 === 0 || concluidas === total) {
+            preencherFiltroGrupos();
+            renderizarTabela();
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(concorrencia, total) }, () => worker()));
+
+      carregandoEmLote = false;
+      btnCarregarTodas.disabled = false;
+      btnCarregarFiltradas.disabled = false;
+      btnRecarregar.disabled = false;
+      btnParar.style.display = 'none';
+      preencherFiltroGrupos();
+      renderizarTabela();
+      if (window._eprocViewerParar) {
+        progLabel.textContent = `⏹️ Interrompido em ${concluidas}/${total} preferências.`;
+      } else {
+        progLabel.textContent = `✅ Concluído! ${concluidas} preferências detalhadas.`;
+        progFill.style.width = '100%';
+        progPct.textContent = '100%';
+      }
+    };
+
+    const inicializarDados = async (limparCache = false) => {
+      if (limparCache) {
+        window._eprocCacheDetalhesPrefsMinutas = new Map();
+      }
+      estadoEl.style.display = 'block';
+      tableEl.style.display = 'none';
+      estadoEl.innerHTML = '⏳ Consultando preferências cadastradas no eproc 2G...';
+
+      try {
+        contexto = await config.obterContexto();
+        if (!contexto || !contexto.disponivel) {
+          estadoEl.innerHTML = `<div style="max-width:560px; margin:20px auto; background:#fffbeb; border:1px solid #f59e0b; border-radius:8px; padding:16px; color:#92400e;"><strong>⚠️ Tela incompatível no momento</strong><br><br>${escapeHtmlViewer((contexto && contexto.motivo) || 'Acesse a tela Nova Minuta no eproc 2G.')}</div>`;
+          statsEl.textContent = 'Aguardando tela compatível.';
+          return;
+        }
+
+        const listaBase = await config.obterLista(contexto);
+        const cache = window._eprocCacheDetalhesPrefsMinutas;
+        todasLinhas = listaBase.map(item => {
+          if (cache && cache.has(item.id)) {
+            return { ...item, ...cache.get(item.id) };
+          }
+          return { ...item, detalhado: false };
+        });
+
+        if (todasLinhas.length === 0) {
+          const d = (contexto && contexto._diagLista) || {};
+          const diagHtml = `
+            <div style="margin:12px auto 0 auto; max-width:720px; text-align:left; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:10px 12px; font-size:11px; color:#475569;">
+              <div><strong>Diagnóstico da consulta:</strong></div>
+              <div>• Gerenciador (<code>formulario_personalizacao_listar</code>): HTTP <b>${escapeHtmlViewer(d.statusListar || 'n/d')}</b> | ${d.bytesListar || 0} bytes | tabela=${d.qtdTabela || 0} | dt=${d.dtRows || 0}${d.erroListar ? ` | erro: ${escapeHtmlViewer(d.erroListar)}` : ''}</div>
+              <div>• Autocomplete (<code>preferencia_auto_completar</code>): POST HTTP <b>${escapeHtmlViewer(d.statusAutoPost || 'n/d')}</b> | GET HTTP <b>${escapeHtmlViewer(d.statusAutoGet || 'n/d')}</b> | xml=${d.qtdXml || 0} | mem=${d.qtdMemoria || 0} | leg=${d.qtdFallbackUnidade || 0}${d.erroAuto ? ` | erro: ${escapeHtmlViewer(d.erroAuto)}` : ''}</div>
+              ${d.trechoHtmlListar ? `<div style="margin-top:4px; color:#64748b;">Trecho retornado: <code>${escapeHtmlViewer(d.trechoHtmlListar)}</code></div>` : ''}
+            </div>
+          `;
+          estadoEl.innerHTML = '<div>ℹ️ Nenhuma preferência encontrada para este módulo na unidade atual.</div>' + diagHtml;
+          statsEl.textContent = '0 preferências encontradas.';
+          return;
+        }
+
+        preencherFiltroGrupos();
+        renderizarTabela();
+
+        // Carrega automaticamente todos os campos detalhados em segundo plano ao abrir a tela
+        if (todasLinhas.some(r => !r.detalhado) && !window._eprocViewerParar) {
+          await executarCarregamentoLote(todasLinhas);
+        }
+      } catch (e) {
+        estadoEl.innerHTML = `<div style="color:#991b1b; background:#fee2e2; padding:14px; border-radius:6px; max-width:560px; margin:20px auto;">❌ Erro ao consultar lista de preferências: ${escapeHtmlViewer(e.message || String(e))}</div>`;
+        statsEl.textContent = 'Erro ao carregar lista.';
+      }
+    };
+
+    inpBusca.addEventListener('input', renderizarTabela);
+    selTipo.addEventListener('change', renderizarTabela);
+    selGrupo.addEventListener('change', renderizarTabela);
+    selStatus.addEventListener('change', renderizarTabela);
+
+    btnParar.onclick = () => { window._eprocViewerParar = true; };
+    btnCarregarTodas.onclick = () => executarCarregamentoLote(todasLinhas);
+    btnCarregarFiltradas.onclick = () => executarCarregamentoLote(obterLinhasFiltradas());
+    btnRecarregar.onclick = () => inicializarDados(true);
+
+    btnCsv.onclick = () => {
+      const filtradas = obterLinhasFiltradas();
+      if (filtradas.length === 0) return;
+      const csv = gerarCsvPreferenciasViewer(config.colunas, filtradas);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = config.nomeArquivoCsv;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 500);
+    };
+
+    await inicializarDados(false);
+  }
 
     /* ================== INICIALIZAÇÃO ================== */
 

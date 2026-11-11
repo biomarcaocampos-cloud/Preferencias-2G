@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Instruções — Criar Preferências em Lote 2G v3.7.0 (Segundo Grau TJSP)</title>
+  <title>Instruções — Criar Preferências em Lote 2G v3.8.0 (Segundo Grau TJSP)</title>
   <style>
     :root {
       --primary: #15803d;
@@ -196,7 +196,7 @@
     <div class="header">
       <h1><span class="badge-icon-p">P</span> Criar Preferências em Lote 2G (eproc TJSP - Segundo Grau)</h1>
       <p>Guia Completo de Operação, Auditoria Prévia e Arquitetura de Segurança de Dados.</p>
-      <div class="badge-version">Versão 3.7.0 - 10/11/2026</div>
+      <div class="badge-version">Versão 3.8.0 - 10/11/2026</div>
     </div>
 
     
@@ -235,7 +235,7 @@
       <h2>1. O que este Script faz</h2>
       <p>A extensão automatiza a criação em lote de preferências no <b>eproc 2G TJSP</b> a partir da planilha oficial unificada (<code>Fluxo 2G - Preferências Oficial (Unificada).xlsx</code>), operando em quatro módulos integrados:</p>
       <ul>
-        <li><b>📝 Módulo 1 (Minutas):</b> Lê a aba <code>Preferências - Minutas</code> e grava preferências no formulário oficial de <b>Nova Minuta</b> (<code>minuta_cadastrar</code>), aplicando regras de negócio do 2G, incluindo agendamento encadeado de intimações com prazos especiais/simples/DPU, remessas e matrizes de acórdão. <i>(v3.2: Múltiplas classificações e emojis íntegros; v3.5: Correção do indicador de progresso #num e estabilidade do fluxo de minutas).</i></li>
+        <li><b>📝 Módulo 1 (Minutas):</b> Lê a aba <code>Preferências - Minutas</code> e grava preferências no formulário oficial de <b>Nova Minuta</b> (<code>minuta_cadastrar</code>), aplicando regras de negócio do 2G, incluindo agendamento encadeado de intimações com prazos especiais/simples/DPU, remessas e matrizes de acórdão. Inclui ainda o botão <b>📊 Visualizar Preferências em Tabela (Minutas)</b> para consultar todos os campos gravados em grade ampla com filtros, busca e exportação CSV. <i>(v3.2: Múltiplas classificações e emojis íntegros; v3.5: Correção do indicador #num; v3.8: Visualizador completo em tabela para Minutas).</i></li>
         <li><b>📊 Módulo 2 (Relatórios):</b> Lê a aba <code>Preferências - Relatório Geral</code> e grava preferências na tela de <b>Relatório Geral de Processos</b> (<code>relatorio_geral_listar</code>), incluindo pré-cadastro e vinculação a Grupos de Preferências (ex.: <i>Gestão</i>, <i>Servidores 1 a 5</i>), operador do localizador configurado conforme a coluna <b>"Operação (E/OU)"</b> da planilha (com padrão em <b>"E"</b>), injeção dos filtros de localizadores, situação processual (Movimento/Suspenso/Baixado) e conteúdo de lembretes.</li>
         <li><b>⚡ Módulo 3 (Movimentações):</b> Lê a aba <code>Preferências - Movimentar</code> e grava preferências na tela de <b>Movimentação Processual</b> (<code>processo_movimento_consultar</code>), buscando o evento exato pelo nome completo da movimentação (desambiguando eventos que compartilham o mesmo código numérico, como o código <code>51</code> ou <code>123</code>), configurando o comportamento e os novos localizadores e respeitando a ausência de grupo quando a coluna <i>Grupo de preferência</i> estiver vazia.</li>
         <li><b>📄 Módulo 4 (Documentos / Área de Minutas):</b> Lê a aba <code>Preferências - Área de Minutas</code> e grava preferências na tela da <b>Área de Trabalho de Minutas</b> (<code>minuta_area_trabalho</code>), filtrando por tipo de documento (Despachos/Decisões e Votos), status da minuta, localizador de servidor e grupo de preferências.</li>
@@ -338,8 +338,8 @@
           </tr>
           <tr>
             <td><b>Agendamento de Intimações e Prazos</b></td>
-            <td>Ativa intimação encadeada, vincula eventos e marca prazos diferenciados.</td>
-            <td>Preenche Prazo Especial (30d), Prazo Simples (15d), DPU (30d), etc.</td>
+            <td>Ativa intimação encadeada, seleciona o <i>Modo de Prazos</i> (<b>Por Polo</b> ou <b>Por Tipo de Parte</b>), vincula eventos, prazos e <i>Intimação Urgente</i>.</td>
+            <td>Suporta prazos por Tipo de Parte (Ent. Especial, Ent. Simples, Demais Partes, DPU) e por Polo (Polo Ativo/Autores, Polo Passivo/Réus, Interessados, MP Custos iuris).</td>
           </tr>
           <tr>
             <td><b>Remessa Encadeada</b></td>
@@ -601,7 +601,7 @@
 
     <div class="footer">
       <div>Tribunal de Justiça do Estado de São Paulo • eproc 2G (Segundo Grau)</div>
-      <div>Extensão 2G • Versão 3.7.0 - 10/11/2026</div>
+      <div>Extensão 2G • Versão 3.8.0 - 10/11/2026</div>
     </div>
   </div>
 
