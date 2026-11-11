@@ -715,7 +715,8 @@
 
     const btnVisualizarPrefs = document.getElementById('btn-rito-visualizar-preferencias');
     if (btnVisualizarPrefs) {
-      btnVisualizarPrefs.style.display = moduloAtivo === 'minutas' ? 'flex' : 'none';
+      const modulosComTabela = ['minutas', 'relatorios', 'movimentacoes', 'area_minutas', 'intimacoes'];
+      btnVisualizarPrefs.style.display = modulosComTabela.includes(moduloAtivo) ? 'flex' : 'none';
     }
 
     const btnGerenciador = document.getElementById('btn-rito-abrir-gerenciador');
@@ -15929,7 +15930,7 @@
 
 
         <div style="margin-top:8px; border-top:1px solid #e2e8f0; padding-top:6px;">
-          <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-visualizar-preferencias" style="width:100%; font-size:11.5px; margin-bottom:6px; background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; font-weight:700; display:${moduloAtivo === 'minutas' ? 'flex' : 'none'};" title="Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo">
+          <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-visualizar-preferencias" style="width:100%; font-size:11.5px; margin-bottom:6px; background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; font-weight:700; display:${moduloAtivo !== 'servidores' ? 'flex' : 'none'};" title="Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo">
             <span>🗓️</span> Tabela de Preferências
           </button>
 
@@ -16207,7 +16208,7 @@
 
     const btnVisualizarPrefs = document.getElementById('btn-rito-visualizar-preferencias');
     if (btnVisualizarPrefs) {
-      btnVisualizarPrefs.style.display = moduloAtivo === 'minutas' ? 'flex' : 'none';
+      btnVisualizarPrefs.style.display = ['minutas', 'relatorios', 'movimentacoes', 'area_minutas', 'intimacoes'].includes(moduloAtivo) ? 'flex' : 'none';
       btnVisualizarPrefs.onclick = () => abrirModalVisualizadorPreferencias(moduloAtivo);
     }
 
@@ -22684,13 +22685,15 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     return Array.from(mapaFinal.values());
   }
 
-  function extrairUrlsAjaxNovaMinuta(html, doc, baseHref) {
+  function extrairUrlsAjaxTelaEproc(html, doc, baseHref, opcoes = {}) {
+    const nomeAcao = opcoes.nomeAcao || 'minuta_cadastrar';
     const abs = (u) => {
       if (!u) return '';
+      const clean = String(u).replace(/\\\//g, '/').replace(/&amp;/g, '&').trim();
       try {
-        return new URL(String(u).replace(/&amp;/g, '&').trim(), baseHref || 'https://eproc2g.tjsp.jus.br/eproc/').href;
+        return new URL(clean, baseHref || 'https://eproc2g.tjsp.jus.br/eproc/').href;
       } catch (e) {
-        return String(u).replace(/&amp;/g, '&').trim();
+        return clean;
       }
     };
 
@@ -22706,17 +22709,24 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       }
     }
     if (!urlListar && html) {
-      const m = html.match(/['"](controlador\.php\?[^'"]*acao=formulario_personalizacao_listar[^'"]*minuta_cadastrar[^'"]*)['"]/i)
-        || html.match(/['"](controlador\.php\?[^'"]*acao=ui_preferencias\/modal_lista_preferencias[^'"]*)['"]/i);
+      const reListarAcao = new RegExp(`['"](controlador\\.php\\?[^'"]*acao=formulario_personalizacao_listar[^'"]*${nomeAcao}[^'"]*)['"]`, 'i');
+      const m = html.match(reListarAcao)
+        || html.match(/['"](controlador\.php\?[^'"]*acao=formulario_personalizacao_listar[^'"]*)['"]/i)
+        || html.match(/['"](controlador\.php\?[^'"]*acao=ui_preferencias(?:\/|\\\/)modal_lista_preferencias[^'"]*)['"]/i);
       if (m && m[1]) urlListar = m[1];
     }
 
     let urlAutoComp = '';
     if (typeof window !== 'undefined' && doc === (typeof document !== 'undefined' ? document : null) && window.objAjaxAutoCompPreferencia) {
-      urlAutoComp = window.objAjaxAutoCompPreferencia.ajaxTarget || window.objAjaxAutoCompPreferencia.urlServico || '';
+      const targetMem = window.objAjaxAutoCompPreferencia.ajaxTarget || window.objAjaxAutoCompPreferencia.urlServico || '';
+      if (!nomeAcao || targetMem.includes(nomeAcao) || nomeAcao === 'minuta_cadastrar') {
+        urlAutoComp = targetMem;
+      }
     }
     if (!urlAutoComp && html) {
-      const m = html.match(/['"](controlador_ajax\.php\?[^'"]*acao_ajax=preferencia_auto_completar[^'"]+)['"]/i);
+      const reAutoAcao = new RegExp(`['"](controlador_ajax\\.php\\?[^'"]*acao_ajax=preferencia_auto_completar[^'"]*${nomeAcao}[^'"]*)['"]`, 'i');
+      const m = html.match(reAutoAcao)
+        || html.match(/['"](controlador_ajax\.php\?[^'"]*acao_ajax=preferencia_auto_completar[^'"]+)['"]/i);
       if (m && m[1]) urlAutoComp = m[1];
     }
 
@@ -22744,6 +22754,27 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       if (m && m[1]) urlListarClassif = m[1];
     }
 
+    const buscarUrlScriptOuHtml = (re) => {
+      if (doc && typeof doc.querySelectorAll === 'function') {
+        const scripts = doc.querySelectorAll('script');
+        for (const s of scripts) {
+          const txt = s.textContent || '';
+          const m = txt.match(re);
+          if (m && m[1]) return m[1];
+        }
+      }
+      if (html) {
+        const m = html.match(re);
+        if (m && m[1]) return m[1];
+      }
+      return '';
+    };
+
+    const urlUiPrefListar = buscarUrlScriptOuHtml(/['"]([^'"]*ui_preferencias(?:\/|\\\/)listar(?=[&'"\s\\])[^'"]*)['"]/i)
+      || buscarUrlScriptOuHtml(/['"]([^'"]*ui_preferencias(?:\/|\\\/)listar[^'"]*)['"]/i);
+    const urlBuscarRequest = buscarUrlScriptOuHtml(/['"]([^'"]*ui_preferencias(?:\/|\\\/)buscar_request_por_id[^'"]*)['"]/i);
+    const urlListarLocRelatorio = buscarUrlScriptOuHtml(/['"]([^'"]*relatorio_geral(?:\/|\\\/)listar_localizador_orgao[^'"]*)['"]/i);
+
     const buscarUrlMenu = (acao) => {
       if (doc && typeof doc.querySelector === 'function') {
         const links = doc.querySelectorAll(`a[href*="acao=${acao}"]`);
@@ -22770,10 +22801,17 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       urlEncadearEvento: abs(urlEncadearEvento),
       urlEventosComp: abs(urlEventosComp),
       urlListarClassif: abs(urlListarClassif),
+      urlUiPrefListar: abs(urlUiPrefListar),
+      urlBuscarRequest: abs(urlBuscarRequest),
+      urlListarLocRelatorio: abs(urlListarLocRelatorio),
       urlMinutaAreaTrabalho: abs(buscarUrlMenu('minuta_area_trabalho')),
       urlAutomatizarLoc: abs(buscarUrlMenu('automatizar_localizadores')),
       urlLocalizadoresOrgao: abs(buscarUrlMenu('localizador_orgao_listar'))
     };
+  }
+
+  function extrairUrlsAjaxNovaMinuta(html, doc, baseHref) {
+    return extrairUrlsAjaxTelaEproc(html, doc, baseHref, { nomeAcao: 'minuta_cadastrar' });
   }
 
   function construirMapaSelectOptions(doc, selectId) {
@@ -22828,9 +22866,11 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     return limpos;
   }
 
-  function extrairCamposBaseFormMinuta(doc, baseHref, htmlBase = '') {
+  function extrairCamposBaseFormEproc(doc, baseHref, htmlBase = '', opcoes = {}) {
     if (!doc) return null;
-    const form = doc.getElementById('frmMinutaCadastro') || doc.querySelector('form[action*="minuta_cadastrar"]');
+    const formId = opcoes.formId || 'frmMinutaCadastro';
+    const acaoPattern = opcoes.acaoPattern || 'minuta_cadastrar';
+    const form = doc.getElementById(formId) || doc.querySelector(`form[action*="${acaoPattern}"]`);
     if (!form) return null;
 
     const rawAction = form.getAttribute('action') || (baseHref || '');
@@ -22865,12 +22905,19 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       'hdnCodStatusMinuta',
       'hdnSinAssinaturaRestritaMagistrado',
       'hdnAgendamentoAudiencia',
-      'hdnSelEventoAudiencia'
+      'hdnSelEventoAudiencia',
+      'hdnConsultaNormal',
+      'solr_forcar_pesquisa',
+      'hdnExcel',
+      'hdnOrigemExterna',
+      'hdnNumChavePesquisaMinuta',
+      'hdnNumChavePesquisaDocumento',
+      'hdnInfraSelecoes'
     ]);
 
     form.querySelectorAll('input[type="hidden"]').forEach(inp => {
       const name = (inp.name || inp.getAttribute('name') || '').trim();
-      if (!name || camposIgnorar.has(name)) return;
+      if (!name || camposIgnorar.has(name) || name.startsWith('selLocalizadorPrincipal_value')) return;
       basePairs.push([name, inp.value || inp.getAttribute('value') || '']);
     });
 
@@ -22879,9 +22926,11 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       return el ? (el.value || el.getAttribute('value') || def) : def;
     };
 
-    const mProcUrl = (baseHref || '').match(/[?&]num_processo=([^&]+)/i);
+    const mProcUrl = (baseHref || '').match(/[?&](?:num_processo|txtNumProcesso)=([^&]+)/i);
     const numProcesso = getFieldVal('numProcesso', '')
       || getFieldVal('hdnNumProcessoLista', '')
+      || getFieldVal('hdnTxtNumProcesso', '')
+      || getFieldVal('hdnNumProcesso', '')
       || (htmlBase ? extrairLiteralJsString(htmlBase, 'mc_numProcesso') : '')
       || (mProcUrl && mProcUrl[1] ? decodeURIComponent(mProcUrl[1]).trim() : '');
 
@@ -22890,16 +22939,31 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         construirMapaSelectOptions(doc, 'selNovoLocalizador'),
         mesclarMapasStrings(
           construirMapaSelectOptions(doc, 'selLocalizadorSecundario'),
-          construirMapaSelectOptions(doc, 'selLocalizadorDesativar')
+          mesclarMapasStrings(
+            construirMapaSelectOptions(doc, 'selLocalizadorDesativar'),
+            construirMapaSelectOptions(doc, 'selLocalizador')
+          )
         )
       ),
       comportamentos: construirMapaSelectOptions(doc, 'selOpcaoLocalizador'),
-      grupos: construirMapaSelectOptions(doc, 'selFormularioPersonalizacaoGrupo'),
+      grupos: mesclarMapasStrings(
+        construirMapaSelectOptions(doc, 'selFormularioPersonalizacaoGrupo'),
+        construirMapaSelectOptions(doc, 'Grupo')
+      ),
       assinantes: construirMapaSelectOptions(doc, 'selAssinante'),
       tratamentos: construirMapaSelectOptions(doc, 'selTratamento'),
-      sigilos: construirMapaSelectOptions(doc, 'selSigilo'),
+      sigilos: mesclarMapasStrings(
+        construirMapaSelectOptions(doc, 'selSigilo'),
+        construirMapaSelectOptions(doc, 'selIdSigilo_Padrao')
+      ),
       statusMinuta: construirMapaSelectOptions(doc, 'selStatusMinuta')
     };
+
+    if (Array.isArray(opcoes.selectsExtras)) {
+      opcoes.selectsExtras.forEach(sid => {
+        catalogosBasicos[sid] = construirMapaSelectOptions(doc, sid);
+      });
+    }
 
     return {
       actionUrl,
@@ -22907,6 +22971,13 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       numProcesso,
       catalogosBasicos
     };
+  }
+
+  function extrairCamposBaseFormMinuta(doc, baseHref, htmlBase = '') {
+    return extrairCamposBaseFormEproc(doc, baseHref, htmlBase, {
+      formId: 'frmMinutaCadastro',
+      acaoPattern: 'minuta_cadastrar'
+    });
   }
 
   function formatarPrazosIntimacaoMinuta(agQuery, arrPrefIntimacao, camposP = null) {
@@ -23482,29 +23553,39 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     };
   }
 
-  // Orquestrador de rede e cache para Módulo Minutas
-  async function obterContextoMinutaVisualizador() {
+  // Orquestrador genérico de contexto para telas clássicas de preferências do eproc
+  async function obterContextoTelaClassicaViewer(opcoes = {}) {
+    const formId = opcoes.formId || 'frmMinutaCadastro';
+    const nomeAcao = opcoes.nomeAcao || 'minuta_cadastrar';
+    const acaoMenu = opcoes.acaoMenu || nomeAcao;
+    const acaoMenuAlt = opcoes.acaoMenuAlt || '';
+    const exigeProcessoNoMenu = Boolean(opcoes.exigeProcessoNoMenu);
+    const verificaDoc = typeof opcoes.verificaDocNaTela === 'function'
+      ? opcoes.verificaDocNaTela
+      : (doc) => Boolean(doc && doc.getElementById(formId));
+
     let docBase = null;
     let htmlBase = '';
     let baseHref = window.location.href;
 
-    if (document.getElementById('frmMinutaCadastro')) {
+    if (verificaDoc(document)) {
       docBase = document;
       htmlBase = document.documentElement ? document.documentElement.innerHTML : '';
     } else {
-      const urlMenu = obterUrlAcaoMenu('minuta_cadastrar');
-      const temProcessoNaUrl = urlMenu && /[?&]num_processo=/i.test(urlMenu) && /[?&]hash=/i.test(urlMenu);
-      if (!temProcessoNaUrl) {
+      const urlMenu = obterUrlAcaoMenu(acaoMenu) || (acaoMenuAlt ? obterUrlAcaoMenu(acaoMenuAlt) : '');
+      const temHash = urlMenu && /[?&]hash=/i.test(urlMenu);
+      const temProcessoNaUrl = urlMenu && /[?&](?:num_processo|txtNumProcesso)=/i.test(urlMenu);
+      if (!urlMenu || !temHash || (exigeProcessoNoMenu && !temProcessoNaUrl)) {
         return {
           disponivel: false,
-          motivo: 'Para inspecionar os campos completos das preferências de Minutas, abra a tela de "Nova Minuta" (ou a tela de qualquer processo com o menu Nova Minuta disponível).'
+          motivo: opcoes.motivoIndisponivel || `Abra a tela correspondente (${acaoMenu}) no eproc 2G para visualizar as preferências deste módulo.`
         };
       }
       const resp = await fetch(urlMenu, { credentials: 'same-origin' });
       if (!resp.ok) {
         return {
           disponivel: false,
-          motivo: `Não foi possível acessar a tela Nova Minuta em segundo plano (HTTP ${resp.status}). Abra a tela Nova Minuta e tente novamente.`
+          motivo: `Não foi possível acessar a tela ${opcoes.nomeTela || acaoMenu} em segundo plano (HTTP ${resp.status}). Abra a tela correspondente e tente novamente.`
         };
       }
       htmlBase = await lerRespostaTexto(resp);
@@ -23512,17 +23593,22 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       docBase = new DOMParser().parseFromString(htmlBase, 'text/html');
     }
 
-    const formInfo = extrairCamposBaseFormMinuta(docBase, baseHref, htmlBase);
-    const urls = extrairUrlsAjaxNovaMinuta(htmlBase, docBase, baseHref);
-    if (!formInfo || !urls.urlListar) {
+    const formInfo = extrairCamposBaseFormEproc(docBase, baseHref, htmlBase, {
+      formId,
+      acaoPattern: opcoes.acaoPattern || acaoMenu,
+      selectsExtras: opcoes.selectsExtras
+    });
+    const urls = extrairUrlsAjaxTelaEproc(htmlBase, docBase, baseHref, { nomeAcao });
+    if (!formInfo || (!urls.urlListar && !urls.urlAutoComp)) {
       return {
         disponivel: false,
-        motivo: 'Formulário de Nova Minuta ou link do gerenciador (#listaPreferencias) não localizado nesta página.'
+        motivo: opcoes.motivoFormNaoEncontrado || `Formulário (#${formId}) ou link do gerenciador (#listaPreferencias) não localizado nesta página.`
       };
     }
 
     return {
       disponivel: true,
+      nomeAcao,
       docBase,
       htmlBase,
       baseHref,
@@ -23531,7 +23617,21 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     };
   }
 
+  // Orquestrador de rede e cache para Módulo Minutas
+  async function obterContextoMinutaVisualizador() {
+    return obterContextoTelaClassicaViewer({
+      formId: 'frmMinutaCadastro',
+      acaoMenu: 'minuta_cadastrar',
+      nomeAcao: 'minuta_cadastrar',
+      nomeTela: 'Nova Minuta',
+      exigeProcessoNoMenu: true,
+      motivoIndisponivel: 'Para inspecionar os campos completos das preferências de Minutas, abra a tela de "Nova Minuta" (ou a tela de qualquer processo com o menu Nova Minuta disponível).',
+      motivoFormNaoEncontrado: 'Formulário de Nova Minuta ou link do gerenciador (#listaPreferencias) não localizado nesta página.'
+    });
+  }
+
   async function obterListaCompletaPreferenciasMinutas(ctx) {
+    const nomeAcaoPadrao = (ctx && ctx.nomeAcao) || 'minuta_cadastrar';
     const itensTabela = [];
     const idsTabela = new Set();
     const diag = {
@@ -23573,7 +23673,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
           if (itensTabela.length === 0 && urlDtRaw && typeof serializarObjetoAjaxEproc === 'function') {
             const urlDt = new URL(urlDtRaw.replace(/&amp;/g, '&'), ctx.baseHref || 'https://eproc2g.tjsp.jus.br/eproc/').href;
             const acaoReqEl = doc.getElementById('acao_request');
-            const acaoReq = (acaoReqEl && acaoReqEl.value) ? acaoReqEl.value : 'minuta_cadastrar';
+            const acaoReq = (acaoReqEl && acaoReqEl.value) ? acaoReqEl.value : nomeAcaoPadrao;
             const colsDt = [
               { data: 'col_checkbox', orderable: 'false' },
               { data: 'Descricao', orderable: 'true' },
@@ -23625,14 +23725,17 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
                 const id = String(r.IdFormularioPersonalizacao || r.DT_RowId || '').trim();
                 const nome = decodificarEntidadesHtml(decodeEntities(String(r.Descricao || '').replace(/<[^>]+>/g, ''))).trim();
                 const normFlag = (v, simLabel, naoLabel) => {
-                  const s = normalizar(String(v || ''));
+                  if (v === true) return simLabel;
+                  if (v === false) return naoLabel;
+                  const semTags = String(v === null || v === undefined ? '' : v).replace(/<[^>]+>/g, ' ').trim();
+                  const s = normalizar(semTags);
                   if (!s) return '';
-                  return (s === 's' || s === 'sim' || s === '1') ? simLabel : ((s === 'n' || s === 'nao' || s === '0') ? naoLabel : String(v).trim());
+                  return (s === 's' || s === 'sim' || s === '1' || s === 'true') ? simLabel : ((s === 'n' || s === 'nao' || s === '0' || s === 'false') ? naoLabel : semTags);
                 };
-                const rawTipo = normalizar(String(r.SinPreferenciaIndividual || ''));
-                const tipoTxt = (rawTipo === 'n' || rawTipo === 'nao' || rawTipo === 'u' || rawTipo === 'unidade')
+                const rawTipo = normalizar(String(r.SinPreferenciaIndividual === null || r.SinPreferenciaIndividual === undefined ? '' : r.SinPreferenciaIndividual).replace(/<[^>]+>/g, ' '));
+                const tipoTxt = (rawTipo === 'n' || rawTipo === 'nao' || rawTipo === 'u' || rawTipo === 'unidade' || rawTipo === 'false' || rawTipo === '0')
                   ? 'Unidade'
-                  : ((rawTipo === 's' || rawTipo === 'sim' || rawTipo === 'i' || rawTipo === 'individual') ? 'Individual' : '');
+                  : ((rawTipo === 's' || rawTipo === 'sim' || rawTipo === 'i' || rawTipo === 'individual' || rawTipo === 'true' || rawTipo === '1') ? 'Individual' : '');
                 registrarItemTabela({
                   id,
                   nome,
@@ -23640,6 +23743,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
                   painelInicial: normFlag(r.SinPainelInicial, 'Sim', 'Não'),
                   tipo: tipoTxt,
                   grupo: decodificarEntidadesHtml(decodeEntities(r.DescricaoGrupoFormularioPersonalizacaoGrupo || '')).trim(),
+                  rawObj: r,
                   urlEditar: ''
                 });
                 diag.dtRows++;
@@ -23724,15 +23828,16 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     }
     diag.qtdXml = mapaXml.size;
 
-    const itensMemoria = (window.objAjaxAutoCompPreferencia && Array.isArray(window.objAjaxAutoCompPreferencia.arrItens))
+    const mesmoDoc = !ctx || !ctx.docBase || (typeof document !== 'undefined' && ctx.docBase === document);
+    const itensMemoria = (mesmoDoc && window.objAjaxAutoCompPreferencia && Array.isArray(window.objAjaxAutoCompPreferencia.arrItens))
       ? window.objAjaxAutoCompPreferencia.arrItens
       : [];
     diag.qtdMemoria = itensMemoria.length;
 
     let resultadoFinal = mesclarListaPreferenciasMinutas(itensTabela, mapaXml, itensMemoria);
 
-    // 3. Fallback adicional usando obterTodasPreferenciasUnidade() do próprio script se ainda vier vazio
-    if (resultadoFinal.length === 0 && typeof obterTodasPreferenciasUnidade === 'function' && (!ctx || ctx.docBase === document)) {
+    // 3. Fallback adicional usando obterTodasPreferenciasUnidade() do próprio script se ainda vier vazio (somente Minutas)
+    if (resultadoFinal.length === 0 && nomeAcaoPadrao === 'minuta_cadastrar' && typeof obterTodasPreferenciasUnidade === 'function' && mesmoDoc) {
       try {
         const legadas = await obterTodasPreferenciasUnidade();
         if (Array.isArray(legadas) && legadas.length > 0) {
@@ -23752,7 +23857,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
 
     if (ctx) ctx._diagLista = diag;
     if (resultadoFinal.length === 0) {
-      console.warn('[Visualizador Minutas] Nenhuma preferência retornada. Diagnóstico:', diag);
+      console.warn(`[Visualizador ${nomeAcaoPadrao}] Nenhuma preferência retornada. Diagnóstico:`, diag);
     }
     return resultadoFinal;
   }
@@ -23766,10 +23871,27 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         eventosEncadeadosPorTipo: new Map(),
         dadosCompCatalogo: null,
         localizadoresExtra: null,
+        localizadoresRelatorio: null,
         subframeDadosComp: new Map()
       };
     }
     return window._eprocCacheCatalogosMinutaViewer;
+  }
+
+  function obterCacheDetalhesModuloViewer(modulo = 'minutas', limpar = false) {
+    if (modulo === 'minutas') {
+      if (limpar || !window._eprocCacheDetalhesPrefsMinutas) {
+        window._eprocCacheDetalhesPrefsMinutas = new Map();
+      }
+      return window._eprocCacheDetalhesPrefsMinutas;
+    }
+    if (!window._eprocCacheDetalhesPrefsPorModulo) {
+      window._eprocCacheDetalhesPrefsPorModulo = {};
+    }
+    if (limpar || !window._eprocCacheDetalhesPrefsPorModulo[modulo]) {
+      window._eprocCacheDetalhesPrefsPorModulo[modulo] = new Map();
+    }
+    return window._eprocCacheDetalhesPrefsPorModulo[modulo];
   }
 
   async function obterCatalogoEncadeadoViewer(tipo /* 'T' | 'R' */, ctx) {
@@ -24329,6 +24451,1419 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     return detalhado;
   }
 
+  function dividirIdsDelimViewer(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map(v => String(v || '').trim()).filter(v => v && v !== 'null');
+    return String(raw).split(/[,;#|]+/).map(s => s.trim()).filter(s => s && s !== 'null');
+  }
+
+  function obterCamposPersonalizadosMesclados(html) {
+    const o1 = extrairObjetoJsJson(html, 'camposPersonalizados');
+    const o2 = extrairObjetoJsJson(html, 'camposPersonalizadosOrdem');
+    const camposP = {
+      ...(o1 && !Array.isArray(o1) ? o1 : {}),
+      ...(o2 && !Array.isArray(o2) ? o2 : {})
+    };
+    const rawAg = camposP.Agendamento
+      ? decodificarComponenteQuerySeguro(camposP.Agendamento)
+      : (camposP.frmDadosMinutaParaATP ? decodificarBase64QuerySeguro(camposP.frmDadosMinutaParaATP) : '');
+    return {
+      camposP,
+      agQuery: parseQueryStringSegura(rawAg)
+    };
+  }
+
+  function construirMapaComportamentosPadrao(mapaInicial) {
+    const mapa = new Map(mapaInicial || []);
+    if (!mapa.has('0')) mapa.set('0', 'Remover o processo do(s) localizador(es) informado(s)');
+    if (!mapa.has('1')) mapa.set('1', 'Remover o processo de TODOS localizadores');
+    if (!mapa.has('2')) mapa.set('2', 'Remover o processo de TODOS localizadores, EXCETO os de sistema');
+    if (!mapa.has('3')) mapa.set('3', 'NÃO remover o processo de localizador algum (apenas acrescentar o indicado)');
+    if (!mapa.has('5')) mapa.set('5', 'Apenas substituir o localizador PRINCIPAL pelo indicado');
+    return mapa;
+  }
+
+  function extrairIdsNumLocalizadorDesativar(camposP) {
+    if (!camposP || typeof camposP !== 'object') return [];
+    const chaves = Object.keys(camposP)
+      .filter(k => /^NumIdLocalizadorDesativar\d*$/i.test(k))
+      .sort((a, b) => {
+        const na = parseInt(a.replace(/\D/g, '') || '0', 10);
+        const nb = parseInt(b.replace(/\D/g, '') || '0', 10);
+        return na - nb;
+      });
+    const out = [];
+    chaves.forEach(k => {
+      dividirIdsDelimViewer(camposP[k]).forEach(id => {
+        if (!out.includes(id)) out.push(id);
+      });
+    });
+    return out;
+  }
+
+  function obterSelecaoMultiplaEprocDom(docResp, html, selectId, camposP = null) {
+    const out = [];
+    const add = (v) => {
+      const s = String(v || '').trim();
+      if (s && s !== 'null' && !out.includes(s)) out.push(s);
+    };
+    obterValoresSelecionadosSelect(docResp, selectId).forEach(add);
+    if (docResp) {
+      docResp.querySelectorAll(`li.selected input[name="selectItem${selectId}[]"], input[name="selectItem${selectId}[]"]:checked, input[name="selectItem${selectId}[]"][checked]`).forEach(inp => {
+        add(inp.value || inp.getAttribute('value'));
+      });
+    }
+    if (camposP && camposP[selectId] !== undefined && camposP[selectId] !== null) {
+      dividirIdsDelimViewer(camposP[selectId]).forEach(add);
+    }
+    if (html) {
+      const reMs = new RegExp(`#${selectId}['"]?\\s*\\)\\s*\\.(?:multipleSelect\\(\\s*['"]setSelects['"]\\s*,|val\\()\\s*(\\[[^\\]]*\\])`, 'gi');
+      let m;
+      while ((m = reMs.exec(html)) !== null) {
+        try {
+          const arr = JSON.parse(m[1].replace(/'/g, '"'));
+          if (Array.isArray(arr)) arr.forEach(add);
+        } catch (e) {}
+      }
+    }
+    return out;
+  }
+
+  function extrairMetadadosBasicosPrefViewer(docResp, prefItem, agQuery, camposP, mapaGrupos) {
+    const radioTipoChecked = docResp
+      ? docResp.querySelector('input[name="rdPrefTipo"][checked], input[name="rdPrefTipo"]:checked')
+      : null;
+    const rawTipo = (agQuery && agQuery.get('rdPrefTipo'))
+      || (camposP && (camposP.rdPrefTipo || camposP.sinTipo))
+      || (radioTipoChecked ? radioTipoChecked.value : '')
+      || (prefItem.complemento ? prefItem.complemento.split(';')[0] : '');
+    const tipo = rawTipo === 'U' ? 'Unidade' : (rawTipo === 'I' ? 'Individual' : (prefItem.tipo || ''));
+
+    const chkPad = docResp ? docResp.getElementById('chkValorPadrao') : null;
+    const flagPadrao = (camposP && camposP.chkValorPadrao)
+      || (chkPad && (chkPad.checked || chkPad.hasAttribute('checked')) ? 'S' : '')
+      || (prefItem.complemento ? prefItem.complemento.split(';')[2] : '');
+    const padrao = prefItem.padrao || (flagPadrao === 'S' ? 'Sim' : (flagPadrao === 'N' ? 'Não' : ''));
+
+    const grupoSelIds = docResp ? obterValoresSelecionadosSelect(docResp, 'selFormularioPersonalizacaoGrupo') : [];
+    const grupoId = (agQuery && agQuery.get('selFormularioPersonalizacaoGrupo'))
+      || (camposP && (camposP.selGrupo || camposP.selFormularioPersonalizacaoGrupo))
+      || grupoSelIds[0]
+      || '';
+    const grupo = (grupoId && grupoId !== 'null' ? (mapaGrupos && mapaGrupos.get(grupoId)) || '' : '') || prefItem.grupo || '';
+
+    const chkMovPref = docResp ? docResp.getElementById('chkMovPreferencial') : null;
+    const chkPainel = docResp ? docResp.getElementById('chkPainelInicial') : null;
+    const movPrefFlag = (agQuery && agQuery.get('chkMovPreferencial'))
+      || (camposP && (camposP.chkMovPreferencial || camposP.sinExibirPainel))
+      || ((chkMovPref && (chkMovPref.checked || chkMovPref.hasAttribute('checked'))) ? 'S' : '')
+      || ((chkPainel && (chkPainel.checked || chkPainel.hasAttribute('checked'))) ? 'S' : '')
+      || (prefItem.complemento ? prefItem.complemento.split(';')[4] : '');
+    const acaoPreferencial = prefItem.acaoPreferencial || prefItem.painelInicial || (movPrefFlag === 'S' ? 'Sim' : 'Não');
+
+    return { tipo, padrao, grupo, acaoPreferencial };
+  }
+
+  async function executarPostPreferenciaClassica(prefItem, ctx) {
+    const pairs = [
+      ...((ctx && ctx.formInfo && ctx.formInfo.basePairs) || []),
+      ['hdnAcaoPreferencia', ''],
+      ['hdnPreferencia', prefItem.id],
+      ['txtPreferencia', prefItem.nome],
+      ['hdnPreferenciaUsuario', prefItem.complemento || ''],
+      ['hdnNumIdValorSelecionadoCombo', prefItem.id],
+      ['hdnStrDescricaoPreferencia', prefItem.nome],
+      ['hdnStrPreferenciaUsuario', prefItem.complemento || ''],
+      ['isChangePreferencia', '1']
+    ];
+    const resp = await fetch(ctx.formInfo.actionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encodeWindows1252Body(pairs),
+      credentials: 'same-origin'
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status} ao carregar preferência "${prefItem.nome}"`);
+    }
+    return lerRespostaTexto(resp);
+  }
+
+  // -------------------- MÓDULO 3: MOVIMENTAÇÕES --------------------
+  async function obterContextoMovimentacaoVisualizador() {
+    return obterContextoTelaClassicaViewer({
+      formId: 'frmProcessoLista',
+      acaoMenu: 'processo_movimento_consultar',
+      nomeAcao: 'processo_movimento_consultar',
+      nomeTela: 'Movimentação Processual',
+      exigeProcessoNoMenu: true,
+      verificaDocNaTela: (doc) => Boolean(doc && doc.getElementById('frmProcessoLista') && (doc.getElementById('txtEvento') || doc.getElementById('hdnEvento'))),
+      selectsExtras: ['selRemeteVaraOrigem', 'selOrgao', 'selIdSigilo_Padrao'],
+      motivoIndisponivel: 'Para visualizar as preferências de Movimentação, acesse a tela Movimentação Processual de um processo no eproc 2G.'
+    });
+  }
+
+  function parseDetalhesPreferenciaMovimentacaoHtml(htmlResp, prefItem, ctxBase, catalogosExtras = {}) {
+    const html = htmlResp || '';
+    const docResp = new DOMParser().parseFromString(html, 'text/html');
+    const baseCat = (ctxBase && (ctxBase.catalogosBasicos || (ctxBase.formInfo && ctxBase.formInfo.catalogosBasicos))) || {};
+    const { camposP, agQuery } = obterCamposPersonalizadosMesclados(html);
+
+    const mapaLocs = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selNovoLocalizador'),
+      mesclarMapasStrings(
+        construirMapaSelectOptions(docResp, 'selLocalizadorSecundario'),
+        mesclarMapasStrings(
+          construirMapaSelectOptions(docResp, 'selLocalizadorDesativar'),
+          mesclarMapasStrings(catalogosExtras.localizadoresExtras, baseCat.localizadores)
+        )
+      )
+    );
+    const mapaComport = construirMapaComportamentosPadrao(
+      mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selOpcaoLocalizador'), baseCat.comportamentos)
+    );
+    const mapaGrupos = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selFormularioPersonalizacaoGrupo'), baseCat.grupos);
+    const meta = extrairMetadadosBasicosPrefViewer(docResp, prefItem, agQuery, camposP, mapaGrupos);
+
+    const radioLocChecked = docResp.querySelector('input[name="rdPrefLocalizadores"][checked], input[name="rdPrefLocalizadores"]:checked');
+    const rdLoc = agQuery.get('rdPrefLocalizadores')
+      || extrairLiteralJsString(html, 'mc_strRdPrefLocalizadores')
+      || String(camposP.sinLocalizadores || '')
+      || (radioLocChecked ? radioLocChecked.value : '');
+    const mapModoLoc = { L: 'Localizadores selecionados', M: 'Marcar todos atuais', D: 'Desmarcar todos atuais' };
+    const modoLocalizadores = mapModoLoc[rdLoc] || rdLoc || '';
+
+    const comportIds = obterValoresSelecionadosSelect(docResp, 'selOpcaoLocalizador');
+    const comportCod = agQuery.get('selOpcaoLocalizador') !== null
+      ? agQuery.get('selOpcaoLocalizador')
+      : (camposP.selOpcaoLocalizador !== undefined ? String(camposP.selOpcaoLocalizador) : (comportIds[0] || ''));
+    const comportamentoLocalizador = (comportCod !== '' && comportCod !== 'null') ? (mapaComport.get(comportCod) || `Código ${comportCod}`) : '';
+
+    const locPrincIds = obterValoresSelecionadosSelect(docResp, 'selNovoLocalizador');
+    const locPrincId = agQuery.get('selNovoLocalizador')
+      || String(camposP.IdNovoLocalizador || camposP.selNovoLocalizador || '')
+      || locPrincIds[0]
+      || '';
+    const localizadorPrincipal = (locPrincId && locPrincId !== 'null') ? (mapaLocs.get(locPrincId) || `ID: ${locPrincId}`) : '';
+
+    const locSecIds = [
+      ...obterValoresSelecionadosSelect(docResp, 'selLocalizadorSecundario'),
+      ...agQuery.getAll('selLocalizadorSecundario[]'),
+      ...dividirIdsDelimViewer(camposP.selLocalizadorSecundario)
+    ];
+    const localizadoresSecundarios = resolverIdsParaTextos(locSecIds, mapaLocs);
+
+    const mcLocDesRaw = extrairLiteralJsString(html, 'mc_selLocalizadorDesativar');
+    const locDesIds = [
+      ...dividirIdsDelimViewer(mcLocDesRaw),
+      ...obterValoresSelecionadosSelect(docResp, 'selLocalizadorDesativar'),
+      ...agQuery.getAll('selLocalizadorDesativar[]'),
+      ...extrairIdsNumLocalizadorDesativar(camposP)
+    ];
+    const localizadoresRemover = resolverIdsParaTextos(locDesIds, mapaLocs);
+
+    const inpTxtEv = docResp.getElementById('txtEvento');
+    const inpHdnEv = docResp.getElementById('hdnEvento');
+    const eventoNome = extrairLiteralJsString(html, 'mc_txtEvento')
+      || agQuery.get('txtEvento')
+      || String(camposP.txtEvento || '')
+      || (inpTxtEv ? (inpTxtEv.value || inpTxtEv.getAttribute('value') || '') : '');
+    const eventoCod = extrairLiteralJsString(html, 'mc_hdnEvento')
+      || agQuery.get('hdnEvento')
+      || String(camposP.hdnEvento || '')
+      || (inpHdnEv ? (inpHdnEv.value || inpHdnEv.getAttribute('value') || '') : '');
+
+    const mcEvCompRaw = extrairLiteralJsString(html, 'mc_hdnEventosComplementares');
+    const evCompIds = [
+      ...dividirIdsDelimViewer(mcEvCompRaw),
+      ...agQuery.getAll('selEventoComplementar[]'),
+      ...obterValoresSelecionadosSelect(docResp, 'selEventoComplementar'),
+      ...dividirIdsDelimViewer(camposP.selEventoComplementar)
+    ];
+    const mapaEvComp = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selEventoComplementar'), catalogosExtras.eventosComp);
+    const eventosComplementares = resolverIdsParaTextos(evCompIds, mapaEvComp);
+
+    const mcDadosComp = extrairLiteralJsString(html, 'mc_strDadosComplementares');
+    const hdnDadosCompEl = docResp.getElementById('hdnDadosComplementares');
+    const docHdnDadosComp = hdnDadosCompEl ? (hdnDadosCompEl.value || hdnDadosCompEl.getAttribute('value') || '').trim() : '';
+    const rawDadosComp = mcDadosComp || agQuery.get('hdnDadosComplementares') || String(camposP.hdnDadosComplementares || '') || docHdnDadosComp || '';
+    const descDadosEl = docResp.getElementById('descDadosComplementares');
+    const descDadosDom = descDadosEl ? decodificarEntidadesHtml(decodeEntities(descDadosEl.textContent || '')).replace(/\s+/g, ' ').trim() : '';
+    const dadosComplementares = formatarDadosComplementaresMinuta(rawDadosComp, agQuery, {
+      descDadosDom,
+      descDadosPrepMov: catalogosExtras.prepararMov ? catalogosExtras.prepararMov.descDadosComplementares : '',
+      dadosCompSelects: catalogosExtras.prepararMov ? catalogosExtras.prepararMov.dadosCompSelects : null,
+      dadosCompCatalogo: catalogosExtras.dadosCompCatalogo || null
+    });
+
+    const phpEncadeado = parsePhpSerializedAssoc(extrairLiteralJsString(html, 'mc_arrDadosEventoEncadeado'));
+    const arrPrefIntimacao = extrairObjetoJsJson(html, 'arrPrefIntimacaoCitacao') || [];
+    const prepMov = catalogosExtras.prepararMov || {};
+    const prepMovRemessa = catalogosExtras.prepararMovRemessa || {};
+
+    const selOrgaoDom = obterValoresSelecionadosSelect(docResp, 'selOrgao');
+    const orgaoId = String(camposP.IdOrgao || '').trim()
+      || agQuery.get('selOrgao')
+      || extrairLiteralJsString(html, 'mc_selOrgao')
+      || selOrgaoDom[0]
+      || '';
+    const mapaOrgaos = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selOrgao'),
+      mesclarMapasStrings(baseCat.selOrgao, mesclarMapasStrings(prepMovRemessa.orgaos, prepMov.orgaos))
+    );
+    const orgao = (orgaoId && orgaoId !== 'null') ? (mapaOrgaos.get(orgaoId) || `ID: ${orgaoId}`) : '';
+
+    const remVaraDom = obterValoresSelecionadosSelect(docResp, 'selRemeteVaraOrigem');
+    const remVaraCod = String(camposP.selRemeteVaraOrigem || agQuery.get('selRemeteVaraOrigem') || remVaraDom[0] || '').trim().toUpperCase();
+    const remeterVaraOrigem = remVaraCod === 'S' ? 'Sim' : (remVaraCod === 'N' ? 'Não' : '');
+
+    const evIntId = agQuery.get('selEventoEncadeadoCitacaoIntimacao')
+      || agQuery.get('hdnEventoCitacaoIntimacao')
+      || phpEncadeado.IdEventoCitacaoIntimacao
+      || (camposP.selEventoEncadeadoCitacaoIntimacao && camposP.selEventoEncadeadoCitacaoIntimacao !== 'null' ? String(camposP.selEventoEncadeadoCitacaoIntimacao).trim() : '')
+      || (arrPrefIntimacao[0] && arrPrefIntimacao[0].evento ? String(arrPrefIntimacao[0].evento.idEvento || '') : '')
+      || '';
+    const flagInt = agQuery.get('chkEncadeamentoIntimar') || phpEncadeado.chkEncadeamentoIntimar || extrairLiteralJsString(html, 'mc_chkEncadeamentoIntimar') || String(camposP.chkEncadeamentoIntimar || camposP.chkIntimarAutomatico || '');
+    const deveIntimar = flagInt === '1' || flagInt === 'S' || flagInt === 'on' || (!!evIntId && evIntId !== 'null') || arrPrefIntimacao.length > 0;
+    const mapaEvInt = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selEventoEncadeadoCitacaoIntimacao'),
+      mesclarMapasStrings(catalogosExtras.eventosEncadeadosT, prepMov.eventosIntimacao)
+    );
+    const eventoIntimacao = (deveIntimar && evIntId && evIntId !== 'null') ? (mapaEvInt.get(evIntId) || `Cód. ${evIntId}`) : '';
+    const prazosIntimacao = deveIntimar ? formatarPrazosIntimacaoMinuta(agQuery, arrPrefIntimacao, camposP) : '';
+
+    const evRemId = agQuery.get('selEventoEncadeadoRemessa') || phpEncadeado.IdEventoRemessa || String(camposP.selEventoEncadeadoRemessa || '');
+    const orgRemId = phpEncadeado.IdOrgaoDestino || (!orgao ? orgaoId : '') || '';
+    const flagRem = agQuery.get('chkEncadeamentoRemessa') || phpEncadeado.chkEncadeamentoRemessa || String(camposP.chkEncadeamentoRemessa || '');
+    const deveRemeter = flagRem === '1' || flagRem === 'S' || flagRem === 'on' || (!!evRemId && evRemId !== 'null');
+    const mapaEvRem = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selEventoEncadeadoRemessa'),
+      mesclarMapasStrings(catalogosExtras.eventosEncadeadosR, prepMov.eventosRemessa)
+    );
+    const eventoRemessa = (deveRemeter && evRemId && evRemId !== 'null') ? (mapaEvRem.get(evRemId) || `ID: ${evRemId}`) : '';
+    const orgaoRemessa = (deveRemeter && orgRemId && orgRemId !== 'null') ? (mapaOrgaos.get(orgRemId) || `ID: ${orgRemId}`) : '';
+
+    const chkAnexosDom = docResp.getElementById('chkSalvarAnexos');
+    const flagAnexos = String(camposP.chkSalvarAnexos || ((chkAnexosDom && (chkAnexosDom.checked || chkAnexosDom.hasAttribute('checked'))) ? 'S' : ''));
+    const salvarAnexos = flagAnexos === 'S' ? 'Sim' : 'Não';
+
+    const extras = [];
+    const diasSusp = extrairLiteralJsString(html, 'mc_txtNumDiasSuspensao') || String(camposP.txtNumDiasSuspensao || '');
+    const dtfSusp = extrairLiteralJsString(html, 'mc_txtDtfSuspensao') || String(camposP.txtDtfSuspensao || '');
+    if (diasSusp || dtfSusp) extras.push(`Suspensão: ${[diasSusp ? `${diasSusp}d` : '', dtfSusp].filter(Boolean).join(' até ')}`);
+    const diasTD = String(camposP.txtNumDiasTramitacaoDireta || '');
+    if (diasTD) extras.push(`Tramitação direta: ${diasTD}d`);
+    const espAto = extrairLiteralJsString(html, 'mc_strAtoOrdinatorioDesignarPericiaEspecialidade') || String(camposP.strAtoOrdinatorioDesignarPericiaEspecialidade || '');
+    if (espAto && espAto !== 'null') extras.push(`Especialidade: ${espAto}`);
+    const descModelo = extrairLiteralJsString(html, 'mc_strDescricaoModeloMatriz') || extrairLiteralJsString(html, 'mc_strModeloPadrao');
+    if (descModelo) extras.push(`Modelo: ${descModelo}`);
+    if (String(camposP.chkIntimarAutomatico || '') === 'S') extras.push('Intimar automático');
+
+    return {
+      ...prefItem,
+      detalhado: true,
+      erroDetalhe: '',
+      ...meta,
+      modoLocalizadores,
+      comportamentoLocalizador,
+      localizadorPrincipal,
+      localizadoresSecundarios,
+      localizadoresRemover,
+      eventoNome,
+      eventoCod,
+      eventosComplementares,
+      dadosComplementares,
+      _rawDadosComp: rawDadosComp,
+      _temDescDadosDom: Boolean(descDadosDom),
+      orgao,
+      remeterVaraOrigem,
+      intimarPartes: deveIntimar ? 'Sim' : 'Não',
+      eventoIntimacao,
+      prazosIntimacao,
+      remeterProcesso: deveRemeter ? 'Sim' : 'Não',
+      eventoRemessa,
+      orgaoRemessa,
+      salvarAnexos,
+      _orgId: orgaoId,
+      _evRemId: (evRemId && evRemId !== 'null') ? evRemId : '',
+      opcoesExtras: extras.join(' | ')
+    };
+  }
+
+  async function carregarDetalhesPreferenciaMovimentacao(prefItem, ctx, options = {}) {
+    const cacheMap = obterCacheDetalhesModuloViewer('movimentacoes');
+    if (!options.forcarRecarga && cacheMap.has(prefItem.id)) {
+      return cacheMap.get(prefItem.id);
+    }
+
+    const htmlResp = await executarPostPreferenciaClassica(prefItem, ctx);
+    const preParsed = parseDetalhesPreferenciaMovimentacaoHtml(htmlResp, prefItem, ctx, {});
+    const precisaComp = (preParsed.eventosComplementares || []).some(c => /^ID:\s*\d+$/.test(c));
+    const precisaDadosComp = Boolean(preParsed.dadosComplementares && /DadoComplementar|Dado #/i.test(preParsed.dadosComplementares))
+      || Boolean(preParsed._rawDadosComp && !preParsed._temDescDadosDom);
+    const precisaOrgao = /^ID:\s*/.test(preParsed.orgao || '');
+    const precisaEncInt = preParsed.intimarPartes === 'Sim' && (!preParsed.eventoIntimacao || /^Cód\./.test(preParsed.eventoIntimacao));
+    const precisaEncRem = preParsed.remeterProcesso === 'Sim' && Boolean(preParsed._evRemId) && (!preParsed.eventoRemessa || /^ID:/.test(preParsed.eventoRemessa));
+    const precisaOrgRem = preParsed.remeterProcesso === 'Sim' && Boolean(preParsed._evRemId) && /^ID:/.test(preParsed.orgaoRemessa || '');
+    const precisaLocExtra = [
+      preParsed.localizadorPrincipal,
+      ...(preParsed.localizadoresSecundarios || []),
+      ...(preParsed.localizadoresRemover || [])
+    ].some(v => typeof v === 'string' && /^ID:\s*/.test(v));
+    const precisaPrepMovMain = (precisaDadosComp || precisaOrgao || precisaEncInt || precisaEncRem || precisaOrgRem) && Boolean(preParsed.eventoCod);
+
+    const [
+      eventosComp,
+      prepararMov,
+      prepararMovRemessa,
+      eventosEncadeadosT,
+      eventosEncadeadosR,
+      dadosCompCatalogo,
+      localizadoresExtras
+    ] = await Promise.all([
+      (precisaComp && preParsed.eventoCod) ? obterCatalogoEventosCompViewer(preParsed.eventoCod, ctx) : Promise.resolve(null),
+      precisaPrepMovMain ? obterCatalogoPrepararMovViewer(preParsed.eventoCod, ctx, preParsed._rawDadosComp || '', { precisaDadosComp }) : Promise.resolve(null),
+      (precisaOrgRem && preParsed._evRemId && preParsed._evRemId !== preParsed.eventoCod) ? obterCatalogoPrepararMovViewer(preParsed._evRemId, ctx) : Promise.resolve(null),
+      precisaEncInt ? obterCatalogoEncadeadoViewer('T', ctx) : Promise.resolve(null),
+      precisaEncRem ? obterCatalogoEncadeadoViewer('R', ctx) : Promise.resolve(null),
+      precisaDadosComp ? obterCatalogoDadosComplementaresViewer(ctx) : Promise.resolve(null),
+      precisaLocExtra ? obterCatalogoLocalizadoresExtraViewer(ctx) : Promise.resolve(null)
+    ]);
+
+    const precisaQualquer = precisaComp || precisaDadosComp || precisaOrgao || precisaEncInt || precisaEncRem || precisaOrgRem || precisaLocExtra;
+    const detalhado = precisaQualquer
+      ? parseDetalhesPreferenciaMovimentacaoHtml(htmlResp, prefItem, ctx, {
+        eventosComp,
+        prepararMov,
+        prepararMovRemessa,
+        eventosEncadeadosT,
+        eventosEncadeadosR,
+        dadosCompCatalogo,
+        localizadoresExtras
+      })
+      : preParsed;
+
+    cacheMap.set(prefItem.id, detalhado);
+    return detalhado;
+  }
+
+  // -------------------- MÓDULO 5: INTIMAÇÕES --------------------
+  async function obterContextoIntimacaoVisualizador() {
+    return obterContextoTelaClassicaViewer({
+      formId: 'frmProcessoCitacao',
+      acaoMenu: 'processo_intimacao_bloco',
+      acaoMenuAlt: 'processo_intimacao',
+      acaoPattern: 'processo_intimacao',
+      nomeAcao: 'processo_intimacao_bloco',
+      nomeTela: 'Intimação Eletrônica',
+      exigeProcessoNoMenu: true,
+      selectsExtras: ['selEventoJudicial', 'selFiltroPartes'],
+      motivoIndisponivel: 'Para visualizar as preferências de Intimação, acesse a tela de Intimação Eletrônica de um processo (ou em bloco) no eproc 2G.'
+    });
+  }
+
+  function parseDetalhesPreferenciaIntimacaoHtml(htmlResp, prefItem, ctxBase, catalogosExtras = {}) {
+    const html = htmlResp || '';
+    const docResp = new DOMParser().parseFromString(html, 'text/html');
+    const baseCat = (ctxBase && (ctxBase.catalogosBasicos || (ctxBase.formInfo && ctxBase.formInfo.catalogosBasicos))) || {};
+    const { camposP, agQuery } = obterCamposPersonalizadosMesclados(html);
+    const arrPrefInt = extrairObjetoJsJson(html, 'arrPrefIntimacaoCitacao') || [];
+
+    const mapaLocs = mesclarMapasStrings(
+      construirMapaSelectOptions(docResp, 'selNovoLocalizador'),
+      mesclarMapasStrings(
+        construirMapaSelectOptions(docResp, 'selLocalizadorSecundario'),
+        mesclarMapasStrings(
+          construirMapaSelectOptions(docResp, 'selLocalizadorDesativar'),
+          mesclarMapasStrings(catalogosExtras.localizadoresExtras, baseCat.localizadores)
+        )
+      )
+    );
+    const mapaComport = construirMapaComportamentosPadrao(
+      mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selOpcaoLocalizador'), baseCat.comportamentos)
+    );
+    const mapaGrupos = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selFormularioPersonalizacaoGrupo'), baseCat.grupos);
+    const mapaEventos = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selEventoJudicial'), baseCat.selEventoJudicial);
+    const mapaFiltroPartes = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selFiltroPartes'), baseCat.selFiltroPartes);
+    const meta = extrairMetadadosBasicosPrefViewer(docResp, prefItem, agQuery, camposP, mapaGrupos);
+
+    const evSelDom = obterValoresSelecionadosSelect(docResp, 'selEventoJudicial');
+    const eventoCod = String(camposP.IdEventoJudicial || camposP.selEventoJudicial || agQuery.get('selEventoJudicial') || evSelDom[0] || '').trim();
+    const eventoNome = (eventoCod && eventoCod !== 'null') ? (mapaEventos.get(eventoCod) || `Evento ${eventoCod}`) : '';
+
+    const lerCampoInt = (k) => {
+      if (camposP && camposP[k] !== undefined && camposP[k] !== null) {
+        const s = String(camposP[k]).trim();
+        if (s && s !== 'null' && s !== 'N') return s;
+      }
+      if (agQuery && agQuery.get(k)) return String(agQuery.get(k)).trim();
+      const inp = docResp.getElementById(k);
+      if (inp) {
+        if (inp.type === 'checkbox' || inp.type === 'radio') {
+          return (inp.checked || inp.hasAttribute('checked')) ? 'S' : '';
+        }
+        const v = String(inp.value || inp.getAttribute('value') || '').trim();
+        if (v) return v;
+      }
+      return '';
+    };
+
+    const formPrazo = (k) => {
+      const v = lerCampoInt(k);
+      if (!v) return '';
+      return /^\d+$/.test(v) ? `${v}d` : v;
+    };
+
+    const rdOpPolo = docResp.getElementById('porPolo');
+    const rdOpTipo = docResp.getElementById('porTipoDeParte');
+    const rdOpIgual = docResp.getElementById('igual');
+    let opAv = lerCampoInt('opcoes_avancadas');
+    if (!opAv && rdOpPolo && (rdOpPolo.checked || rdOpPolo.hasAttribute('checked'))) opAv = 'porPolo';
+    if (!opAv && rdOpTipo && (rdOpTipo.checked || rdOpTipo.hasAttribute('checked'))) opAv = 'porTipoDeParte';
+    if (!opAv && rdOpIgual && (rdOpIgual.checked || rdOpIgual.hasAttribute('checked'))) opAv = 'igual';
+    const mapModos = {
+      porPolo: 'Por polo',
+      porTipoDeParte: 'Por tipo de parte',
+      porTipoParte: 'Por tipo de parte',
+      igual: 'Mesmo prazo',
+      porEntidade: 'Por entidade'
+    };
+    const modoPrazos = opAv ? (mapModos[opAv] || opAv) : '';
+
+    const prazoEspEnt = formPrazo('txtPrazoEntPrazoEspecial');
+    const prazoSimpEnt = formPrazo('txtPrazoEntPrazoSimples');
+    const prazoSimpDemais = formPrazo('txtPrazoNaoEntPrazoSimples');
+    const prazoDPU = formPrazo('txtPrazoDPU');
+    const prazoAutores = formPrazo('txtPrazoAutores');
+    const prazoReus = formPrazo('txtPrazoReus');
+    const prazoInteressados = formPrazo('txtPrazoInteressados');
+    const prazoMP = formPrazo('txtPrazoMPF');
+
+    const textoPrazosCheck = formatarPrazosIntimacaoMinuta(agQuery, arrPrefInt, camposP);
+    const temUrgDom = (() => {
+      const el = docResp.getElementById('chkIntimacaoUrgente');
+      if (el && (el.checked || el.hasAttribute('checked'))) return true;
+      return Object.entries(camposP).some(([k, v]) => /Urgente/i.test(k) && ['S', '1', 'on', 'true'].includes(String(v)));
+    })();
+    const urgente = (temUrgDom || /\bUrgente\b/.test(textoPrazosCheck)) ? 'Sim' : 'Não';
+
+    const flagEnc = lerCampoInt('chkEncadeamentoIntimar');
+    const evEncId = lerCampoInt('selEventoEncadeadoCitacaoIntimacao');
+    const encadeamentoIntimacao = (flagEnc === 'S' || flagEnc === '1' || flagEnc === 'on' || (!!evEncId && evEncId !== 'null')) ? 'Sim' : 'Não';
+    const mapaEvInt = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selEventoEncadeadoCitacaoIntimacao'), catalogosExtras.eventosEncadeadosT);
+    const eventoEncadeadoIntimacao = (encadeamentoIntimacao === 'Sim' && evEncId && evEncId !== 'null')
+      ? (mapaEvInt.get(evEncId) || `Cód. ${evEncId}`)
+      : '';
+
+    const radioLocChecked = docResp.querySelector('input[name="rdPrefLocalizadores"][checked], input[name="rdPrefLocalizadores"]:checked');
+    const rdLoc = lerCampoInt('sinLocalizadores')
+      || agQuery.get('rdPrefLocalizadores')
+      || extrairLiteralJsString(html, 'mc_strRdPrefLocalizadores')
+      || (radioLocChecked ? radioLocChecked.value : '');
+    const mapModoLoc = { L: 'Localizadores selecionados', M: 'Marcar todos atuais', D: 'Desmarcar todos atuais' };
+    const modoLocalizadores = mapModoLoc[rdLoc] || rdLoc || '';
+
+    const comportIds = obterValoresSelecionadosSelect(docResp, 'selOpcaoLocalizador');
+    const comportCod = lerCampoInt('selOpcaoLocalizador') || (comportIds[0] || '');
+    const comportamentoLocalizador = (comportCod !== '' && comportCod !== 'null') ? (mapaComport.get(comportCod) || `Código ${comportCod}`) : '';
+
+    const locPrincDom = obterValoresSelecionadosSelect(docResp, 'selNovoLocalizador');
+    const locPrincId = lerCampoInt('IdNovoLocalizador') || lerCampoInt('selNovoLocalizador') || locPrincDom[0] || '';
+    const localizadorPrincipal = (locPrincId && locPrincId !== 'null') ? (mapaLocs.get(locPrincId) || `ID: ${locPrincId}`) : '';
+
+    const locSecIds = [
+      ...obterValoresSelecionadosSelect(docResp, 'selLocalizadorSecundario'),
+      ...dividirIdsDelimViewer(camposP.selLocalizadorSecundario)
+    ];
+    const localizadoresSecundarios = resolverIdsParaTextos(locSecIds, mapaLocs);
+
+    const locDesIds = [
+      ...dividirIdsDelimViewer(extrairLiteralJsString(html, 'mc_selLocalizadorDesativar')),
+      ...obterValoresSelecionadosSelect(docResp, 'selLocalizadorDesativar'),
+      ...extrairIdsNumLocalizadorDesativar(camposP)
+    ];
+    const localizadoresRemover = resolverIdsParaTextos(locDesIds, mapaLocs);
+
+    const fpDom = obterValoresSelecionadosSelect(docResp, 'selFiltroPartes');
+    const fpId = lerCampoInt('IdFiltroPartes') || fpDom[0] || '';
+    const filtroPartes = (fpId && fpId !== 'null') ? (mapaFiltroPartes.get(fpId) || `Cód. ${fpId}`) : '';
+
+    const extras = [];
+    const pzIgual = formPrazo('txtPrazoIgual');
+    if (pzIgual) extras.push(`Prazo igual: ${pzIgual}`);
+    const dtIgual = lerCampoInt('txtDataIgual');
+    if (dtIgual) extras.push(`Data igual: ${dtIgual}`);
+    if (lerCampoInt('chkEncadeamentoMarcarIntimacao') === 'S') extras.push('Marcar intimação automático');
+    if (lerCampoInt('chkSelEventoDocumentoIntimacao') === 'S') extras.push('Gerar documento intimação');
+
+    return {
+      ...prefItem,
+      detalhado: true,
+      erroDetalhe: '',
+      ...meta,
+      eventoNome,
+      eventoCod: (eventoCod && eventoCod !== 'null') ? eventoCod : '',
+      modoPrazos,
+      prazoEspEnt,
+      prazoSimpEnt,
+      prazoSimpDemais,
+      prazoDPU,
+      prazoAutores,
+      prazoReus,
+      prazoInteressados,
+      prazoMP,
+      urgente,
+      encadeamentoIntimacao,
+      eventoEncadeadoIntimacao,
+      modoLocalizadores,
+      comportamentoLocalizador,
+      localizadorPrincipal,
+      localizadoresSecundarios,
+      localizadoresRemover,
+      filtroPartes,
+      opcoesExtras: extras.join(' | ')
+    };
+  }
+
+  async function carregarDetalhesPreferenciaIntimacao(prefItem, ctx, options = {}) {
+    const cacheMap = obterCacheDetalhesModuloViewer('intimacoes');
+    if (!options.forcarRecarga && cacheMap.has(prefItem.id)) {
+      return cacheMap.get(prefItem.id);
+    }
+
+    const htmlResp = await executarPostPreferenciaClassica(prefItem, ctx);
+    const preParsed = parseDetalhesPreferenciaIntimacaoHtml(htmlResp, prefItem, ctx, {});
+    const precisaLocExtra = [
+      preParsed.localizadorPrincipal,
+      ...(preParsed.localizadoresSecundarios || []),
+      ...(preParsed.localizadoresRemover || [])
+    ].some(v => typeof v === 'string' && /^ID:\s*/.test(v));
+    const precisaEncT = preParsed.encadeamentoIntimacao === 'Sim' && /^Cód\./.test(preParsed.eventoEncadeadoIntimacao || '');
+
+    const [localizadoresExtras, eventosEncadeadosT] = await Promise.all([
+      precisaLocExtra ? obterCatalogoLocalizadoresExtraViewer(ctx) : Promise.resolve(null),
+      precisaEncT ? obterCatalogoEncadeadoViewer('T', ctx) : Promise.resolve(null)
+    ]);
+
+    const detalhado = (precisaLocExtra || precisaEncT)
+      ? parseDetalhesPreferenciaIntimacaoHtml(htmlResp, prefItem, ctx, { localizadoresExtras, eventosEncadeadosT })
+      : preParsed;
+
+    cacheMap.set(prefItem.id, detalhado);
+    return detalhado;
+  }
+
+  // -------------------- MÓDULO 4: ÁREA DE MINUTAS (DOCUMENTOS) --------------------
+  async function obterContextoAreaMinutasVisualizador() {
+    return obterContextoTelaClassicaViewer({
+      formId: 'frmMinutaLista',
+      acaoMenu: 'minuta_area_trabalho',
+      nomeAcao: 'minuta_area_trabalho',
+      nomeTela: 'Área de Trabalho de Minutas',
+      exigeProcessoNoMenu: false,
+      selectsExtras: [
+        'selTipoDocumento', 'selStatusMinuta', 'selLocalizador', 'selUsuarioCriador',
+        'selClasseJudicial', 'selCompetencia', 'selJuizo', 'selStatusProcesso',
+        'selDadoComplementar', 'selSigiloMinuta', 'selSigiloProcesso',
+        'selTipoPaginacao', 'selRecursoHistoricoMinuta'
+      ],
+      motivoIndisponivel: 'Para visualizar as preferências de Documentos, abra a tela Área de Trabalho de Minutas (ou garanta o link no menu) no eproc 2G.'
+    });
+  }
+
+  function parseDetalhesPreferenciaAreaMinutasHtml(htmlResp, prefItem, ctxBase, catalogosExtras = {}) {
+    const html = htmlResp || '';
+    const docResp = new DOMParser().parseFromString(html, 'text/html');
+    const baseCat = (ctxBase && (ctxBase.catalogosBasicos || (ctxBase.formInfo && ctxBase.formInfo.catalogosBasicos))) || {};
+    const { camposP, agQuery } = obterCamposPersonalizadosMesclados(html);
+
+    const mapaGrupos = mesclarMapasStrings(construirMapaSelectOptions(docResp, 'selFormularioPersonalizacaoGrupo'), baseCat.grupos);
+    const meta = extrairMetadadosBasicosPrefViewer(docResp, prefItem, agQuery, camposP, mapaGrupos);
+
+    const mapFrom = (sid) => mesclarMapasStrings(construirMapaSelectOptions(docResp, sid), baseCat[sid]);
+    const mapaTipos = mapFrom('selTipoDocumento');
+    const mapaStatus = mapFrom('selStatusMinuta');
+    const mapaLocs = mesclarMapasStrings(mapFrom('selLocalizador'), mesclarMapasStrings(catalogosExtras.localizadoresExtras, baseCat.localizadores));
+    const mapaClasses = mapFrom('selClasseJudicial');
+    const mapaComp = mapFrom('selCompetencia');
+    const mapaJuizo = mapFrom('selJuizo');
+    const mapaSitProc = mapFrom('selStatusProcesso');
+    const mapaDadoComp = mapFrom('selDadoComplementar');
+    const mapaSigMin = mapFrom('selSigiloMinuta');
+    const mapaSigProc = mapFrom('selSigiloProcesso');
+
+    const tiposDocumento = resolverIdsParaTextos(obterSelecaoMultiplaEprocDom(docResp, html, 'selTipoDocumento', camposP), mapaTipos);
+    const statusMinuta = resolverIdsParaTextos(obterSelecaoMultiplaEprocDom(docResp, html, 'selStatusMinuta', camposP), mapaStatus);
+    const localizadoresFiltro = resolverIdsParaTextos(obterSelecaoMultiplaEprocDom(docResp, html, 'selLocalizador', camposP), mapaLocs);
+
+    const rdOpLoc = docResp.querySelector('input[name="localizadorOperador"][checked], input[name="localizadorOperador"]:checked');
+    const opLocCod = String(camposP.localizadorOperador || (rdOpLoc ? rdOpLoc.value : '') || '').trim().toUpperCase();
+    const operadorLocalizador = localizadoresFiltro.length > 0 ? (opLocCod === 'OU' ? 'OU' : (opLocCod === 'E' ? 'E' : opLocCod)) : '';
+
+    const lerInputTexto = (id) => {
+      if (camposP[id] !== undefined && camposP[id] !== null) return String(camposP[id]).trim();
+      const el = docResp.getElementById(id);
+      return el ? decodificarEntidadesHtml(decodeEntities(el.value || el.getAttribute('value') || '')).trim() : '';
+    };
+
+    const usuariosCriadores = [];
+    docResp.querySelectorAll('#selUsuarioCriador option').forEach(opt => {
+      const t = decodificarEntidadesHtml(decodeEntities(opt.textContent || '')).trim();
+      if (t && opt.value !== 'null') usuariosCriadores.push(t);
+    });
+    const txtUser = lerInputTexto('txtUsuarioCriador');
+    if (txtUser && !normalizar(txtUser).includes('matricula') && !usuariosCriadores.includes(txtUser)) {
+      usuariosCriadores.push(txtUser);
+    }
+
+    const orgaoProprietario = lerInputTexto('texOrgaoProprietario');
+    const termoPesquisa = lerInputTexto('txtTermoPesquisa');
+    const descricaoMinuta = lerInputTexto('txtDescricaoMinuta');
+    const assinanteIndicado = lerInputTexto('txtAssinanteIndicado');
+    const assinante = lerInputTexto('txtAssinante');
+    const lembrete = lerInputTexto('txtLembreteMinuta');
+
+    const resolveSingle = (sid, mapa) => {
+      const vals = obterValoresSelecionadosSelect(docResp, sid);
+      const v = (camposP[sid] !== undefined ? String(camposP[sid]).trim() : '') || (vals[0] || '');
+      if (!v || v === 'null') return '';
+      return mapa.get(v) || v;
+    };
+
+    const sigiloMinuta = resolveSingle('selSigiloMinuta', mapaSigMin);
+    const sigiloProcesso = resolveSingle('selSigiloProcesso', mapaSigProc);
+    const juizo = resolveSingle('selJuizo', mapaJuizo);
+    const statusProcesso = resolveSingle('selStatusProcesso', mapaSitProc);
+    const dadoComplementar = resolveSingle('selDadoComplementar', mapaDadoComp);
+
+    const classesJudiciais = resolverIdsParaTextos(obterSelecaoMultiplaEprocDom(docResp, html, 'selClasseJudicial', camposP), mapaClasses);
+    const competencias = resolverIdsParaTextos(obterSelecaoMultiplaEprocDom(docResp, html, 'selCompetencia', camposP), mapaComp);
+
+    const classifOut = [];
+    const inpClf = docResp.getElementById('selClassificacaoConteudo');
+    const rawClf = inpClf ? (inpClf.value || inpClf.getAttribute('value') || '') : '';
+    if (rawClf) {
+      const mapaClf = new Map(catalogosExtras.classificacoes || []);
+      const idsClf = extrairItensSelect2OuIds(rawClf, mapaClf);
+      resolverIdsParaTextos(idsClf, mapaClf).forEach(t => { if (!classifOut.includes(t)) classifOut.push(t); });
+    }
+    docResp.querySelectorAll('#s2id_selClassificacaoConteudo .select2-search-choice div').forEach(el => {
+      const t = decodificarEntidadesHtml(decodeEntities(el.textContent || '')).trim();
+      if (t && !classifOut.includes(t)) classifOut.push(t);
+    });
+
+    const extras = [];
+    const chkPrec = docResp.getElementById('chkSinPrecedenteRelevante');
+    if ((chkPrec && (chkPrec.checked || chkPrec.hasAttribute('checked'))) || camposP.chkSinPrecedenteRelevante === 'S') {
+      extras.push('Precedente relevante');
+    }
+    const rdBloq = docResp.querySelector('input[name="rdoMinutaBloqueio"][checked], input[name="rdoMinutaBloqueio"]:checked');
+    if (rdBloq && rdBloq.value && rdBloq.value !== 'nao_listar_minutas_bloqueadas') {
+      extras.push(rdBloq.value === 'listar_somente_minutas_bloqueadas' ? 'Somente bloqueadas' : 'Incluir bloqueadas');
+    }
+    const dtIni = lerInputTexto('txtDataInicial');
+    const dtFim = lerInputTexto('txtDataFinal');
+    if (dtIni || dtFim) extras.push(`Período: ${dtIni || '...'} a ${dtFim || '...'}`);
+    const codDoc = lerInputTexto('txtCodigoDocumento');
+    if (codDoc) extras.push(`Cód. Doc: ${codDoc}`);
+    const loteMin = lerInputTexto('txtLoteMinuta');
+    if (loteMin) extras.push(`Lote: ${loteMin}`);
+
+    return {
+      ...prefItem,
+      detalhado: true,
+      erroDetalhe: '',
+      ...meta,
+      tiposDocumento,
+      statusMinuta,
+      localizadoresFiltro,
+      operadorLocalizador,
+      usuariosCriadores,
+      orgaoProprietario,
+      termoPesquisa,
+      descricaoMinuta,
+      assinanteIndicado,
+      assinante,
+      lembrete,
+      sigiloMinuta,
+      classificacao: classifOut,
+      classesJudiciais,
+      competencias,
+      juizo,
+      statusProcesso,
+      dadoComplementar,
+      sigiloProcesso,
+      opcoesExtras: extras.join(' | ')
+    };
+  }
+
+  async function carregarDetalhesPreferenciaAreaMinutas(prefItem, ctx, options = {}) {
+    const cacheMap = obterCacheDetalhesModuloViewer('area_minutas');
+    if (!options.forcarRecarga && cacheMap.has(prefItem.id)) {
+      return cacheMap.get(prefItem.id);
+    }
+
+    const htmlResp = await executarPostPreferenciaClassica(prefItem, ctx);
+    const preParsed = parseDetalhesPreferenciaAreaMinutasHtml(htmlResp, prefItem, ctx, {});
+    const precisaLocExtra = (preParsed.localizadoresFiltro || []).some(v => /^ID:\s*/.test(v));
+    const precisaClf = (preParsed.classificacao || []).some(v => /^ID:\s*/.test(v));
+
+    const [localizadoresExtras, classificacoes] = await Promise.all([
+      precisaLocExtra ? obterCatalogoLocalizadoresExtraViewer(ctx) : Promise.resolve(null),
+      precisaClf ? obterCatalogoClassificacoesViewer(ctx) : Promise.resolve(null)
+    ]);
+
+    const detalhado = (precisaLocExtra || precisaClf)
+      ? parseDetalhesPreferenciaAreaMinutasHtml(htmlResp, prefItem, ctx, { localizadoresExtras, classificacoes })
+      : preParsed;
+
+    cacheMap.set(prefItem.id, detalhado);
+    return detalhado;
+  }
+
+  // -------------------- MÓDULO 2: RELATÓRIO GERAL --------------------
+  async function obterContextoRelatorioVisualizador() {
+    let docBase = null;
+    let htmlBase = '';
+    let baseHref = window.location.href;
+
+    const naTelaRel = (d) => Boolean(d && d.getElementById('frmProcessoLista') && (d.getElementById('selPreferencia') || d.getElementById('selPreferencia-list') || d.getElementById('selLocalizadorPrincipal')));
+    if (naTelaRel(document)) {
+      docBase = document;
+      htmlBase = document.documentElement ? document.documentElement.innerHTML : '';
+    } else {
+      const urlMenu = obterUrlAcaoMenu('relatorio_geral_listar');
+      if (!urlMenu || !/[?&]hash=/i.test(urlMenu)) {
+        return {
+          disponivel: false,
+          motivo: 'Para visualizar as preferências de Relatório Geral, abra a tela Relatório Geral de Processos no eproc 2G.'
+        };
+      }
+      const resp = await fetch(urlMenu, { credentials: 'same-origin' });
+      if (!resp.ok) {
+        return {
+          disponivel: false,
+          motivo: `Não foi possível acessar o Relatório Geral em segundo plano (HTTP ${resp.status}). Abra a tela Relatório Geral e tente novamente.`
+        };
+      }
+      htmlBase = await lerRespostaTexto(resp);
+      baseHref = urlMenu;
+      docBase = new DOMParser().parseFromString(htmlBase, 'text/html');
+    }
+
+    const urls = extrairUrlsAjaxTelaEproc(htmlBase, docBase, baseHref, { nomeAcao: 'relatorio_geral_listar' });
+    const formInfo = extrairCamposBaseFormEproc(docBase, baseHref, htmlBase, {
+      formId: 'frmProcessoLista',
+      acaoPattern: 'relatorio_geral_listar',
+      selectsExtras: [
+        'selStatusProcesso', 'selCompetencia', 'selIdorgaoColegiado', 'selIdOrgaoJuizo',
+        'selRitoProcesso', 'selAnexoFisico', 'selIdSigilo', 'selPrazo', 'selDigitosProcesso',
+        'selRemessaAtivaOrgaos', 'selMinutasPendenteJuntada', 'selCodTipoDocumento',
+        'selOrgaoDestinoRemessaAtiva', 'selPartesSemProcurador', 'selLocalidadeOrigemPolo',
+        'selTipoPessoa', 'selPolo', 'selProcuracaoValidacao',
+        'compSelSigTipoClassificacaoLaudoPericial', 'selFiltroCdaGrupoStatus', 'selTributoFiscal',
+        'selTipoTemasRepetitivos', 'selSituacaoTemasRepetitivos', 'selTipoPesquisaTemasRepetitivos'
+      ]
+    }) || { actionUrl: baseHref, basePairs: [], catalogosBasicos: {} };
+
+    const inpMig = docBase ? docBase.getElementById('conf_migracao') : null;
+    const confMigracao = inpMig ? (inpMig.value || inpMig.getAttribute('value') || '') : '';
+
+    if (!urls.urlListar && !urls.urlUiPrefListar) {
+      return {
+        disponivel: false,
+        motivo: 'Controles de preferências do Relatório Geral (#selPreferencia-list / ui_preferencias) não localizados nesta página.'
+      };
+    }
+
+    return {
+      disponivel: true,
+      nomeAcao: 'relatorio_geral_listar',
+      docBase,
+      htmlBase,
+      baseHref,
+      formInfo,
+      urls,
+      confMigracao
+    };
+  }
+
+  async function obterListaCompletaPreferenciasRelatorios(ctx) {
+    const mapaPorId = new Map();
+    const normFlag = (v) => {
+      if (v === true) return 'Sim';
+      if (v === false) return 'Não';
+      const semTags = String(v === null || v === undefined ? '' : v).replace(/<[^>]+>/g, ' ').trim();
+      const s = normalizar(semTags);
+      if (!s) return '';
+      return (s === 's' || s === 'sim' || s === '1' || s === 'true') ? 'Sim' : ((s === 'n' || s === 'nao' || s === '0' || s === 'false') ? 'Não' : semTags);
+    };
+    const registrar = (it) => {
+      if (!it || !it.id || !it.nome) return;
+      const prev = mapaPorId.get(it.id) || {};
+      mapaPorId.set(it.id, {
+        id: it.id,
+        nome: it.nome || prev.nome || '',
+        padrao: it.padrao || prev.padrao || '',
+        painelInicial: it.painelInicial || prev.painelInicial || '',
+        acaoPreferencial: it.acaoPreferencial || it.painelInicial || prev.acaoPreferencial || prev.painelInicial || '',
+        tipo: it.tipo || prev.tipo || '',
+        grupo: it.grupo || prev.grupo || '',
+        rawObj: it.rawObj || prev.rawObj || null,
+        urlEditar: it.urlEditar || prev.urlEditar || ''
+      });
+    };
+
+    // 1. Tenta listagem oficial via modal_lista_preferencias + DataTables JSON
+    const listaModal = await obterListaCompletaPreferenciasMinutas(ctx);
+    (listaModal || []).forEach(it => registrar({
+      ...it,
+      acaoPreferencial: it.acaoPreferencial || it.painelInicial || ''
+    }));
+
+    // 2. Complementa com ui_preferencias/listar JSON (caso haja itens fora da primeira fonte)
+    const urlUiList = (ctx && ctx.urls && ctx.urls.urlUiPrefListar) || '';
+    if (urlUiList) {
+      for (const qBody of ['q=', 'value=', 'q=%', 'term=']) {
+        try {
+          const resp = await fetch(urlUiList, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: qBody
+          });
+          if (!resp.ok) continue;
+          const txt = await lerRespostaTexto(resp);
+          const json = JSON.parse(txt);
+          const arr = Array.isArray(json) ? json : (json.data || json.itens || json.items || []);
+          if (Array.isArray(arr) && arr.length > 0) {
+            arr.forEach(p => {
+              const id = String(p.IdFormularioPersonalizacao || p.IdPreferencia || p.id || p.value || '').trim();
+              const nome = decodificarEntidadesHtml(decodeEntities(String(p.Descricao || p.nome || p.label || '').replace(/<[^>]+>/g, ''))).trim();
+              const rawInd = normalizar(String(p.SinPreferenciaIndividual === null || p.SinPreferenciaIndividual === undefined ? '' : p.SinPreferenciaIndividual));
+              const tipo = (rawInd === 's' || rawInd === 'sim' || rawInd === 'i' || rawInd === '1' || rawInd === 'true') ? 'Individual' : ((rawInd === 'n' || rawInd === 'nao' || rawInd === 'u' || rawInd === '0' || rawInd === 'false') ? 'Unidade' : '');
+              const pain = normFlag(p.SinPainelInicial);
+              registrar({
+                id,
+                nome,
+                padrao: normFlag(p.SinValorPadrao),
+                painelInicial: pain,
+                acaoPreferencial: pain,
+                tipo,
+                grupo: decodificarEntidadesHtml(decodeEntities(p.DescricaoGrupoFormularioPersonalizacaoGrupo || '')).trim(),
+                rawObj: p
+              });
+            });
+            break;
+          }
+        } catch (eU) {}
+      }
+    }
+
+    return Array.from(mapaPorId.values());
+  }
+
+  async function obterCatalogoLocalizadoresRelatorioViewer(ctx, opcoes = {}) {
+    const cache = obterCacheCatalogosMinutaViewer();
+    const precisaHtml = Boolean(opcoes.forcarHtmlOrgao);
+    if (cache.localizadoresRelatorio && (!precisaHtml || cache.localizadoresRelatorioComHtml)) {
+      return cache.localizadoresRelatorio;
+    }
+
+    if (cache._promLocalizadoresRelatorio) {
+      await cache._promLocalizadoresRelatorio;
+      if (cache.localizadoresRelatorio && (!precisaHtml || cache.localizadoresRelatorioComHtml)) {
+        return cache.localizadoresRelatorio;
+      }
+    }
+
+    const limparTxtLoc = (s) => decodificarEntidadesHtml(decodeEntities(String(s || ''))).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+    const mesclarRotulo = (mapa, id, rotulo) => {
+      const idStr = String(id || '').trim();
+      const rot = limparTxtLoc(rotulo);
+      if (!idStr || !rot) return;
+      const atual = mapa.get(idStr) || '';
+      const atualRuim = !atual || /[?\uFFFD]/.test(atual);
+      const novoBom = !/[?\uFFFD]/.test(rot);
+      if (!atual || (atualRuim && novoBom) || (novoBom && /[^\x00-\x7F]/.test(rot) && !/[^\x00-\x7F]/.test(atual))) {
+        mapa.set(idStr, rot);
+      }
+    };
+
+    const tarefa = (async () => {
+      const mapa = cache.localizadoresRelatorio
+        ? new Map(cache.localizadoresRelatorio)
+        : new Map(ctx && ctx.formInfo && ctx.formInfo.catalogosBasicos ? ctx.formInfo.catalogosBasicos.localizadores : []);
+
+      // 1. Consulta o endpoint JSON de localizadores do Relatório Geral (se ainda não consultado nesta sessão)
+      if (!cache._relatorioJsonLocsConsultado) {
+        cache._relatorioJsonLocsConsultado = true;
+        const urlLoc = (ctx && ctx.urls && ctx.urls.urlListarLocRelatorio) || '';
+        if (urlLoc) {
+          try {
+            const resp = await fetch(urlLoc, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+              body: 'selIdOrgaoJuizo='
+            });
+            if (resp.ok) {
+              const txt = await lerRespostaTexto(resp);
+              let json = null;
+              try { json = JSON.parse(txt); } catch (eJ) {}
+              if (Array.isArray(json)) {
+                json.forEach(c => {
+                  const id = String(c.IdLocalizadorOrgao || c.id || '').trim();
+                  const sig = limparTxtLoc(c.SigLocalizador || '');
+                  const des = limparTxtLoc(c.DesLocalizador || '');
+                  const label = (sig && des && sig !== des) ? `${sig} - ${des}` : (sig || des || limparTxtLoc(c.label || c.Descricao || c.descricao || ''));
+                  mesclarRotulo(mapa, id, label);
+                });
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // 2. Se faltam localizadores, ou houver '?' / falta de emojis (DB/JSON converte emojis em '?'), consulta localizador_orgao_listar (HTML preserva entidades &#128310;)
+      const temInterrogacaoCatalogo = Array.from(mapa.values()).some(v => /[?\uFFFD]/.test(v));
+      if (!cache.localizadoresRelatorioComHtml && (precisaHtml || mapa.size === 0 || temInterrogacaoCatalogo)) {
+        try {
+          if (typeof obterLocalizadoresOrgaoEproc === 'function') {
+            const lista = await obterLocalizadoresOrgaoEproc();
+            (lista || []).forEach(it => {
+              if (!it || !it.id) return;
+              const sig = limparTxtLoc(it.nomeCompleto || '');
+              const des = limparTxtLoc(it.nomeCurto || '');
+              const rot = (sig && des && sig !== des) ? `${sig} - ${des}` : (sig || des);
+              mesclarRotulo(mapa, it.id, rot);
+            });
+            if (lista && lista.length > 0) cache.localizadoresRelatorioComHtml = true;
+          } else if (ctx && ctx.urls && ctx.urls.urlLocalizadoresOrgao) {
+            const respHtml = await fetch(ctx.urls.urlLocalizadoresOrgao, { credentials: 'same-origin' });
+            if (respHtml.ok) {
+              const html = await lerRespostaTexto(respHtml);
+              const doc = new DOMParser().parseFromString(html, 'text/html');
+              let achouHtml = false;
+              doc.querySelectorAll('tr').forEach(tr => {
+                const mId = (tr.innerHTML || '').match(/id_localizador_orgao=(\d+)/i);
+                const tds = tr.querySelectorAll('td');
+                if (mId && tds.length >= 3) {
+                  const sig = limparTxtLoc(tds[1].textContent || '');
+                  const des = limparTxtLoc(tds[2].textContent || '');
+                  const rot = (sig && des && sig !== des) ? `${sig} - ${des}` : (sig || des);
+                  if (rot) {
+                    mesclarRotulo(mapa, mId[1], rot);
+                    achouHtml = true;
+                  }
+                }
+              });
+              if (achouHtml) cache.localizadoresRelatorioComHtml = true;
+            }
+          }
+        } catch (eHtml) {}
+      }
+
+      cache.localizadoresRelatorio = mapa;
+      return mapa;
+    })();
+
+    cache._promLocalizadoresRelatorio = tarefa;
+    try {
+      return await tarefa;
+    } finally {
+      if (cache._promLocalizadoresRelatorio === tarefa) {
+        cache._promLocalizadoresRelatorio = null;
+      }
+    }
+  }
+
+  function resolverMascaraInterrogacaoNoCatalogo(textoComInterrogacao, mapaCatalogo) {
+    if (!textoComInterrogacao || !mapaCatalogo || mapaCatalogo.size === 0) return '';
+    const limpo = String(textoComInterrogacao).trim();
+    if (!/[?\uFFFD]/.test(limpo)) return '';
+    const partes = limpo.split(/(?:\?+|\uFFFD+)/g);
+    const escRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const padrao = '^' + partes.map(escRegex).join('[\\s\\S]{1,8}?') + '$';
+    let re = null;
+    try { re = new RegExp(padrao, 'i'); } catch (e) { return ''; }
+
+    const candidatos = [];
+    const vistos = new Set();
+    for (const val of mapaCatalogo.values()) {
+      const cand = String(val || '').trim();
+      if (!cand || vistos.has(cand) || /[?\uFFFD]/.test(cand)) continue;
+      if (re.test(cand)) {
+        vistos.add(cand);
+        candidatos.push(cand);
+        if (candidatos.length > 1) break;
+      }
+    }
+    return candidatos.length === 1 ? candidatos[0] : '';
+  }
+
+  function extrairLabelsTagifyRelatorio(rawVal, mapaFallback = null) {
+    if (!rawVal) return [];
+    const limpar = (s) => decodificarEntidadesHtml(decodeEntities(String(s || '')))
+      .replace(/\\+\//g, '/')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const out = [];
+    const addLabel = (lbl) => {
+      const l = limpar(lbl);
+      if (l && !out.includes(l)) out.push(l);
+    };
+    const resolverComMapa = (idCand, textoCand) => {
+      const idStr = String(idCand || '').trim();
+      const textoLimpo = limpar(textoCand);
+      if (idStr && mapaFallback && mapaFallback.has(idStr)) {
+        const doMapa = limpar(mapaFallback.get(idStr));
+        if (doMapa && (!textoLimpo || /[?\uFFFD]/.test(textoLimpo) || !/[?\uFFFD]/.test(doMapa))) {
+          return doMapa;
+        }
+      }
+      if (textoLimpo && /[?\uFFFD]/.test(textoLimpo) && mapaFallback && mapaFallback.size > 0) {
+        const matchUnico = resolverMascaraInterrogacaoNoCatalogo(textoLimpo, mapaFallback);
+        if (matchUnico) return matchUnico;
+      }
+      return textoLimpo || (idStr ? `ID: ${idStr}` : '');
+    };
+
+    let parsed = rawVal;
+    if (typeof rawVal === 'string') {
+      const trimmed = rawVal.trim();
+      if (!trimmed || trimmed === '[]') return [];
+      const tentarParseJson = (str) => {
+        if (!str.startsWith('[') && !str.startsWith('{')) return null;
+        try { return JSON.parse(str); } catch (e1) {}
+        const semBarra = str.replace(/\\\//g, '/');
+        try { return JSON.parse(semBarra); } catch (e2) {}
+        try { return JSON.parse(semBarra.replace(/\\"/g, '"')); } catch (e3) { return null; }
+      };
+      if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        parsed = tentarParseJson(trimmed);
+      }
+      if (!parsed || typeof parsed === 'string') {
+        addLabel(resolverComMapa('', trimmed));
+        return out;
+      }
+    }
+
+    const itens = Array.isArray(parsed) ? parsed : [parsed];
+    itens.forEach(it => {
+      if (!it) return;
+      if (typeof it === 'string' || typeof it === 'number') {
+        addLabel(resolverComMapa(String(it), ''));
+        return;
+      }
+      if (typeof it === 'object') {
+        const d = it.data;
+        let idCand = '';
+        let textoDados = '';
+        if (d && typeof d === 'object') {
+          idCand = String(d.IdLocalizadorOrgao || d.id || it.key || '').trim();
+          if (d.SigLocalizador || d.DesLocalizador) {
+            textoDados = [d.SigLocalizador || '', d.DesLocalizador || ''].filter(Boolean).join(' - ');
+          } else {
+            textoDados = d.Descricao || d.nome || d.label || '';
+          }
+        } else if (d !== undefined && d !== null && String(d).trim() !== '') {
+          idCand = String(d).trim();
+        }
+        const textoPreferido = it.value || textoDados;
+        addLabel(resolverComMapa(idCand, textoPreferido));
+      }
+    });
+    return out;
+  }
+
+  function resolverSelectRelatorio(val, mapaSelect) {
+    if (val === undefined || val === null || val === '') return [];
+    const arr = Array.isArray(val) ? val : [val];
+    const out = [];
+    arr.forEach(v => {
+      const s = String(v || '').trim();
+      if (!s || s === 'null') return;
+      const lbl = (mapaSelect && mapaSelect.get(s)) || s;
+      if (!out.includes(lbl)) out.push(lbl);
+    });
+    return out;
+  }
+
+  function parseDetalhesPreferenciaRelatorioRequest(requestObj, prefItem, ctxBase, mapaLocsFallback = null) {
+    const req = (requestObj && typeof requestObj === 'object' && !Array.isArray(requestObj)) ? requestObj : {};
+    const baseCat = (ctxBase && ctxBase.formInfo && ctxBase.formInfo.catalogosBasicos) || {};
+    const mapaLocs = mesclarMapasStrings(mapaLocsFallback, baseCat.localizadores);
+
+    const localizadoresFiltro = extrairLabelsTagifyRelatorio(req.selLocalizadorPrincipal, mapaLocs);
+    if (req.selLocalizadorPrincipal_value && typeof req.selLocalizadorPrincipal_value === 'object') {
+      const precisaViaValue = localizadoresFiltro.length === 0 || localizadoresFiltro.some(l => /[?\uFFFD]/.test(l) || /^ID:\s*/.test(l));
+      if (precisaViaValue) {
+        const locsViaValue = [];
+        Object.entries(req.selLocalizadorPrincipal_value).forEach(([kId, v]) => {
+          const obj = (v && typeof v === 'object') ? v : {};
+          const id = String(obj.IdLocalizadorOrgao || obj.id || kId || '').trim();
+          const labelTxt = (obj.SigLocalizador || obj.DesLocalizador)
+            ? [obj.SigLocalizador || '', obj.DesLocalizador || ''].filter(Boolean).join(' - ').trim()
+            : '';
+          const doMapa = (id && mapaLocs.has(id)) ? mapaLocs.get(id) : '';
+          let escolhido = '';
+          if (doMapa && !/[?\uFFFD]/.test(doMapa)) escolhido = doMapa;
+          else if (labelTxt && !/[?\uFFFD]/.test(labelTxt)) escolhido = labelTxt;
+          else if (labelTxt && mapaLocs.size > 0) escolhido = resolverMascaraInterrogacaoNoCatalogo(labelTxt, mapaLocs) || doMapa || labelTxt;
+          else escolhido = doMapa || labelTxt || (id ? `ID: ${id}` : '');
+          const limpo = decodificarEntidadesHtml(decodeEntities(escolhido)).replace(/\s+/g, ' ').trim();
+          if (limpo && !locsViaValue.includes(limpo)) locsViaValue.push(limpo);
+        });
+        if (locsViaValue.length > 0 && (localizadoresFiltro.length === 0 || locsViaValue.some(l => !/[?\uFFFD]/.test(l)))) {
+          localizadoresFiltro.length = 0;
+          locsViaValue.forEach(l => localizadoresFiltro.push(l));
+        }
+      }
+    }
+
+    const opRaw = String(req.tipoOperacaoLocalizador || '').trim().toUpperCase();
+    const operacaoLocalizador = localizadoresFiltro.length > 0 ? (opRaw || 'E') : (opRaw || '');
+
+    const situacaoProcesso = resolverSelectRelatorio(req.selStatusProcesso, baseCat.selStatusProcesso);
+    const lembrete = decodificarEntidadesHtml(decodeEntities(String(req.txtLembrete || '').trim()));
+    const competencia = resolverSelectRelatorio(req.selCompetencia, baseCat.selCompetencia);
+    const orgaoColegiado = resolverSelectRelatorio(req.selIdorgaoColegiado, baseCat.selIdorgaoColegiado);
+    const juizo = resolverSelectRelatorio(req.selIdOrgaoJuizo, baseCat.selIdOrgaoJuizo).join('; ');
+    const rito = resolverSelectRelatorio(req.selRitoProcesso, baseCat.selRitoProcesso).join('; ');
+    const classesJudiciais = [
+      ...extrairLabelsTagifyRelatorio(req.selClasse),
+      ...extrairLabelsTagifyRelatorio(req.selClasseOrigem)
+    ];
+    const assuntos = extrairLabelsTagifyRelatorio(req.selAssunto);
+    const dadosComplementares = extrairLabelsTagifyRelatorio(req.selDadoComplementar);
+    const prazo = resolverSelectRelatorio(req.selPrazo, baseCat.selPrazo).join('; ');
+
+    const diasSit = req.txtDiasSituacao ? `Situação >= ${req.txtDiasSituacao}d` : '';
+    const diasSemMov = req.txtDiasSemMovimentacao ? `Sem mov. >= ${req.txtDiasSemMovimentacao}d` : '';
+    const diasSituacao = [diasSit, diasSemMov].filter(Boolean).join(' | ');
+
+    const evUlt = extrairLabelsTagifyRelatorio(req.selUltimoEvento);
+    const evCom = extrairLabelsTagifyRelatorio(req.selComEvento);
+    const evSem = extrairLabelsTagifyRelatorio(req.selSemEvento);
+    const evPartes = [
+      evUlt.length ? `Último: ${evUlt.join(', ')}` : '',
+      evCom.length ? `Com: ${evCom.join(', ')}` : '',
+      evSem.length ? `Sem: ${evSem.join(', ')}` : ''
+    ].filter(Boolean);
+    const eventosFiltro = evPartes.join(' | ');
+
+    const entidades = extrairLabelsTagifyRelatorio(req.selEntidade);
+    const sigilo = resolverSelectRelatorio(req.selIdSigilo, baseCat.selIdSigilo).join('; ');
+
+    const chavesPrincipais = new Set([
+      'selLocalizadorPrincipal', 'selLocalizadorPrincipal_value', 'tipoOperacaoLocalizador',
+      'selStatusProcesso', 'txtLembrete', 'selCompetencia', 'selIdorgaoColegiado',
+      'selIdOrgaoJuizo', 'selRitoProcesso', 'selClasse', 'selClasseOrigem', 'selAssunto',
+      'selDadoComplementar', 'selPrazo', 'txtDiasSituacao', 'txtDiasSemMovimentacao',
+      'selUltimoEvento', 'selComEvento', 'selSemEvento', 'selEntidade', 'selIdSigilo',
+      'IdPreferencia', 'conf_migracao', 'hdnInfraTipoPagina'
+    ]);
+    const extras = [];
+    if (req.txtDataAutuacaoInicio || req.txtDataAutuacaoFim) {
+      extras.push(`Autuação: ${req.txtDataAutuacaoInicio || '...'} a ${req.txtDataAutuacaoFim || '...'}`);
+    }
+    const chavesLegiveis = {
+      selAnexoFisico: 'Anexo físico',
+      selRemessaAtivaOrgaos: 'Remessa ativa',
+      selMinutasPendenteJuntada: 'Minutas pend. juntada',
+      selCodTipoDocumento: 'Tipo doc. minuta',
+      selOrgaoDestinoRemessaAtiva: 'Órgão destino remessa',
+      selPartesSemProcurador: 'Partes sem procurador',
+      selPolo: 'Polo',
+      selTipoPessoa: 'Tipo pessoa',
+      selDigitosProcesso: 'Dígitos processo',
+      txtApenso: 'Apenso'
+    };
+    Object.entries(req).forEach(([k, v]) => {
+      if (chavesPrincipais.has(k) || k === 'txtDataAutuacaoInicio' || k === 'txtDataAutuacaoFim') return;
+      if (k.endsWith('_value') || v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0)) return;
+      const nomeCampo = Object.prototype.hasOwnProperty.call(chavesLegiveis, k) ? chavesLegiveis[k] : k;
+      let valFmt = '';
+      if (Object.prototype.hasOwnProperty.call(baseCat, k) && baseCat[k]) valFmt = resolverSelectRelatorio(v, baseCat[k]).join(', ');
+      else if (typeof v === 'string' && v.trim().startsWith('[')) valFmt = extrairLabelsTagifyRelatorio(v).join(', ');
+      else if (Array.isArray(v)) valFmt = v.join(', ');
+      else valFmt = String(v).trim();
+      if (valFmt && valFmt !== '[]') extras.push(`${nomeCampo}: ${valFmt}`);
+    });
+
+    return {
+      ...prefItem,
+      detalhado: true,
+      erroDetalhe: '',
+      localizadoresFiltro,
+      operacaoLocalizador,
+      situacaoProcesso,
+      lembrete,
+      competencia,
+      orgaoColegiado,
+      juizo,
+      rito,
+      classesJudiciais,
+      assuntos,
+      dadosComplementares,
+      prazo,
+      diasSituacao,
+      eventosFiltro,
+      entidades,
+      sigilo,
+      opcoesExtras: extras.join(' | ')
+    };
+  }
+
+  async function carregarDetalhesPreferenciaRelatorio(prefItem, ctx, options = {}) {
+    const cacheMap = obterCacheDetalhesModuloViewer('relatorios');
+    if (!options.forcarRecarga && cacheMap.has(prefItem.id)) {
+      return cacheMap.get(prefItem.id);
+    }
+
+    const urlBuscar = ctx && ctx.urls && ctx.urls.urlBuscarRequest;
+    if (!urlBuscar) {
+      throw new Error('Endpoint ui_preferencias/buscar_request_por_id não localizado.');
+    }
+
+    const confMig = ctx.confMigracao
+      ? (ctx.confMigracao.includes('&quot;') ? decodeEntities(ctx.confMigracao) : ctx.confMigracao)
+      : '';
+
+    const objDataLimpo = {};
+    if (prefItem.rawObj && typeof prefItem.rawObj === 'object') {
+      Object.entries(prefItem.rawObj).forEach(([k, v]) => {
+        if (!k || k.startsWith('col_') || k.startsWith('DT_')) return;
+        if (v === null || v === undefined || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+          objDataLimpo[k] = v;
+        }
+      });
+    }
+    if (!objDataLimpo.IdFormularioPersonalizacao) objDataLimpo.IdFormularioPersonalizacao = prefItem.id;
+    if (!objDataLimpo.Descricao) objDataLimpo.Descricao = prefItem.nome;
+
+    const estrategias = [
+      () => {
+        // Formato nativo do Tagify + UI.PHPHelper.autocomplete (#frmPreferencias)
+        const sp = new URLSearchParams();
+        sp.set('selPreferencia', JSON.stringify([{
+          key: 0,
+          isObject: false,
+          value: String(objDataLimpo.Descricao || prefItem.nome),
+          data: objDataLimpo
+        }]));
+        Object.entries(objDataLimpo).forEach(([k, v]) => {
+          sp.set(`selPreferencia_value[${prefItem.id}][${k}]`, v === null || v === undefined ? '' : String(v));
+        });
+        if (confMig) sp.set('conf_migracao', confMig);
+        return sp;
+      },
+      () => {
+        // Tagify com data escalar e chave em array selPreferencia_value[id]
+        const sp = new URLSearchParams();
+        sp.set('selPreferencia', JSON.stringify([{ value: prefItem.nome, data: prefItem.id }]));
+        sp.set(`selPreferencia_value[${prefItem.id}]`, '');
+        if (confMig) sp.set('conf_migracao', confMig);
+        return sp;
+      },
+      () => {
+        // Tagify apenas (sem selPreferencia_value)
+        const sp = new URLSearchParams();
+        sp.set('selPreferencia', JSON.stringify([{ value: prefItem.nome, data: prefItem.id }]));
+        if (confMig) sp.set('conf_migracao', confMig);
+        return sp;
+      },
+      () => {
+        // Fallback escalar direto
+        const sp = new URLSearchParams();
+        sp.set('selPreferencia', prefItem.id);
+        sp.set('IdFormularioPersonalizacao', prefItem.id);
+        sp.set('IdPreferencia', prefItem.id);
+        if (confMig) sp.set('conf_migracao', confMig);
+        return sp;
+      }
+    ];
+
+    const ordemIndices = [];
+    const prefIdx = (typeof ctx._relatorioEstrategiaVencedora === 'number') ? ctx._relatorioEstrategiaVencedora : 0;
+    ordemIndices.push(prefIdx);
+    for (let i = 0; i < estrategias.length; i++) {
+      if (i !== prefIdx) ordemIndices.push(i);
+    }
+
+    let reqJson = null;
+    let teveRespostaVaziaValida = false;
+    let teveErroHttpOuFormato = false;
+    let ultimoErro = '';
+
+    for (const idxEst of ordemIndices) {
+      try {
+        const sp = estrategias[idxEst]();
+        const resp = await fetch(urlBuscar, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            Accept: 'application/json, text/javascript, */*; q=0.01'
+          },
+          body: sp.toString()
+        });
+        const txt = await lerRespostaTexto(resp);
+        if (!resp.ok) {
+          teveErroHttpOuFormato = true;
+          const trecho = String(txt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+          ultimoErro = `HTTP ${resp.status}${trecho ? `: ${trecho}` : ''}`;
+          continue;
+        }
+        let parsed = null;
+        try {
+          parsed = JSON.parse(txt);
+        } catch (eJson) {
+          teveErroHttpOuFormato = true;
+          const trecho = String(txt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+          ultimoErro = `Resposta não JSON (${eJson.message || 'parse'})${trecho ? `: ${trecho}` : ''}`;
+          continue;
+        }
+
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+          reqJson = parsed;
+          if (idxEst !== 0 && teveErroHttpOuFormato) {
+            ctx._relatorioEstrategiaVencedora = idxEst;
+          }
+          break;
+        }
+        teveRespostaVaziaValida = true;
+      } catch (eNet) {
+        teveErroHttpOuFormato = true;
+        ultimoErro = eNet.message || String(eNet);
+      }
+    }
+
+    if (!reqJson) {
+      if (teveRespostaVaziaValida) {
+        reqJson = {};
+      } else {
+        throw new Error(`${ultimoErro || 'Falha ao consultar preferência'} [endpoint: ${urlBuscar}]`);
+      }
+    }
+
+    let detalhado = parseDetalhesPreferenciaRelatorioRequest(reqJson, prefItem, ctx, null);
+    const locsIniciais = detalhado.localizadoresFiltro || [];
+    const precisaId = locsIniciais.some(v => /^ID:\s*/.test(v));
+    const precisaEmoji = locsIniciais.some(v => /[?\uFFFD]/.test(v));
+    if (precisaId || precisaEmoji) {
+      const mapaLocsRel = await obterCatalogoLocalizadoresRelatorioViewer(ctx, { forcarHtmlOrgao: precisaEmoji });
+      detalhado = parseDetalhesPreferenciaRelatorioRequest(reqJson, prefItem, ctx, mapaLocsRel);
+    }
+
+    cacheMap.set(prefItem.id, detalhado);
+    return detalhado;
+  }
+
   function resolverTextoCelulaViewer(row, col) {
     const val = row[col.key];
     if (Array.isArray(val)) return val.join('; ');
@@ -24383,22 +25918,180 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     { key: 'opcoesExtras', label: 'Opções Extras' }
   ];
 
+  const MOVIMENTACOES_VIEWER_COLUNAS = [
+    { key: '_indice', label: '#', sticky: 'num' },
+    { key: 'nome', label: 'Preferência (Descrição)', sticky: 'nome' },
+    { key: 'tipo', label: 'Tipo', pillType: 'tipo' },
+    { key: 'padrao', label: 'Padrão', pillType: 'simNao' },
+    { key: 'grupo', label: 'Grupo de Preferência', pillType: 'grupo' },
+    { key: 'acaoPreferencial', label: 'Ação Pref.', pillType: 'simNao' },
+    { key: 'modoLocalizadores', label: 'Localizadores (Modo)' },
+    { key: 'comportamentoLocalizador', label: 'Comportamento Localizador' },
+    { key: 'localizadorPrincipal', label: 'Localizador Principal', pillType: 'loc' },
+    { key: 'localizadoresSecundarios', label: 'Localizadores Secundários', pillType: 'locList' },
+    { key: 'localizadoresRemover', label: 'Remover Localizadores', pillType: 'locList' },
+    { key: 'eventoNome', label: 'Evento a Lançar' },
+    { key: 'eventoCod', label: 'Cód. Evento' },
+    { key: 'eventosComplementares', label: 'Eventos Complementares', pillType: 'locList' },
+    { key: 'dadosComplementares', label: 'Dados Complementares' },
+    { key: 'orgao', label: 'Órgão' },
+    { key: 'remeterVaraOrigem', label: 'Remeter Vara Origem', pillType: 'simNao' },
+    { key: 'intimarPartes', label: 'Intimar Partes', pillType: 'simNao' },
+    { key: 'eventoIntimacao', label: 'Evento Intimação' },
+    { key: 'prazosIntimacao', label: 'Prazos / Config. Intimação' },
+    { key: 'remeterProcesso', label: 'Remeter Processo', pillType: 'simNao' },
+    { key: 'eventoRemessa', label: 'Evento Remessa' },
+    { key: 'orgaoRemessa', label: 'Órgão Destino' },
+    { key: 'salvarAnexos', label: 'Salvar Anexos', pillType: 'simNao' },
+    { key: 'opcoesExtras', label: 'Opções Extras' }
+  ];
+
+  const INTIMACOES_VIEWER_COLUNAS = [
+    { key: '_indice', label: '#', sticky: 'num' },
+    { key: 'nome', label: 'Preferência (Descrição)', sticky: 'nome' },
+    { key: 'tipo', label: 'Tipo', pillType: 'tipo' },
+    { key: 'padrao', label: 'Padrão', pillType: 'simNao' },
+    { key: 'grupo', label: 'Grupo de Preferência', pillType: 'grupo' },
+    { key: 'acaoPreferencial', label: 'Ação Pref.', pillType: 'simNao' },
+    { key: 'eventoNome', label: 'Evento Intimação' },
+    { key: 'eventoCod', label: 'Cód. Evento' },
+    { key: 'modoPrazos', label: 'Modo de Prazos' },
+    { key: 'prazoEspEnt', label: 'Ent. Pz Especial' },
+    { key: 'prazoSimpEnt', label: 'Ent. Pz Simples' },
+    { key: 'prazoSimpDemais', label: 'Demais Pz Simples' },
+    { key: 'prazoDPU', label: 'Prazo DPU' },
+    { key: 'prazoAutores', label: 'Polo Ativo / Autores' },
+    { key: 'prazoReus', label: 'Polo Passivo / Réus' },
+    { key: 'prazoInteressados', label: 'Interessados' },
+    { key: 'prazoMP', label: 'MP Custos Iuris' },
+    { key: 'urgente', label: 'Urgente', pillType: 'simNao' },
+    { key: 'encadeamentoIntimacao', label: 'Encadeamento', pillType: 'simNao' },
+    { key: 'eventoEncadeadoIntimacao', label: 'Evento Encadeado' },
+    { key: 'modoLocalizadores', label: 'Localizadores (Modo)' },
+    { key: 'comportamentoLocalizador', label: 'Comportamento Localizador' },
+    { key: 'localizadorPrincipal', label: 'Localizador Principal', pillType: 'loc' },
+    { key: 'localizadoresSecundarios', label: 'Localizadores Secundários', pillType: 'locList' },
+    { key: 'localizadoresRemover', label: 'Remover Localizadores', pillType: 'locList' },
+    { key: 'filtroPartes', label: 'Filtro de Partes' },
+    { key: 'opcoesExtras', label: 'Opções Extras' }
+  ];
+
+  const AREA_MINUTAS_VIEWER_COLUNAS = [
+    { key: '_indice', label: '#', sticky: 'num' },
+    { key: 'nome', label: 'Preferência (Descrição)', sticky: 'nome' },
+    { key: 'tipo', label: 'Tipo', pillType: 'tipo' },
+    { key: 'padrao', label: 'Padrão', pillType: 'simNao' },
+    { key: 'grupo', label: 'Grupo de Preferência', pillType: 'grupo' },
+    { key: 'acaoPreferencial', label: 'Painel Inicial', pillType: 'simNao' },
+    { key: 'tiposDocumento', label: 'Tipo de Documento', pillType: 'locList' },
+    { key: 'statusMinuta', label: 'Status da Minuta', pillType: 'locList' },
+    { key: 'localizadoresFiltro', label: 'Localizadores Filtro', pillType: 'locList' },
+    { key: 'operadorLocalizador', label: 'Op. Localizador' },
+    { key: 'usuariosCriadores', label: 'Usuário Criador', pillType: 'locList' },
+    { key: 'orgaoProprietario', label: 'Órgão Proprietário' },
+    { key: 'termoPesquisa', label: 'Termo Pesquisa' },
+    { key: 'descricaoMinuta', label: 'Descrição da Minuta' },
+    { key: 'assinanteIndicado', label: 'Assinante Indicado' },
+    { key: 'assinante', label: 'Assinante' },
+    { key: 'lembrete', label: 'Lembrete' },
+    { key: 'sigiloMinuta', label: 'Sigilo Minuta' },
+    { key: 'classificacao', label: 'Classificação', pillType: 'locList' },
+    { key: 'classesJudiciais', label: 'Classes Judiciais', pillType: 'locList' },
+    { key: 'competencias', label: 'Competências', pillType: 'locList' },
+    { key: 'juizo', label: 'Juízo' },
+    { key: 'statusProcesso', label: 'Situação Processo' },
+    { key: 'dadoComplementar', label: 'Dado Complementar' },
+    { key: 'sigiloProcesso', label: 'Sigilo Processo' },
+    { key: 'opcoesExtras', label: 'Opções Extras' }
+  ];
+
+  const RELATORIOS_VIEWER_COLUNAS = [
+    { key: '_indice', label: '#', sticky: 'num' },
+    { key: 'nome', label: 'Preferência (Descrição)', sticky: 'nome' },
+    { key: 'tipo', label: 'Tipo', pillType: 'tipo' },
+    { key: 'padrao', label: 'Padrão', pillType: 'simNao' },
+    { key: 'acaoPreferencial', label: 'Painel Inicial', pillType: 'simNao' },
+    { key: 'grupo', label: 'Grupo de Preferência', pillType: 'grupo' },
+    { key: 'localizadoresFiltro', label: 'Localizadores Filtro', pillType: 'locList' },
+    { key: 'operacaoLocalizador', label: 'Operação Loc.' },
+    { key: 'situacaoProcesso', label: 'Situação Processual', pillType: 'locList' },
+    { key: 'lembrete', label: 'Conteúdo do Lembrete' },
+    { key: 'competencia', label: 'Competência', pillType: 'locList' },
+    { key: 'orgaoColegiado', label: 'Órgão Colegiado', pillType: 'locList' },
+    { key: 'juizo', label: 'Juízo' },
+    { key: 'rito', label: 'Rito' },
+    { key: 'classesJudiciais', label: 'Classes Processuais', pillType: 'locList' },
+    { key: 'assuntos', label: 'Assuntos', pillType: 'locList' },
+    { key: 'dadosComplementares', label: 'Dados Complementares', pillType: 'locList' },
+    { key: 'prazo', label: 'Prazo' },
+    { key: 'diasSituacao', label: 'Dias Situação / Sem Mov.' },
+    { key: 'eventosFiltro', label: 'Eventos Filtro' },
+    { key: 'entidades', label: 'Entidades', pillType: 'locList' },
+    { key: 'sigilo', label: 'Sigilo' },
+    { key: 'opcoesExtras', label: 'Outros Filtros' }
+  ];
+
   const VISUALIZADORES_MODULOS_CONFIG = {
     minutas: {
       titulo: 'Preferências Criadas — Módulo Minutas (Nova Minuta)',
       subtitulo: 'Visualização tabular completa de todos os campos gravados no eproc',
       nomeArquivoCsv: 'preferencias_minutas_2g.csv',
+      usaFiltrosLocIncluirRemover: true,
       colunas: MINUTAS_VIEWER_COLUNAS,
       obterContexto: obterContextoMinutaVisualizador,
       obterLista: obterListaCompletaPreferenciasMinutas,
       carregarDetalhe: carregarDetalhesPreferenciaMinuta
+    },
+    movimentacoes: {
+      titulo: 'Preferências Criadas — Módulo Movimentações',
+      subtitulo: 'Visualização tabular completa de preferências de Movimentação Processual',
+      nomeArquivoCsv: 'preferencias_movimentacoes_2g.csv',
+      usaFiltrosLocIncluirRemover: true,
+      colunas: MOVIMENTACOES_VIEWER_COLUNAS,
+      obterContexto: obterContextoMovimentacaoVisualizador,
+      obterLista: obterListaCompletaPreferenciasMinutas,
+      carregarDetalhe: carregarDetalhesPreferenciaMovimentacao
+    },
+    intimacoes: {
+      titulo: 'Preferências Criadas — Módulo Intimações',
+      subtitulo: 'Visualização tabular completa de preferências de Intimação Eletrônica',
+      nomeArquivoCsv: 'preferencias_intimacoes_2g.csv',
+      usaFiltrosLocIncluirRemover: true,
+      colunas: INTIMACOES_VIEWER_COLUNAS,
+      obterContexto: obterContextoIntimacaoVisualizador,
+      obterLista: obterListaCompletaPreferenciasMinutas,
+      carregarDetalhe: carregarDetalhesPreferenciaIntimacao
+    },
+    area_minutas: {
+      titulo: 'Preferências Criadas — Documentos (Área de Minutas)',
+      subtitulo: 'Visualização tabular completa de preferências de pesquisa da Área de Trabalho de Minutas',
+      nomeArquivoCsv: 'preferencias_area_minutas_2g.csv',
+      usaFiltrosLocIncluirRemover: false,
+      campoLocFiltroUnico: 'localizadoresFiltro',
+      labelLocFiltroUnico: 'Loc. filtrado: Todos',
+      colunas: AREA_MINUTAS_VIEWER_COLUNAS,
+      obterContexto: obterContextoAreaMinutasVisualizador,
+      obterLista: obterListaCompletaPreferenciasMinutas,
+      carregarDetalhe: carregarDetalhesPreferenciaAreaMinutas
+    },
+    relatorios: {
+      titulo: 'Preferências Criadas — Módulo Relatório Geral',
+      subtitulo: 'Visualização tabular completa de preferências do Relatório Geral de Processos',
+      nomeArquivoCsv: 'preferencias_relatorios_2g.csv',
+      usaFiltrosLocIncluirRemover: false,
+      campoLocFiltroUnico: 'localizadoresFiltro',
+      labelLocFiltroUnico: 'Loc. filtrado: Todos',
+      colunas: RELATORIOS_VIEWER_COLUNAS,
+      obterContexto: obterContextoRelatorioVisualizador,
+      obterLista: obterListaCompletaPreferenciasRelatorios,
+      carregarDetalhe: carregarDetalhesPreferenciaRelatorio
     }
   };
 
   function renderizarConteudoCelulaViewer(row, col) {
     if (!row.detalhado && !['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial'].includes(col.key)) {
       if (row.erroDetalhe) {
-        return col.key === 'modoLocalizadores'
+        return (col.key === 'modoLocalizadores' || col.key === 'tiposDocumento' || col.key === 'localizadoresFiltro')
           ? `<span class="eproc-v-pill eproc-v-pill-err" title="${escapeHtmlViewer(row.erroDetalhe)}">Erro ao ler</span>`
           : '<span style="color:#cbd5e1;">—</span>';
       }
@@ -24455,10 +26148,24 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     return ['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial'].includes(colKey);
   }
 
-  function coletarLocalizadoresToolbarViewer(linhas) {
+  function coletarLocalizadoresToolbarViewer(linhas, opcoes = {}) {
+    const campoUnico = String(opcoes.campoLocFiltroUnico || '').trim();
     const incluirSet = new Set();
     const removerSet = new Set();
     (linhas || []).forEach(r => {
+      if (campoUnico) {
+        const bruto = r[campoUnico];
+        if (Array.isArray(bruto)) {
+          bruto.forEach(s => {
+            const v = String(s || '').trim();
+            if (v) incluirSet.add(v);
+          });
+        } else {
+          const v = String(bruto || '').trim();
+          if (v) incluirSet.add(v);
+        }
+        return;
+      }
       const princ = String(r.localizadorPrincipal || '').trim();
       if (princ) incluirSet.add(princ);
       if (Array.isArray(r.localizadoresSecundarios)) {
@@ -24515,17 +26222,26 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
 
   function filtrarEOrdenarLinhasViewer(linhas, colunas, opcoes = {}) {
     const termoBusca = normalizar(opcoes.termoBusca || '');
+    const campoUnico = String(opcoes.campoLocFiltroUnico || '').trim();
     const locIncluir = String(opcoes.locIncluir || '').trim();
-    const locRemover = String(opcoes.locRemover || '').trim();
+    const locRemover = campoUnico ? '' : String(opcoes.locRemover || '').trim();
     const filtrosColuna = opcoes.filtrosColuna || {};
     const ordenacaoColuna = opcoes.ordenacaoColuna || {};
     const entradasCol = Object.entries(filtrosColuna).filter(([, f]) => f && (f.modo === 'vazio' || String(f.valor || '').trim() !== ''));
 
     const filtradas = (linhas || []).filter(r => {
       if (locIncluir) {
-        const batePrinc = String(r.localizadorPrincipal || '').trim() === locIncluir;
-        const bateSec = Array.isArray(r.localizadoresSecundarios) && r.localizadoresSecundarios.some(s => String(s || '').trim() === locIncluir);
-        if (!batePrinc && !bateSec) return false;
+        if (campoUnico) {
+          const val = r[campoUnico];
+          const bateUnico = Array.isArray(val)
+            ? val.some(s => String(s || '').trim() === locIncluir)
+            : String(val || '').trim() === locIncluir;
+          if (!bateUnico) return false;
+        } else {
+          const batePrinc = String(r.localizadorPrincipal || '').trim() === locIncluir;
+          const bateSec = Array.isArray(r.localizadoresSecundarios) && r.localizadoresSecundarios.some(s => String(s || '').trim() === locIncluir);
+          if (!batePrinc && !bateSec) return false;
+        }
       }
       if (locRemover) {
         const bateRem = Array.isArray(r.localizadoresRemover) && r.localizadoresRemover.some(s => String(s || '').trim() === locRemover);
@@ -24679,9 +26395,17 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
   async function abrirModalVisualizadorPreferencias(modulo = 'minutas') {
     const config = VISUALIZADORES_MODULOS_CONFIG[modulo];
     if (!config) {
-      addLog(`ℹ️ Visualizador em tabela completa ainda disponível apenas no Módulo Minutas.`, 'warn');
+      addLog(`ℹ️ Visualizador em tabela não disponível para o módulo "${modulo}".`, 'warn');
       return;
     }
+
+    const usaDualLoc = config.usaFiltrosLocIncluirRemover !== false;
+    const campoLocFiltroUnico = usaDualLoc ? '' : (config.campoLocFiltroUnico || 'localizadoresFiltro');
+    const labelLocIncluir = usaDualLoc ? 'Loc. a incluir: Todos' : (config.labelLocFiltroUnico || 'Loc. filtrado: Todos');
+    const titleLocIncluir = usaDualLoc
+      ? 'Filtra preferências que incluam o localizador selecionado como Principal ou Secundário'
+      : 'Filtra preferências pelo localizador selecionado';
+    const placeholderBusca = config.placeholderBusca || '🔍 Buscar por nome, grupo, modelo, evento, localizador, filtro, classificação...';
 
     window._eprocViewerParar = false;
     const overlay = obterOuCriarModalOverlay();
@@ -24702,11 +26426,11 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         </div>
 
         <div class="eproc-viewer-toolbar">
-          <input type="text" id="viewer-filtro-texto" class="eproc-viewer-input" style="flex:1; min-width:220px;" placeholder="🔍 Buscar por nome, grupo, modelo, evento, localizador, prazo, classificação...">
-          <select id="viewer-filtro-loc-incluir" class="eproc-viewer-select" title="Filtra preferências que incluam o localizador selecionado como Principal ou Secundário">
-            <option value="" selected>Loc. a incluir: Todos</option>
+          <input type="text" id="viewer-filtro-texto" class="eproc-viewer-input" style="flex:1; min-width:220px;" placeholder="${escapeHtmlViewer(placeholderBusca)}">
+          <select id="viewer-filtro-loc-incluir" class="eproc-viewer-select" title="${escapeHtmlViewer(titleLocIncluir)}">
+            <option value="" selected>${escapeHtmlViewer(labelLocIncluir)}</option>
           </select>
-          <select id="viewer-filtro-loc-remover" class="eproc-viewer-select" title="Filtra preferências que removam o localizador selecionado">
+          <select id="viewer-filtro-loc-remover" class="eproc-viewer-select" style="${usaDualLoc ? '' : 'display:none;'}" title="Filtra preferências que removam o localizador selecionado">
             <option value="" selected>Loc. a remover: Todos</option>
           </select>
           <button type="button" id="btn-viewer-limpar-filtros" class="eproc-viewer-btn eproc-viewer-btn-soft" style="display:none;" title="Limpa todos os filtros e ordenação">✕ Limpar filtros</button>
@@ -24812,18 +26536,23 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     }
 
     const preencherFiltrosLocalizadores = () => {
-      const { incluir, remover } = coletarLocalizadoresToolbarViewer(todasLinhas);
+      const { incluir, remover } = coletarLocalizadoresToolbarViewer(todasLinhas, { campoLocFiltroUnico });
       if (selLocIncluir) {
         const atualInc = selLocIncluir.value;
-        selLocIncluir.innerHTML = '<option value="">Loc. a incluir: Todos</option>'
+        selLocIncluir.innerHTML = `<option value="">${escapeHtmlViewer(labelLocIncluir)}</option>`
           + incluir.map(l => `<option value="${escapeHtmlViewer(l)}">${escapeHtmlViewer(l)}</option>`).join('');
         selLocIncluir.value = (atualInc && incluir.includes(atualInc)) ? atualInc : '';
       }
       if (selLocRemover) {
-        const atualRem = selLocRemover.value;
-        selLocRemover.innerHTML = '<option value="">Loc. a remover: Todos</option>'
-          + remover.map(l => `<option value="${escapeHtmlViewer(l)}">${escapeHtmlViewer(l)}</option>`).join('');
-        selLocRemover.value = (atualRem && remover.includes(atualRem)) ? atualRem : '';
+        if (!usaDualLoc) {
+          selLocRemover.value = '';
+          selLocRemover.innerHTML = '<option value="">Loc. a remover: Todos</option>';
+        } else {
+          const atualRem = selLocRemover.value;
+          selLocRemover.innerHTML = '<option value="">Loc. a remover: Todos</option>'
+            + remover.map(l => `<option value="${escapeHtmlViewer(l)}">${escapeHtmlViewer(l)}</option>`).join('');
+          selLocRemover.value = (atualRem && remover.includes(atualRem)) ? atualRem : '';
+        }
       }
     };
 
@@ -24831,7 +26560,8 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       return filtrarEOrdenarLinhasViewer(todasLinhas, config.colunas, {
         termoBusca: inpBusca ? inpBusca.value : '',
         locIncluir: selLocIncluir ? selLocIncluir.value : '',
-        locRemover: selLocRemover ? selLocRemover.value : '',
+        locRemover: (usaDualLoc && selLocRemover) ? selLocRemover.value : '',
+        campoLocFiltroUnico,
         filtrosColuna,
         ordenacaoColuna
       });
@@ -24840,7 +26570,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     const temFiltrosOuOrdenacaoAtivos = () => {
       if (inpBusca && String(inpBusca.value || '').trim() !== '') return true;
       if (selLocIncluir && selLocIncluir.value) return true;
-      if (selLocRemover && selLocRemover.value) return true;
+      if (usaDualLoc && selLocRemover && selLocRemover.value) return true;
       if (ordenacaoColuna.key && ordenacaoColuna.dir) return true;
       return Object.values(filtrosColuna).some(f => f && (f.modo === 'vazio' || String(f.valor || '').trim() !== ''));
     };
@@ -25097,11 +26827,15 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
           });
           return `<div class="eproc-viewer-detail-item"><div class="eproc-viewer-detail-label">${escapeHtmlViewer(c.label)}</div>${conteudoRecolhivel}</div>`;
         }).join('');
+      const bannerErroHtml = row.erroDetalhe
+        ? `<div style="margin-top:8px; padding:8px 10px; background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; color:#991b1b; font-size:11.5px; user-select:text;"><b>⚠️ Detalhe do erro:</b> ${escapeHtmlViewer(row.erroDetalhe)}</div>`
+        : '';
       drawerEl.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <strong style="font-size:12.5px; color:#0f172a;">👁️ Ficha Completa — ${escapeHtmlViewer(row.nome)} <span style="font-weight:400; color:#64748b;">(ID: ${escapeHtmlViewer(row.id)})</span></strong>
           <button type="button" id="btn-viewer-fechar-drawer" class="eproc-v-mini-btn">✕ Fechar ficha</button>
         </div>
+        ${bannerErroHtml}
         <div class="eproc-viewer-detail-grid">${cardsHtml}</div>
       `;
       const btnF = drawerEl.querySelector('#btn-viewer-fechar-drawer');
@@ -25273,16 +27007,20 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       if (window._eprocViewerParar) {
         progLabel.textContent = `⏹️ Interrompido em ${concluidas}/${total} preferências.`;
       } else {
-        progLabel.textContent = `✅ Concluído! ${concluidas} preferências detalhadas.`;
+        const errosLote = todasLinhas.filter(r => r.erroDetalhe);
+        if (errosLote.length > 0) {
+          const exemploErro = String(errosLote[0].erroDetalhe || '').slice(0, 140);
+          progLabel.textContent = `⚠️ Finalizado com ${errosLote.length} erro(s) (${todasLinhas.filter(r => r.detalhado).length}/${todasLinhas.length} OK): ${exemploErro}`;
+        } else {
+          progLabel.textContent = `✅ Concluído! ${concluidas} preferências detalhadas.`;
+        }
         progFill.style.width = '100%';
         progPct.textContent = '100%';
       }
     };
 
     const inicializarDados = async (limparCache = false) => {
-      if (limparCache) {
-        window._eprocCacheDetalhesPrefsMinutas = new Map();
-      }
+      const cache = obterCacheDetalhesModuloViewer(modulo, Boolean(limparCache));
       fecharDropdownColuna();
       estadoEl.style.display = 'block';
       tableEl.style.display = 'none';
@@ -25291,13 +27029,12 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       try {
         contexto = await config.obterContexto();
         if (!contexto || !contexto.disponivel) {
-          estadoEl.innerHTML = `<div style="max-width:560px; margin:20px auto; background:#fffbeb; border:1px solid #f59e0b; border-radius:8px; padding:16px; color:#92400e;"><strong>⚠️ Tela incompatível no momento</strong><br><br>${escapeHtmlViewer((contexto && contexto.motivo) || 'Acesse a tela Nova Minuta no eproc 2G.')}</div>`;
+          estadoEl.innerHTML = `<div style="max-width:560px; margin:20px auto; background:#fffbeb; border:1px solid #f59e0b; border-radius:8px; padding:16px; color:#92400e;"><strong>⚠️ Tela incompatível no momento</strong><br><br>${escapeHtmlViewer((contexto && contexto.motivo) || 'Abra a tela correspondente deste módulo no eproc 2G.')}</div>`;
           statsEl.textContent = 'Aguardando tela compatível.';
           return;
         }
 
         const listaBase = await config.obterLista(contexto);
-        const cache = window._eprocCacheDetalhesPrefsMinutas;
         todasLinhas = listaBase.map(item => {
           if (cache && cache.has(item.id)) {
             return { ...item, ...cache.get(item.id) };
