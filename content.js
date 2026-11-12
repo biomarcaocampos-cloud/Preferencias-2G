@@ -14165,8 +14165,8 @@
         pairsMap.set('hdnInfraTipoPagina', pairsMap.get('hdnInfraTipoPagina') || '1');
         pairsMap.set('hdnExcel', '0');
         pairsMap.set('hdnInfraPaginaAtual', String(paginaAlvo));
-        // Fundamental: eproc marca chkOcultarSemProcesso=1 por padrão, escondendo localizadores sem processos (ex: Servidor 1..9)
-        pairsMap.set('chkOcultarSemProcesso', '0');
+        // Fundamental: no eproc/InfraPHP checkboxes desmarcados NÃO devem ser enviados no POST
+        pairsMap.delete('chkOcultarSemProcesso');
         frm.querySelectorAll('select').forEach(sel => {
           if (sel.name && !sel.disabled && !sel.name.includes('Paginacao')) {
             pairsMap.set(sel.name, sel.value || '');
@@ -14179,11 +14179,11 @@
         return Array.from(pairsMap.entries());
       };
 
-      // Se chkOcultarSemProcesso vier marcado, reenvia o formulário desmarcado (0) para listar TODOS os localizadores
+      // Se chkOcultarSemProcesso existir no formulário ou se estiver checado, reenvia desmarcado para listar TODOS os localizadores (inclusive sem processos)
       const chkOcultar = doc.getElementById('chkOcultarSemProcesso');
       const frmLoc = doc.querySelector('#frmLocalizadorOrgaoLista') || doc.querySelector('form[action*="localizador_orgao_listar"]');
       let urlBase = urlListar;
-      if (frmLoc && (!chkOcultar || chkOcultar.checked)) {
+      if (frmLoc && (!chkOcultar || chkOcultar.checked || !doc.querySelector('tr a[href*="localizador_orgao_alterar"]'))) {
         const actionAll = new URL((frmLoc.getAttribute('action') || urlListar).replace(/&amp;/g, '&'), window.location.href).href;
         const respAll = await fetch(actionAll, {
           method: 'POST',
@@ -15837,11 +15837,11 @@
   }
 
   function normalizarListaSlotsServidores(lista = []) {
-    const base = Array.isArray(lista) ? lista.map((s, idx) => {
+    let base = Array.isArray(lista) ? lista.map((s, idx) => {
       const slotNum = (s && s.slot) ? parseInt(s.slot, 10) || (idx + 1) : (idx + 1);
       const gen = analisarSlotGenericoPorTexto(s && (s.nomeBase || s.nomeGrupoBase));
-      const tipoSlot = (s && s.tipoSlot) || (gen ? gen.tipoSlot : 'servidor');
-      const indiceTipo = (s && s.indiceTipo) || (gen ? gen.indiceTipo : slotNum);
+      const tipoSlot = (s && s.tipoSlot) || (gen ? gen.tipoSlot : (slotNum > 9 ? 'estagiario' : 'servidor'));
+      const indiceTipo = (s && s.indiceTipo) || (gen ? gen.indiceTipo : (tipoSlot === 'estagiario' ? slotNum - 9 : slotNum));
       const rotuloCard = (s && s.rotuloCard) || (tipoSlot === 'estagiario' ? `Estagiário ${indiceTipo}` : `Slot ${slotNum}`);
       return {
         ...s,
@@ -15852,21 +15852,27 @@
       };
     }) : [];
 
-    // Atualiza rascunho antigo de 9 servidores (pré-v3.9.0) adicionando Estagiário 1 e 2 quando ainda não houve leitura do eproc
-    const temEstagiario = base.some(s => s.tipoSlot === 'estagiario' || /estagi[aá]ri/i.test(String(s.nomeBase || '')));
-    const locsCarregados = Array.isArray(window._eprocLocalizadoresUnidade) && window._eprocLocalizadoresUnidade.some(l => (l.nomeCompleto || '').includes('👤'));
-    if (!locsCarregados && base.length === 9 && !temEstagiario) {
-      let proxSlot = base.reduce((mx, s) => Math.max(mx, parseInt(s.slot, 10) || 0), 9);
-      for (let e = 1; e <= 2; e++) {
-        proxSlot++;
+    // Garante a espinha dorsal de 9 Servidores e 2 Estagiários sempre presente sem omissões
+    const slotsPadrao = [
+      ...Array.from({ length: 9 }, (_, i) => ({ tipoSlot: 'servidor', indiceTipo: i + 1, slotPadrao: i + 1 })),
+      ...Array.from({ length: 2 }, (_, i) => ({ tipoSlot: 'estagiario', indiceTipo: i + 1, slotPadrao: 9 + i + 1 }))
+    ];
+
+    for (const padrao of slotsPadrao) {
+      const existe = base.some(s => {
+        if (s.tipoSlot === padrao.tipoSlot && Number(s.indiceTipo) === padrao.indiceTipo) return true;
+        if (padrao.tipoSlot === 'servidor' && (!s.tipoSlot || s.tipoSlot === 'servidor') && Number(s.slot) === padrao.slotPadrao) return true;
+        return false;
+      });
+      if (!existe) {
         base.push({
-          slot: proxSlot,
-          tipoSlot: 'estagiario',
-          indiceTipo: e,
-          rotuloCard: `Estagiário ${e}`,
+          slot: padrao.slotPadrao,
+          tipoSlot: padrao.tipoSlot,
+          indiceTipo: padrao.indiceTipo,
+          rotuloCard: padrao.tipoSlot === 'estagiario' ? `Estagiário ${padrao.indiceTipo}` : `Slot ${padrao.slotPadrao}`,
           locId: '',
-          nomeBase: `👤Estagiário ${e}👤`,
-          nomeGrupoBase: `Trabalho - Estagiário ${e}`,
+          nomeBase: padrao.tipoSlot === 'estagiario' ? `👤Estagiário ${padrao.indiceTipo}👤` : `👤Servidor ${padrao.indiceTipo}👤`,
+          nomeGrupoBase: padrao.tipoSlot === 'estagiario' ? `Trabalho - Estagiário ${padrao.indiceTipo}` : `Trabalho - Servidor ${padrao.indiceTipo}`,
           grupoEncontrado: false,
           nomeServidor: '',
           perfis: [],
@@ -15875,6 +15881,26 @@
         });
       }
     }
+
+    base.sort((a, b) => {
+      const ordA = a.tipoSlot === 'servidor' ? 1 : (a.tipoSlot === 'estagiario' ? 2 : 3);
+      const ordB = b.tipoSlot === 'servidor' ? 1 : (b.tipoSlot === 'estagiario' ? 2 : 3);
+      if (ordA !== ordB) return ordA - ordB;
+      const numA = Number(a.indiceTipo) || Number(a.slot) || 0;
+      const numB = Number(b.indiceTipo) || Number(b.slot) || 0;
+      if (numA !== numB) return numA - numB;
+      return (Number(a.slot) || 0) - (Number(b.slot) || 0);
+    });
+
+    base.forEach((s, idx) => {
+      s.slot = idx + 1;
+      if (s.tipoSlot === 'servidor') {
+        s.rotuloCard = `Slot ${s.indiceTipo || s.slot}`;
+      } else if (s.tipoSlot === 'estagiario') {
+        s.rotuloCard = `Estagiário ${s.indiceTipo}`;
+      }
+    });
+
     return base;
   }
 
@@ -15934,7 +15960,11 @@
 
     const locsUsuario = (localizadores || []).filter(l => {
       const comp = decodeEntities(l.nomeCompleto || '').trim();
-      return comp.startsWith('👤') || comp.includes('👤');
+      const curto = decodeEntities(l.nomeCurto || '').trim();
+      const desc = decodeEntities(l.descricao || '').trim();
+      if (comp.includes('👤') || curto.includes('👤')) return true;
+      const gen = parseGen(comp, desc) || parseGen(curto, desc);
+      return !!gen;
     });
 
     if (locsUsuario.length === 0) {
@@ -16090,6 +16120,73 @@
         perfis: perfisSlot,
         gestao: matchSalvo ? !!matchSalvo.gestao : false
       };
+    });
+
+    // Garante que TODOS os 9 servidores e 2 estagiários constem no resultado sem lacunas (ex.: Slot 4)
+    const slotsPadrao = [
+      ...Array.from({ length: 9 }, (_, i) => ({ tipoSlot: 'servidor', indiceTipo: i + 1, slotPadrao: i + 1 })),
+      ...Array.from({ length: 2 }, (_, i) => ({ tipoSlot: 'estagiario', indiceTipo: i + 1, slotPadrao: 9 + i + 1 }))
+    ];
+
+    for (const padrao of slotsPadrao) {
+      const jaConsta = resultado.some(r => r.tipoSlot === padrao.tipoSlot && Number(r.indiceTipo) === padrao.indiceTipo);
+      if (!jaConsta) {
+        // Tenta recuperar dos slots salvos anteriormente (preservando localizador/grupo atual, ex: Adriana.ARO_S4)
+        const salvoAnterior = Array.isArray(slotsAtuais)
+          ? slotsAtuais.find(sa => (sa.tipoSlot === padrao.tipoSlot && Number(sa.indiceTipo) === padrao.indiceTipo) || (padrao.tipoSlot === 'servidor' && Number(sa.slot) === padrao.slotPadrao))
+          : null;
+
+        if (salvoAnterior) {
+          const siglaLoc = String(salvoAnterior.nomeBase || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
+          const vinc = encontrarGrupoVinculadoAoLocalizador(siglaLoc, grupos, salvoAnterior.nomeGrupoBase);
+          resultado.push({
+            ...salvoAnterior,
+            slot: padrao.slotPadrao,
+            tipoSlot: padrao.tipoSlot,
+            indiceTipo: padrao.indiceTipo,
+            rotuloCard: padrao.tipoSlot === 'estagiario' ? `Estagiário ${padrao.indiceTipo}` : `Slot ${padrao.slotPadrao}`,
+            nomeGrupoBase: vinc.nomeGrupo || salvoAnterior.nomeGrupoBase,
+            grupoEncontrado: vinc.encontrado
+          });
+        } else {
+          const nomeB = padrao.tipoSlot === 'estagiario' ? `👤Estagiário ${padrao.indiceTipo}👤` : `👤Servidor ${padrao.indiceTipo}👤`;
+          const nomeG = padrao.tipoSlot === 'estagiario' ? `Trabalho - Estagiário ${padrao.indiceTipo}` : `Trabalho - Servidor ${padrao.indiceTipo}`;
+          const vinc = encontrarGrupoVinculadoAoLocalizador(nomeB, grupos, nomeG);
+          resultado.push({
+            slot: padrao.slotPadrao,
+            tipoSlot: padrao.tipoSlot,
+            indiceTipo: padrao.indiceTipo,
+            rotuloCard: padrao.tipoSlot === 'estagiario' ? `Estagiário ${padrao.indiceTipo}` : `Slot ${padrao.slotPadrao}`,
+            locId: '',
+            nomeBase: nomeB,
+            nomeGrupoBase: vinc.nomeGrupo,
+            grupoEncontrado: vinc.encontrado,
+            nomeServidor: '',
+            perfis: [],
+            sigla: '',
+            gestao: false
+          });
+        }
+      }
+    }
+
+    resultado.sort((a, b) => {
+      const ordA = a.tipoSlot === 'servidor' ? 1 : (a.tipoSlot === 'estagiario' ? 2 : 3);
+      const ordB = b.tipoSlot === 'servidor' ? 1 : (b.tipoSlot === 'estagiario' ? 2 : 3);
+      if (ordA !== ordB) return ordA - ordB;
+      const numA = Number(a.indiceTipo) || Number(a.slot) || 0;
+      const numB = Number(b.indiceTipo) || Number(b.slot) || 0;
+      if (numA !== numB) return numA - numB;
+      return (Number(a.slot) || 0) - (Number(b.slot) || 0);
+    });
+
+    resultado.forEach((s, idx) => {
+      s.slot = idx + 1;
+      if (s.tipoSlot === 'servidor') {
+        s.rotuloCard = `Slot ${s.indiceTipo || s.slot}`;
+      } else if (s.tipoSlot === 'estagiario') {
+        s.rotuloCard = `Estagiário ${s.indiceTipo}`;
+      }
     });
 
     return resolverColisoesSiglas(resultado, localizadores);
@@ -16642,7 +16739,17 @@
   // Função compartilhada para renomear preferências de relatório ou documento vinculadas a um slot
   async function executarRenomeacaoListaPrefsParaSlot(listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, idsDedup = new Set(), errArray = [], ignArray = []) {
     let renomeadas = 0;
-    if (!Array.isArray(listaPrefs) || listaPrefs.length === 0 || !siglasOrigemSlot.length) return 0;
+    const errosLocais = [];
+    const ignoradasLocais = [];
+    if (!Array.isArray(listaPrefs) || listaPrefs.length === 0 || !siglasOrigemSlot.length) {
+      return {
+        total: 0,
+        renomeadas: 0,
+        ignoradas: 0,
+        erros: [],
+        valueOf() { return 0; }
+      };
+    }
 
     for (const pref of listaPrefs) {
       if (window._eprocPararLote) break;
@@ -16655,7 +16762,9 @@
       const colisao = listaPrefs.find(outro => outro.id !== pref.id && normalizar(outro.nome) === normalizar(sub.novoNome));
       if (colisao) {
         addLog(`  ⚠️ [${tipoLabel}] Mantido "${pref.nome}" porque "${sub.novoNome}" já existe no eproc.`, 'warn');
-        if (ignArray) ignArray.push({ slot: slotNum, tipo: tipoLabel, original: pref.nome, destino: sub.novoNome });
+        const itemIgn = { slot: slotNum, tipo: tipoLabel, original: pref.nome, destino: sub.novoNome };
+        ignoradasLocais.push(itemIgn);
+        if (ignArray) ignArray.push(itemIgn);
         continue;
       }
 
@@ -16667,10 +16776,18 @@
         await sleep(80);
       } catch (ePref) {
         addLog(`  ⚠️ [${tipoLabel}] Erro ao renomear "${pref.nome}": ${ePref.message}`, 'warn');
-        if (errArray) errArray.push({ slot: slotNum, tipo: tipoLabel, nome: pref.nome, erro: ePref.message });
+        const itemErr = { slot: slotNum, tipo: tipoLabel, nome: pref.nome, erro: ePref.message };
+        errosLocais.push(itemErr);
+        if (errArray) errArray.push(itemErr);
       }
     }
-    return renomeadas;
+    return {
+      total: listaPrefs.length,
+      renomeadas,
+      ignoradas: ignoradasLocais.length,
+      erros: errosLocais,
+      valueOf() { return this.renomeadas; }
+    };
   }
 
   function abrirModalConfirmacaoRestauracaoSlot(slotNum) {
@@ -16872,17 +16989,90 @@
         throw new Error(`Localizador de ${rotuloCard} (${nomeBaseAtual || nomeBasePadrao}) não foi encontrado no eproc.`);
       }
 
-      // 4. Reverte Localizador
-      addLog(`  ✏️ Revertendo localizador "${locMatch.nomeCompleto}" para "${nomeBasePadrao}" (Nome: "${nomeCurtoPadrao}")...`);
-      await alterarLocalizadorEproc(locMatch.urlAlterar, nomeBasePadrao, nomeCurtoPadrao, locMatch.nomeCurto, nomeCurtoPadrao);
-      locMatch.nomeCompleto = nomeBasePadrao;
-      locMatch.nomeCurto = nomeCurtoPadrao;
-      locMatch.descricao = nomeCurtoPadrao;
-      addLog(`  ✅ Localizador restaurado com sucesso: ${nomeBasePadrao}`);
+      // 4. Prepara siglas de origem do slot e estruturas de controle de erro
+      const siglasOrigemSlot = [
+        siglaSlotAtual,
+        siglaSlotAtual.replace(/_(?:S[1-9]|E[1-2])$/i, ''),
+        `${siglaSlotAtual}${tagSlot}`,
+        locMatch ? locMatch.nomeCurto : ''
+      ].map(s => String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim())
+       .filter(Boolean)
+       .filter((v, idxS, arrS) => arrS.indexOf(v) === idxS && normalizar(v) !== normalizar(nomeCurtoPadrao));
+
+      const origensLembrete = [
+        locMatch ? locMatch.nomeCurto : '',
+        siglaSlotAtual,
+        siglaSlotAtual.replace(/_(?:S[1-9]|E[1-2])$/i, ''),
+        `${siglaSlotAtual}${tagSlot}`
+      ].map(s => String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim())
+       .filter(Boolean)
+       .filter((v, idxL, arrL) => arrL.indexOf(v) === idxL && normalizar(v) !== normalizar(nomeCurtoPadrao));
+
+      let resRel = { total: 0, renomeadas: 0, ignoradas: 0, erros: [] };
+      let resDoc = { total: 0, renomeadas: 0, ignoradas: 0, erros: [] };
+      const errosAtp = [];
+      let atpsSucesso = 0;
+      let erroGrp = null;
+      let erroLoc = null;
+
+      // 5. ETAPA 1: Reverte Preferências de Relatórios (enquanto o usuário AINDA é membro do grupo de trabalho no eproc!)
+      if (prefsRel.length > 0 && siglasOrigemSlot.length > 0) {
+        addLog(`  📊 Restaurando preferências de relatório para "${nomeCurtoPadrao}"...`);
+        resRel = await executarRenomeacaoListaPrefsParaSlot(
+          prefsRel,
+          'Relatório',
+          renomearPreferenciaRelatorioEproc,
+          slotNum,
+          siglasOrigemSlot,
+          nomeCurtoPadrao
+        );
+        if (resRel.renomeadas > 0) {
+          addLog(`  ✅ ${resRel.renomeadas} preferência(s) de relatório restaurada(s) para "${nomeCurtoPadrao}".`);
+        }
+      }
 
       await sleep(200);
 
-      // 5. Localiza e reverte Grupo de Trabalho
+      // 6. ETAPA 2: Reverte Preferências de Documentos
+      if (prefsDoc.length > 0 && siglasOrigemSlot.length > 0) {
+        addLog(`  📄 Restaurando preferências de documento para "${nomeCurtoPadrao}"...`);
+        resDoc = await executarRenomeacaoListaPrefsParaSlot(
+          prefsDoc,
+          'Documento',
+          renomearPreferenciaDocumentoEproc,
+          slotNum,
+          siglasOrigemSlot,
+          nomeCurtoPadrao
+        );
+        if (resDoc.renomeadas > 0) {
+          addLog(`  ✅ ${resDoc.renomeadas} preferência(s) de documento restaurada(s) para "${nomeCurtoPadrao}".`);
+        }
+      }
+
+      await sleep(200);
+
+      // 7. ETAPA 3: Reverte ATPs TJ
+      if (atpsTj.length > 0 && origensLembrete.length > 0) {
+        const atpsSlot = filtrarAtpsTransitoParaSlot(atpsTj, origensLembrete);
+        for (const atp of atpsSlot) {
+          if (window._eprocPararLote) break;
+          try {
+            const resAtp = await atualizarLembreteAtpEproc(atp, origensLembrete, nomeCurtoPadrao);
+            atp.siglasLoc = [nomeCurtoPadrao];
+            if (resAtp.atualizado) {
+              atpsSucesso++;
+              addLog(`  ⚡ [ATP #${atp.numRegra} TJ] Lembrete restaurado: "${resAtp.anterior}" ➔ "${resAtp.novo}"`);
+            }
+          } catch (eAtp) {
+            errosAtp.push({ atp: atp.numRegra, erro: eAtp.message });
+            addLog(`  ⚠️ [ATP #${atp.numRegra} TJ] Erro ao restaurar lembrete: ${eAtp.message}`, 'warn');
+          }
+        }
+      }
+
+      await sleep(200);
+
+      // 8. ETAPA 4: Localiza e reverte Grupo de Trabalho e desvincula membros (SÓ AGORA!)
       let grpMatch = null;
       if (siglaSlotAtual) {
         grpMatch = grupos.find(g => normalizar(g.nome) === normalizar(`Trabalho - ${siglaSlotAtual}`));
@@ -16897,11 +17087,16 @@
 
       if (grpMatch && grpMatch.urlEditar) {
         addLog(`  📁 Revertendo grupo "${grpMatch.nome}" para "${nomeGrupoPadrao}" e desvinculando membros...`);
-        const detGrupo = await obterDadosCompletosGrupoEproc(grpMatch.urlEditar);
-        if (detGrupo) {
-          await renomearGrupoEprocPreservandoTudo(detGrupo, nomeGrupoPadrao, [], true);
-          grpMatch.nome = nomeGrupoPadrao;
-          addLog(`  ✅ Grupo de trabalho restaurado: "${nomeGrupoPadrao}" (membros limpos).`);
+        try {
+          const detGrupo = await obterDadosCompletosGrupoEproc(grpMatch.urlEditar);
+          if (detGrupo) {
+            await renomearGrupoEprocPreservandoTudo(detGrupo, nomeGrupoPadrao, [], true);
+            grpMatch.nome = nomeGrupoPadrao;
+            addLog(`  ✅ Grupo de trabalho restaurado: "${nomeGrupoPadrao}" (membros limpos).`);
+          }
+        } catch (eGrp) {
+          erroGrp = eGrp.message;
+          addLog(`  ⚠️ Erro ao restaurar grupo de trabalho: ${eGrp.message}`, 'warn');
         }
       } else {
         addLog(`  ℹ️ Grupo de trabalho correspondente mantido como "${nomeGrupoPadrao}".`);
@@ -16909,68 +17104,20 @@
 
       await sleep(200);
 
-      // 6. Reverte Preferências de Relatórios e Documentos
-      const siglasOrigemSlot = [
-        siglaSlotAtual,
-        siglaSlotAtual.replace(/_(?:S[1-9]|E[1-2])$/i, ''),
-        `${siglaSlotAtual}${tagSlot}`,
-        locMatch ? locMatch.nomeCurto : ''
-      ].map(s => String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim())
-       .filter(Boolean)
-       .filter((v, idxS, arrS) => arrS.indexOf(v) === idxS && normalizar(v) !== normalizar(nomeCurtoPadrao));
-
-      if (prefsRel.length > 0 && siglasOrigemSlot.length > 0) {
-        const qtdRel = await executarRenomeacaoListaPrefsParaSlot(
-          prefsRel,
-          'Relatório',
-          renomearPreferenciaRelatorioEproc,
-          slotNum,
-          siglasOrigemSlot,
-          nomeCurtoPadrao
-        );
-        if (qtdRel > 0) addLog(`  📊 ${qtdRel} preferência(s) de relatório restaurada(s) para "${nomeCurtoPadrao}".`);
+      // 9. ETAPA 5: Reverte Localizador
+      addLog(`  ✏️ Revertendo localizador "${locMatch.nomeCompleto}" para "${nomeBasePadrao}" (Nome: "${nomeCurtoPadrao}")...`);
+      try {
+        await alterarLocalizadorEproc(locMatch.urlAlterar, nomeBasePadrao, nomeCurtoPadrao, locMatch.nomeCurto, nomeCurtoPadrao);
+        locMatch.nomeCompleto = nomeBasePadrao;
+        locMatch.nomeCurto = nomeCurtoPadrao;
+        locMatch.descricao = nomeCurtoPadrao;
+        addLog(`  ✅ Localizador restaurado com sucesso: ${nomeBasePadrao}`);
+      } catch (eLoc) {
+        erroLoc = eLoc.message;
+        addLog(`  ❌ Erro ao restaurar localizador: ${eLoc.message}`, 'error');
       }
 
-      if (prefsDoc.length > 0 && siglasOrigemSlot.length > 0) {
-        const qtdDoc = await executarRenomeacaoListaPrefsParaSlot(
-          prefsDoc,
-          'Documento',
-          renomearPreferenciaDocumentoEproc,
-          slotNum,
-          siglasOrigemSlot,
-          nomeCurtoPadrao
-        );
-        if (qtdDoc > 0) addLog(`  📄 ${qtdDoc} preferência(s) de documento restaurada(s) para "${nomeCurtoPadrao}".`);
-      }
-
-      await sleep(200);
-
-      // 7. Reverte ATPs TJ
-      if (atpsTj.length > 0) {
-        const origensLembrete = [
-          locMatch.nomeCurto,
-          siglaSlotAtual,
-          siglaSlotAtual.replace(/_(?:S[1-9]|E[1-2])$/i, ''),
-          `${siglaSlotAtual}${tagSlot}`
-        ].map(s => String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim())
-         .filter(Boolean)
-         .filter((v, idxL, arrL) => arrL.indexOf(v) === idxL && normalizar(v) !== normalizar(nomeCurtoPadrao));
-
-        const atpsSlot = filtrarAtpsTransitoParaSlot(atpsTj, origensLembrete);
-        for (const atp of atpsSlot) {
-          try {
-            const resAtp = await atualizarLembreteAtpEproc(atp, origensLembrete, nomeCurtoPadrao);
-            atp.siglasLoc = [nomeCurtoPadrao];
-            if (resAtp.atualizado) {
-              addLog(`  ⚡ [ATP #${atp.numRegra} TJ] Lembrete restaurado: "${resAtp.anterior}" ➔ "${resAtp.novo}"`);
-            }
-          } catch (eAtp) {
-            addLog(`  ⚠️ [ATP #${atp.numRegra} TJ] Erro ao restaurar lembrete: ${eAtp.message}`, 'warn');
-          }
-        }
-      }
-
-      // 8. Atualiza UI do slot diretamente
+      // 10. Atualiza UI do slot diretamente
       if (badge) {
         badge.textContent = nomeBasePadrao;
         badge.setAttribute('data-base', nomeBasePadrao);
@@ -17010,12 +17157,39 @@
       const slotsAtualizados = obterDadosServidoresDosInputs();
       renderizarTabelaServidores(slotsAtualizados);
 
-      addLog(`✅ [${rotuloCard}] Retornado com sucesso ao estado original de fábrica!`, 'success');
-      if (banner) {
-        banner.style.background = '#dcfce7';
-        banner.style.color = '#15803d';
-        banner.innerHTML = `✅ <strong>Sucesso:</strong> ${rotuloCard} restaurado ao estado original de fábrica!`;
-        setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
+      // 11. Validação final e exibição de diagnóstico preciso
+      const totalErros = (erroLoc ? 1 : 0) + (erroGrp ? 1 : 0) + resRel.erros.length + resDoc.erros.length + errosAtp.length;
+
+      if (totalErros > 0) {
+        addLog(`⚠️ [${rotuloCard}] Restauração concluída com pendências (${totalErros} falhas):`, 'warn');
+        if (erroLoc) addLog(`   • Localizador: ${erroLoc} ❌`, 'warn');
+        else addLog(`   • Localizador: restaurado ✅`);
+
+        if (erroGrp) addLog(`   • Grupo de Trabalho: ${erroGrp} ❌`, 'warn');
+        else addLog(`   • Grupo de Trabalho: restaurado e limpo ✅`);
+
+        if (resRel.erros.length > 0) addLog(`   • Relatórios: ${resRel.erros.length} falha(s) ❌`, 'warn');
+        else addLog(`   • Relatórios: ${resRel.renomeadas} restaurado(s) ✅`);
+
+        if (resDoc.erros.length > 0) addLog(`   • Documentos: ${resDoc.erros.length} falha(s) ❌`, 'warn');
+        else addLog(`   • Documentos: ${resDoc.renomeadas} restaurado(s) ✅`);
+
+        if (errosAtp.length > 0) addLog(`   • ATPs TJ: ${errosAtp.length} falha(s) ❌`, 'warn');
+        else if (atpsSucesso > 0) addLog(`   • ATPs TJ: ${atpsSucesso} restaurada(s) ✅`);
+
+        if (banner) {
+          banner.style.background = '#fef3c7';
+          banner.style.color = '#92400e';
+          banner.innerHTML = `⚠️ <strong>Atenção:</strong> ${rotuloCard} não foi completamente restaurado (${totalErros} falhas detectadas). Verifique os logs.`;
+        }
+      } else {
+        addLog(`✅ [${rotuloCard}] Retornado com sucesso ao estado original de fábrica!`, 'success');
+        if (banner) {
+          banner.style.background = '#dcfce7';
+          banner.style.color = '#15803d';
+          banner.innerHTML = `✅ <strong>Sucesso:</strong> ${rotuloCard} restaurado ao estado original de fábrica!`;
+          setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
+        }
       }
     } catch (err) {
       addLog(`❌ Erro ao restaurar ${rotuloCard || `Slot ${slotNum}`}: ${err.message}`, 'error');
