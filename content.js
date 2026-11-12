@@ -18516,66 +18516,130 @@
     try {
       addLog('🔍 Consultando grupos de automatização disponíveis no eproc...');
 
-      // 1. Localiza o link ou botão do modal de importação na página
+      // 1. Localiza o link ou botão do modal de importação na página atual
       let urlSubfrm = '';
-      const btnImportarSubfrm = document.querySelector('button[onclick*="localizador_associacao_executar_importar_subfrm"], a[onclick*="localizador_associacao_executar_importar_subfrm"]');
+      const btnImportarSubfrm = document.querySelector('button[onclick*="localizador_associacao_executar_importar_subfrm"], a[onclick*="localizador_associacao_executar_importar_subfrm"]') ||
+                                document.querySelector('button[onclick*="abrirSubfrmImportar"], a[onclick*="abrirSubfrmImportar"]');
       if (btnImportarSubfrm) {
-        const m = btnImportarSubfrm.getAttribute('onclick').match(/abrirSubfrmImportar\(['"]([^'"]+)['"]\)/i) ||
-                  btnImportarSubfrm.getAttribute('onclick').match(/['"](controlador\.php\?acao=localizador_associacao_executar_importar_subfrm[^'"]*)['"]/i);
+        const onclickAttr = btnImportarSubfrm.getAttribute('onclick') || '';
+        const m = onclickAttr.match(/abrirSubfrmImportar\(['"]([^'"]+)['"]\)/i) ||
+                  onclickAttr.match(/['"](controlador\.php\?acao=localizador_associacao_executar_importar_subfrm[^'"]*)['"]/i);
         if (m && m[1]) urlSubfrm = m[1].replace(/&amp;/g, '&');
+      }
+
+      if (!urlSubfrm) {
+        const mHtml = document.documentElement.innerHTML.match(/abrirSubfrmImportar\(['"]([^'"]+)['"]\)/i) ||
+                      document.documentElement.innerHTML.match(/['"](controlador\.php\?acao=localizador_associacao_executar_importar_subfrm[^'"]*)['"]/i);
+        if (mHtml && mHtml[1]) urlSubfrm = mHtml[1].replace(/&amp;/g, '&');
       }
 
       if (!urlSubfrm) {
         const hashAtual = typeof obterHashAtual === 'function' ? obterHashAtual() : '';
         const params = new URLSearchParams(window.location.search);
-        const numIdOrgao = params.get('num_id_orgao') || '';
-        urlSubfrm = `controlador.php?acao=localizador_associacao_executar_importar_subfrm&acao_origem=automatizar_localizadores&acao_retorno=automatizar_localizadores&num_id_orgao=${numIdOrgao}&hash=${hashAtual}`;
+        const numIdOrgaoUrl = params.get('num_id_orgao') || '';
+        urlSubfrm = `controlador.php?acao=localizador_associacao_executar_importar_subfrm&acao_origem=automatizar_localizadores&acao_retorno=automatizar_localizadores&num_id_orgao=${numIdOrgaoUrl}&hash=${hashAtual}`;
       }
 
       console.log('[Grupos ATP] Carregando subform de importação:', urlSubfrm);
       const respSub = await fetch(urlSubfrm, { credentials: 'same-origin' });
       if (!respSub.ok) {
-        throw new Error(`HTTP ${respSub.status} ao carregar modal de importação.`);
+        throw new Error(`HTTP ${respSub.status} ao carregar o modal de importação.`);
       }
 
       const htmlSub = await lerRespostaTexto(respSub);
 
       // 2. Extrai a URL do AJAX e parâmetros necessários
-      const matchAjaxUrl = htmlSub.match(/url:\s*['"](controlador_ajax\.php\?acao_ajax=consultar_localizador_importar[^'"]*)['"]/i);
-      const matchNumIdOrgao = htmlSub.match(/numIdOrgao='\s*\+\s*'(\d+)'/i) || urlSubfrm.match(/num_id_orgao=(\d+)/i);
+      const matchAjaxUrl = htmlSub.match(/url\s*:\s*['"]([^'"]*acao_ajax=consultar_localizador_importar[^'"]*)['"]/i) ||
+                           htmlSub.match(/['"](controlador_ajax\.php\?acao_ajax=consultar_localizador_importar[^'"]*)['"]/i);
 
       if (!matchAjaxUrl || !matchAjaxUrl[1]) {
-        throw new Error('Não foi possível extrair a URL de consulta AJAX do modal.');
+        throw new Error('Não foi possível extrair a URL de consulta AJAX do modal de importação.');
       }
 
       const ajaxUrl = matchAjaxUrl[1].replace(/&amp;/g, '&');
-      const numIdOrgao = matchNumIdOrgao && matchNumIdOrgao[1] ? matchNumIdOrgao[1] : '';
 
-      console.log('[Grupos ATP] Chamando AJAX de consulta de grupos:', ajaxUrl, 'numIdOrgao:', numIdOrgao);
+      // Extrai numIdOrgao de forma resiliente
+      let numIdOrgao = '';
+      const mOrgao = htmlSub.match(/numIdOrgao['"]?\s*\+\s*['"](\d+)['"]/i) ||
+                     htmlSub.match(/numIdOrgao['"]?\s*[:=]\s*['"]?(\d+)/i) ||
+                     htmlSub.match(/['"]&numIdOrgao=['"]\s*\+\s*['"]?(\d+)/i) ||
+                     htmlSub.match(/num_id_orgao=(\d+)/i) ||
+                     urlSubfrm.match(/num_id_orgao=(\d+)/i) ||
+                     window.location.search.match(/num_id_orgao=(\d+)/i);
+      if (mOrgao && mOrgao[1]) numIdOrgao = mOrgao[1];
 
-      // 3. POST para consultar_localizador_importar
-      const respAjax = await fetch(ajaxUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `numIdControleLocalizadorSistemaGrupo=&numIdOrgaoTabela=&numIdOrgao=${numIdOrgao}&contextoPesquisa=`
-      });
-
-      if (!respAjax.ok) {
-        throw new Error(`HTTP ${respAjax.status} na consulta de grupos de automatização.`);
+      if (!numIdOrgao) {
+        const inpOrgao = document.querySelector('input[name="num_id_orgao"], input[id="num_id_orgao"]');
+        if (inpOrgao && inpOrgao.value) numIdOrgao = inpOrgao.value.trim();
       }
 
-      const htmlAjax = await lerRespostaTexto(respAjax);
-      const docAjax = new DOMParser().parseFromString(htmlAjax, 'text/html');
+      // Extrai contextoPesquisa do select selUF (padrão oficial do eproc é 'TODOS')
+      let contextoPesquisa = 'TODOS';
+      const docSub = new DOMParser().parseFromString(htmlSub, 'text/html');
+      const selUF = docSub.getElementById('selUF');
+      if (selUF && selUF.value) {
+        contextoPesquisa = selUF.value;
+      }
+
+      console.log('[Grupos ATP] Chamando AJAX:', ajaxUrl, 'numIdOrgao:', numIdOrgao, 'contextoPesquisa:', contextoPesquisa);
+
+      // 3. POST para consultar_localizador_importar
+      let htmlAjax = '';
+      const tentarRequisicaoAjax = async (ctx) => {
+        try {
+          const resp = await fetch(ajaxUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: `numIdControleLocalizadorSistemaGrupo=&numIdOrgaoTabela=&numIdOrgao=${numIdOrgao}&contextoPesquisa=${encodeURIComponent(ctx)}`
+          });
+          if (!resp.ok) return '';
+          return await lerRespostaTexto(resp);
+        } catch (e) {
+          console.warn('[Grupos ATP] Erro no fetch AJAX:', e);
+          return '';
+        }
+      };
+
+      // 1ª tentativa com o contexto do formulário (ex: TODOS)
+      htmlAjax = await tentarRequisicaoAjax(contextoPesquisa);
+
+      // Fallbacks inteligentes se a resposta não contiver a tabela
+      if (!htmlAjax || (!htmlAjax.includes('tableListaRegrasImportacao') && !htmlAjax.includes('tdStrNome') && !htmlAjax.includes('<table'))) {
+        if (contextoPesquisa !== 'TODOS') {
+          console.log('[Grupos ATP] Tentando fallback com contextoPesquisa=TODOS...');
+          const altTodos = await tentarRequisicaoAjax('TODOS');
+          if (altTodos && (altTodos.includes('tableListaRegrasImportacao') || altTodos.includes('tdStrNome') || altTodos.includes('<table'))) {
+            htmlAjax = altTodos;
+          }
+        }
+        if (!htmlAjax || (!htmlAjax.includes('tableListaRegrasImportacao') && !htmlAjax.includes('tdStrNome') && !htmlAjax.includes('<table'))) {
+          console.log('[Grupos ATP] Tentando fallback com contextoPesquisa=TJSP...');
+          const altTjsp = await tentarRequisicaoAjax('TJSP');
+          if (altTjsp && (altTjsp.includes('tableListaRegrasImportacao') || altTjsp.includes('tdStrNome') || altTjsp.includes('<table'))) {
+            htmlAjax = altTjsp;
+          }
+        }
+      }
+
+      const docAjax = new DOMParser().parseFromString(htmlAjax || '', 'text/html');
 
       // 4. Inspeciona a tabela tableListaRegrasImportacao
-      const tabela = docAjax.getElementById('tableListaRegrasImportacao');
-      if (!tabela) {
-        throw new Error('Tabela tableListaRegrasImportacao não encontrada na resposta do eproc.');
+      let tabela = docAjax.getElementById('tableListaRegrasImportacao') ||
+                   docAjax.querySelector('#tableListaRegrasImportacao') ||
+                   docAjax.querySelector('table[id*="ListaRegrasImportacao"]') ||
+                   docAjax.querySelector('table.infraTable') ||
+                   docAjax.querySelector('table');
+
+      let rows = tabela ? Array.from(tabela.querySelectorAll('tr')) : Array.from(docAjax.querySelectorAll('tr'));
+
+      if (rows.length === 0) {
+        const preview = (htmlAjax || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+        console.warn('[Grupos ATP] Resposta do AJAX sem linhas de regras. Preview:', preview);
+        throw new Error(`O eproc não retornou tabela de regras. Resposta recebida: "${preview || 'Vazia'}"`);
       }
 
       const infoExistentes = obterGruposExistentesNoOrgaoAtual(document);
       const gruposExtraidos = [];
-      const rows = tabela.querySelectorAll('tr');
 
       rows.forEach(tr => {
         const tdNome = tr.querySelector('#tdStrNome') || tr.querySelector('td:nth-child(1)');
@@ -18613,15 +18677,22 @@
         }
       });
 
-      // 5. Filtra por termo se fornecido
-      const termoNormalizado = String(termo || '').trim().toLowerCase();
-      const gruposFiltrados = termoNormalizado
-        ? gruposExtraidos.filter(g => (g.origem && g.origem.toLowerCase().includes(termoNormalizado)) || (g.nome && g.nome.toLowerCase().includes(termoNormalizado)))
+      // 5. Filtra por termo (extraindo a sigla padrão como "RPUB0101S" sem depender de complementos pessoais como "Lucas Barcellos")
+      const termoLimpo = String(termo || 'RPUB0101S').trim().toLowerCase();
+      const matchSigla = termoLimpo.match(/[a-z]{3,5}\d{3,5}[a-z]?/i);
+      const siglaAlvo = matchSigla ? matchSigla[0].toLowerCase() : termoLimpo;
+
+      const gruposFiltrados = termoLimpo
+        ? gruposExtraidos.filter(g => {
+            const orig = (g.origem || '').toLowerCase();
+            const nm = (g.nome || '').toLowerCase();
+            return orig.includes(siglaAlvo) || orig.includes(termoLimpo) || nm.includes(termoLimpo);
+          })
         : gruposExtraidos;
 
       _eprocGruposAtpCarregados = gruposFiltrados;
 
-      addLog(`✅ Consulta concluída: ${gruposFiltrados.length} grupos encontrados para o filtro "${termo}". (${infoExistentes.lista.length} grupos já cadastrados na unidade)`);
+      addLog(`✅ Consulta concluída: ${gruposFiltrados.length} grupos encontrados para o filtro "${termo}". (Total na base eproc: ${gruposExtraidos.length} grupos | ${infoExistentes.lista.length} grupo(s) já existente(s) na sua unidade)`);
 
       renderizarListaGruposAtp(gruposFiltrados);
 
@@ -18989,7 +19060,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.0</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.1</span></span>
 
         </div>
 
