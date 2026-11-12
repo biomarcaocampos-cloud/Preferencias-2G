@@ -513,23 +513,31 @@
     return acao === 'usuario_listar_todos' || acao === 'usuario_listar';
   }
 
-  function ehTelaSuportada() {
-    return ehTelaDeMinuta() || ehTelaDeRelatorio() || ehTelaDeMovimentacao() || ehTelaDeMinutaAreaTrabalho() || ehTelaDeIntimacao() || ehTelaDeLocalizadores() || ehTelaDeGruposPreferencia() || ehTelaDeUsuarios();
+  function ehTelaDeAutomatizacaoLocalizadores() {
+    const params = new URLSearchParams(window.location.search);
+    const acao = (params.get('acao') || '').toLowerCase();
+    return acao === 'automatizar_localizadores';
   }
 
-  let moduloAtivo = ehTelaDeLocalizadores() || ehTelaDeGruposPreferencia() || ehTelaDeUsuarios()
-    ? 'servidores'
-    : (ehTelaDeIntimacao()
-      ? 'intimacoes'
-      : (ehTelaDeMinutaAreaTrabalho()
-        ? 'area_minutas'
-        : (ehTelaDeRelatorio()
-          ? 'relatorios'
-          : (ehTelaDeMovimentacao()
-            ? 'movimentacoes'
-            : (ehTelaDeMinuta()
-              ? 'minutas'
-              : (sessionStorage.getItem('eproc_pref_2g_modulo_ativo') || 'minutas'))))));
+  function ehTelaSuportada() {
+    return ehTelaDeMinuta() || ehTelaDeRelatorio() || ehTelaDeMovimentacao() || ehTelaDeMinutaAreaTrabalho() || ehTelaDeIntimacao() || ehTelaDeLocalizadores() || ehTelaDeGruposPreferencia() || ehTelaDeUsuarios() || ehTelaDeAutomatizacaoLocalizadores();
+  }
+
+  let moduloAtivo = ehTelaDeAutomatizacaoLocalizadores()
+    ? 'grupos_atp'
+    : (ehTelaDeLocalizadores() || ehTelaDeGruposPreferencia() || ehTelaDeUsuarios()
+      ? 'servidores'
+      : (ehTelaDeIntimacao()
+        ? 'intimacoes'
+        : (ehTelaDeMinutaAreaTrabalho()
+          ? 'area_minutas'
+          : (ehTelaDeRelatorio()
+            ? 'relatorios'
+            : (ehTelaDeMovimentacao()
+              ? 'movimentacoes'
+              : (ehTelaDeMinuta()
+                ? 'minutas'
+                : (sessionStorage.getItem('eproc_pref_2g_modulo_ativo') || 'minutas')))))));
 
   function gerarStatusTelaHtml() {
     if (moduloAtivo === 'servidores') {
@@ -561,6 +569,12 @@
         return '<span style="color:#15803d; font-weight:700;">✅ Intimação Eletrônica (Pronto)</span>';
       } else {
         return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:7px 10px; color:#92400e; font-size:12px; line-height:1.45; margin-top:2px;">⚠️ Para este módulo, é necessário estar na tela de um processo. Por favor, abra qualquer processo da unidade e acesse a tela de <strong>Intimação</strong>.</div>';
+      }
+    } else if (moduloAtivo === 'grupos_atp') {
+      if (ehTelaDeAutomatizacaoLocalizadores()) {
+        return '<span style="color:#00766c; font-weight:700;">⚡ Automatizar Tramitação Processual (Pronto para importar)</span>';
+      } else {
+        return '<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:7px 10px; color:#166534; font-size:12px; line-height:1.45; margin-top:2px;">⚡ <strong>Módulo Grupos ATP:</strong> Clique na aba para acessar diretamente a tela de <strong>Automatizar Tramitação Processual</strong>.</div>';
       }
     } else {
       if (ehTelaDeRelatorio()) {
@@ -667,7 +681,8 @@
       movimentacoes: document.getElementById('btn-modulo-movimentacoes'),
       area_minutas: document.getElementById('btn-modulo-area-minutas'),
       intimacoes: document.getElementById('btn-modulo-intimacoes'),
-      servidores: document.getElementById('btn-modulo-servidores')
+      servidores: document.getElementById('btn-modulo-servidores'),
+      grupos_atp: document.getElementById('btn-modulo-grupos-atp')
     };
 
     Object.entries(mapBotoes).forEach(([chave, btn]) => {
@@ -683,6 +698,7 @@
     if (stDiv) stDiv.innerHTML = gerarStatusTelaHtml();
 
     const containerSrv = document.getElementById('rito-container-servidores');
+    const containerAtp = document.getElementById('rito-container-grupos-atp');
     const dropzone = document.getElementById('rito-dropzone');
     const cardInfo = document.getElementById('rito-card-info');
     const btnDiagnostico = document.getElementById('btn-rito-diagnostico');
@@ -692,6 +708,7 @@
 
     if (moduloAtivo === 'servidores') {
       if (containerSrv) containerSrv.style.display = 'block';
+      if (containerAtp) containerAtp.style.display = 'none';
       if (dropzone) dropzone.style.display = 'none';
       if (cardInfo) cardInfo.style.display = 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = 'none';
@@ -699,8 +716,19 @@
       if (!pularRecargaPlanilha) {
         sincronizarServidoresBasicoDoEproc();
       }
+    } else if (moduloAtivo === 'grupos_atp') {
+      if (containerSrv) containerSrv.style.display = 'none';
+      if (containerAtp) containerAtp.style.display = 'block';
+      if (dropzone) dropzone.style.display = 'none';
+      if (cardInfo) cardInfo.style.display = 'none';
+      if (btnDiagnostico) btnDiagnostico.style.display = 'none';
+      if (btnIniciar) btnIniciar.style.display = 'none';
+      if (typeof inicializarModuloGruposAtp === 'function') {
+        inicializarModuloGruposAtp();
+      }
     } else {
       if (containerSrv) containerSrv.style.display = 'none';
+      if (containerAtp) containerAtp.style.display = 'none';
       if (dropzone) dropzone.style.display = temPlanilha ? 'none' : 'block';
       if (cardInfo) cardInfo.style.display = temPlanilha ? 'block' : 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = temPlanilha ? 'flex' : 'none';
@@ -709,7 +737,7 @@
 
     const pill = document.getElementById('rito-modulo-status-pill');
     if (pill) {
-      pill.textContent = moduloAtivo === 'servidores' ? 'SERVIDORES' : (moduloAtivo === 'intimacoes' ? 'INTIMAÇÕES' : (moduloAtivo === 'relatorios' ? 'RELATÓRIOS' : (moduloAtivo === 'movimentacoes' ? 'MOVIMENTAÇÃO' : (moduloAtivo === 'area_minutas' ? 'DOCS' : 'MINUTAS'))));
+      pill.textContent = moduloAtivo === 'grupos_atp' ? 'GRUPOS ATP' : (moduloAtivo === 'servidores' ? 'SERVIDORES' : (moduloAtivo === 'intimacoes' ? 'INTIMAÇÕES' : (moduloAtivo === 'relatorios' ? 'RELATÓRIOS' : (moduloAtivo === 'movimentacoes' ? 'MOVIMENTAÇÃO' : (moduloAtivo === 'area_minutas' ? 'DOCS' : 'MINUTAS')))));
     }
 
     const btnVisualizarPrefs = document.getElementById('btn-rito-visualizar-preferencias');
@@ -735,14 +763,17 @@
       } else if (moduloAtivo === 'servidores') {
         btnGerenciador.innerHTML = '<span>👥</span> Abrir Localizadores do Órgão';
         btnGerenciador.title = 'Abre a tela oficial de Localizadores do Órgão no eproc';
+      } else if (moduloAtivo === 'grupos_atp') {
+        btnGerenciador.innerHTML = '<span>⚡</span> Automatizar Tramitação Processual';
+        btnGerenciador.title = 'Abre a tela oficial de Automatizar Tramitação Processual no eproc';
       } else {
         btnGerenciador.innerHTML = '<span>⚙️</span> Gerenciador de Preferências';
         btnGerenciador.title = 'Abre a tela oficial do eproc para visualizar ou editar preferências de minutas';
       }
     }
 
-    // Se a planilha já foi carregada em memória e não estamos em Servidores, reprocessa para a aba correspondente
-    if (!pularRecargaPlanilha && temPlanilha && moduloAtivo !== 'servidores') {
+    // Se a planilha já foi carregada em memória e não estamos em Servidores nem em Grupos ATP, reprocessa para a aba correspondente
+    if (!pularRecargaPlanilha && temPlanilha && moduloAtivo !== 'servidores' && moduloAtivo !== 'grupos_atp') {
       const nomeAba = moduloAtivo === 'intimacoes'
         ? 'Preferências - Intimações'
         : (moduloAtivo === 'relatorios'
@@ -12970,6 +13001,12 @@
         gap: 5px;
       }
 
+      .rito-module-row-3 {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 5px;
+      }
+
       .rito-btn-modulo {
         display: flex;
         flex-direction: row;
@@ -18373,6 +18410,560 @@
     }
   }
 
+  /* ================== MÓDULO IMPORTAÇÃO DE GRUPOS DE AUTOMATIZAÇÃO (ATPs) ================== */
+  let _eprocGruposAtpCarregados = [];
+  let _eprocAtpImportando = false;
+  let _eprocAtpPararSolicitado = false;
+
+  function obterGruposExistentesNoOrgaoAtual(doc = document) {
+    const existentes = new Set();
+    const mapaNorm = new Map();
+
+    const normalizarNomeGrupo = (str) => {
+      return String(str || '')
+        .trim()
+        .replace(/\s*\(\d+\)$/, '')
+        .normalize('NFC')
+        .toLowerCase();
+    };
+
+    // 1. Inspeciona o select principal de filtro de grupos (#selGrupoRegra)
+    const selPrincipal = doc.getElementById('selGrupoRegra');
+    if (selPrincipal) {
+      Array.from(selPrincipal.options).forEach(opt => {
+        const val = (opt.value || '').trim();
+        const txt = (opt.text || opt.innerText || '').trim();
+        if (val && val !== 'null' && !txt.startsWith('==')) {
+          const limpo = txt.replace(/\s*\(\d+\)$/, '').trim();
+          if (limpo) {
+            existentes.add(limpo);
+            mapaNorm.set(normalizarNomeGrupo(limpo), limpo);
+          }
+        }
+      });
+    }
+
+    // 2. Inspeciona todos os selects de alteração de grupo por linha (selGrupoRegra_...)
+    doc.querySelectorAll('select[id^="selGrupoRegra_"]').forEach(sel => {
+      Array.from(sel.options).forEach(opt => {
+        const val = (opt.value || '').trim();
+        const txt = (opt.text || opt.innerText || '').trim();
+        if (val && !['null', 'incluir', 'desativar_grupo_regra', 'gerenciar', 'alterar_ordem', 'voltar'].includes(val) && !txt.startsWith('==')) {
+          const limpo = txt.replace(/\s*\(\d+\)$/, '').trim();
+          if (limpo) {
+            existentes.add(limpo);
+            mapaNorm.set(normalizarNomeGrupo(limpo), limpo);
+          }
+        }
+      });
+    });
+
+    return {
+      lista: Array.from(existentes),
+      mapaNorm,
+      contem: (nome) => mapaNorm.has(normalizarNomeGrupo(nome))
+    };
+  }
+
+  function extrairMensagensRespostaEproc(html) {
+    if (!html) return 'Operação processada pelo eproc.';
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const seletores = [
+        '#divInfraMensagens',
+        '.infraMensagem',
+        '.infraAreaMensagens',
+        '.alert-success',
+        '.alert-info',
+        '.alert-warning',
+        '.alert-danger',
+        '.alert',
+        '#divMsgSucesso',
+        '#divMsgAlerta'
+      ];
+      const msgs = [];
+      seletores.forEach(sel => {
+        doc.querySelectorAll(sel).forEach(el => {
+          const txt = (el.innerText || el.textContent || '').trim();
+          if (txt && !msgs.includes(txt)) msgs.push(txt);
+        });
+      });
+      if (msgs.length > 0) return msgs.join(' | ');
+
+      const bodyText = doc.body ? (doc.body.innerText || doc.body.textContent || '') : '';
+      const linhas = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+      const relevantes = linhas.filter(l => /sucesso|importad|regras?|localizador/i.test(l) && !/menu|javascript|function|consultar/i.test(l));
+      if (relevantes.length > 0) return relevantes.slice(0, 2).join(' | ');
+    } catch (e) {}
+    return 'Operação concluída com sucesso no eproc.';
+  }
+
+  async function consultarGruposAtpNoEproc(termo = 'RPUB0101S') {
+    if (!ehTelaDeAutomatizacaoLocalizadores()) {
+      addLog('⚠️ Módulo Grupos ATP: Acesse a tela de Automatizar Tramitação Processual para consultar e importar.', 'warn');
+      return { ok: false, erro: 'fora_da_tela' };
+    }
+
+    const containerList = document.getElementById('rito-atp-grupos-list');
+    const badgeContador = document.getElementById('atp-contador-badge');
+    const statusResumo = document.getElementById('atp-status-resumo');
+
+    if (containerList) {
+      containerList.innerHTML = '<div style="text-align:center; padding:18px 10px; color:#00766c; font-size:11.5px;"><span class="rito-spinner"></span> Consultando grupos de automatização no eproc...</div>';
+    }
+    if (statusResumo) statusResumo.textContent = 'Consultando base do eproc...';
+
+    try {
+      addLog('🔍 Consultando grupos de automatização disponíveis no eproc...');
+
+      // 1. Localiza o link ou botão do modal de importação na página
+      let urlSubfrm = '';
+      const btnImportarSubfrm = document.querySelector('button[onclick*="localizador_associacao_executar_importar_subfrm"], a[onclick*="localizador_associacao_executar_importar_subfrm"]');
+      if (btnImportarSubfrm) {
+        const m = btnImportarSubfrm.getAttribute('onclick').match(/abrirSubfrmImportar\(['"]([^'"]+)['"]\)/i) ||
+                  btnImportarSubfrm.getAttribute('onclick').match(/['"](controlador\.php\?acao=localizador_associacao_executar_importar_subfrm[^'"]*)['"]/i);
+        if (m && m[1]) urlSubfrm = m[1].replace(/&amp;/g, '&');
+      }
+
+      if (!urlSubfrm) {
+        const hashAtual = typeof obterHashAtual === 'function' ? obterHashAtual() : '';
+        const params = new URLSearchParams(window.location.search);
+        const numIdOrgao = params.get('num_id_orgao') || '';
+        urlSubfrm = `controlador.php?acao=localizador_associacao_executar_importar_subfrm&acao_origem=automatizar_localizadores&acao_retorno=automatizar_localizadores&num_id_orgao=${numIdOrgao}&hash=${hashAtual}`;
+      }
+
+      console.log('[Grupos ATP] Carregando subform de importação:', urlSubfrm);
+      const respSub = await fetch(urlSubfrm, { credentials: 'same-origin' });
+      if (!respSub.ok) {
+        throw new Error(`HTTP ${respSub.status} ao carregar modal de importação.`);
+      }
+
+      const htmlSub = await lerRespostaTexto(respSub);
+
+      // 2. Extrai a URL do AJAX e parâmetros necessários
+      const matchAjaxUrl = htmlSub.match(/url:\s*['"](controlador_ajax\.php\?acao_ajax=consultar_localizador_importar[^'"]*)['"]/i);
+      const matchNumIdOrgao = htmlSub.match(/numIdOrgao='\s*\+\s*'(\d+)'/i) || urlSubfrm.match(/num_id_orgao=(\d+)/i);
+
+      if (!matchAjaxUrl || !matchAjaxUrl[1]) {
+        throw new Error('Não foi possível extrair a URL de consulta AJAX do modal.');
+      }
+
+      const ajaxUrl = matchAjaxUrl[1].replace(/&amp;/g, '&');
+      const numIdOrgao = matchNumIdOrgao && matchNumIdOrgao[1] ? matchNumIdOrgao[1] : '';
+
+      console.log('[Grupos ATP] Chamando AJAX de consulta de grupos:', ajaxUrl, 'numIdOrgao:', numIdOrgao);
+
+      // 3. POST para consultar_localizador_importar
+      const respAjax = await fetch(ajaxUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `numIdControleLocalizadorSistemaGrupo=&numIdOrgaoTabela=&numIdOrgao=${numIdOrgao}&contextoPesquisa=`
+      });
+
+      if (!respAjax.ok) {
+        throw new Error(`HTTP ${respAjax.status} na consulta de grupos de automatização.`);
+      }
+
+      const htmlAjax = await lerRespostaTexto(respAjax);
+      const docAjax = new DOMParser().parseFromString(htmlAjax, 'text/html');
+
+      // 4. Inspeciona a tabela tableListaRegrasImportacao
+      const tabela = docAjax.getElementById('tableListaRegrasImportacao');
+      if (!tabela) {
+        throw new Error('Tabela tableListaRegrasImportacao não encontrada na resposta do eproc.');
+      }
+
+      const infoExistentes = obterGruposExistentesNoOrgaoAtual(document);
+      const gruposExtraidos = [];
+      const rows = tabela.querySelectorAll('tr');
+
+      rows.forEach(tr => {
+        const tdNome = tr.querySelector('#tdStrNome') || tr.querySelector('td:nth-child(1)');
+        const tdOrigem = tr.querySelector('#tdStrOrigem') || tr.querySelector('td:nth-child(2)');
+        const tdRegras = tr.querySelector('#tdNumRegras') || tr.querySelector('td:nth-child(3)');
+        const tdLocs = tr.querySelector('#tdNumLocalizadores') || tr.querySelector('td:nth-child(4)');
+        const linkElem = tr.querySelector('a[href*="localizador_associacao_executar_importar"]');
+
+        if (!tdNome || !linkElem) return;
+
+        const nome = (tdNome.innerText || tdNome.textContent || '').trim();
+        const origem = tdOrigem ? (tdOrigem.innerText || tdOrigem.textContent || '').trim() : '';
+        const regras = tdRegras ? (tdRegras.innerText || tdRegras.textContent || '').trim() : '';
+        const localizadores = tdLocs ? (tdLocs.innerText || tdLocs.textContent || '').trim() : '';
+
+        let urlImportar = '';
+        const hrefRaw = linkElem.getAttribute('href') || '';
+        const matchImportar = hrefRaw.match(/importarDados\(['"]([^'"]+)['"]/i) || hrefRaw.match(/['"](controlador\.php\?acao=localizador_associacao_executar_importar[^'"]*)['"]/i);
+        if (matchImportar && matchImportar[1]) {
+          urlImportar = matchImportar[1].replace(/&amp;/g, '&');
+        } else if (hrefRaw.includes('controlador.php?acao=localizador_associacao_executar_importar')) {
+          urlImportar = hrefRaw.replace(/^javascript:\s*/i, '').replace(/&amp;/g, '&');
+        }
+
+        if (nome && urlImportar) {
+          const jaExiste = infoExistentes.contem(nome);
+          gruposExtraidos.push({
+            nome,
+            origem,
+            regras,
+            localizadores,
+            urlImportar,
+            jaExiste
+          });
+        }
+      });
+
+      // 5. Filtra por termo se fornecido
+      const termoNormalizado = String(termo || '').trim().toLowerCase();
+      const gruposFiltrados = termoNormalizado
+        ? gruposExtraidos.filter(g => (g.origem && g.origem.toLowerCase().includes(termoNormalizado)) || (g.nome && g.nome.toLowerCase().includes(termoNormalizado)))
+        : gruposExtraidos;
+
+      _eprocGruposAtpCarregados = gruposFiltrados;
+
+      addLog(`✅ Consulta concluída: ${gruposFiltrados.length} grupos encontrados para o filtro "${termo}". (${infoExistentes.lista.length} grupos já cadastrados na unidade)`);
+
+      renderizarListaGruposAtp(gruposFiltrados);
+
+      return {
+        ok: true,
+        grupos: gruposFiltrados,
+        totalGeral: gruposExtraidos.length,
+        existentes: infoExistentes.lista
+      };
+
+    } catch (err) {
+      console.error('[Grupos ATP] Erro ao consultar grupos:', err);
+      addLog(`❌ Erro ao consultar grupos de automatização: ${err.message}`, 'error');
+      if (containerList) {
+        containerList.innerHTML = `<div style="padding:14px; color:#dc2626; font-size:11.5px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; line-height:1.4;">
+          <strong>Falha na consulta:</strong> ${err.message}<br>
+          <span style="font-size:10.5px; color:#64748b;">Certifique-se de estar conectado à tela de Automatizar Tramitação Processual.</span>
+        </div>`;
+      }
+      if (statusResumo) statusResumo.textContent = 'Erro ao consultar.';
+      return { ok: false, erro: err.message };
+    }
+  }
+
+  function renderizarListaGruposAtp(grupos) {
+    const containerList = document.getElementById('rito-atp-grupos-list');
+    const badgeContador = document.getElementById('atp-contador-badge');
+    const statusResumo = document.getElementById('atp-status-resumo');
+
+    if (!containerList) return;
+
+    if (!Array.isArray(grupos) || grupos.length === 0) {
+      containerList.innerHTML = '<div style="text-align:center; padding:20px 10px; color:#64748b; font-size:11.5px;">Nenhum grupo encontrado com o filtro informado.</div>';
+      if (badgeContador) badgeContador.textContent = '0 grupos';
+      if (statusResumo) statusResumo.textContent = '0 grupos encontrados';
+      return;
+    }
+
+    const totalDisponiveis = grupos.filter(g => !g.jaExiste).length;
+    const totalExistentes = grupos.filter(g => g.jaExiste).length;
+
+    if (badgeContador) {
+      badgeContador.textContent = `${grupos.length} grupos (${totalDisponiveis} disp.)`;
+    }
+    if (statusResumo) {
+      statusResumo.innerHTML = `<strong>${totalDisponiveis}</strong> disponíveis | <strong style="color:#b45309;">${totalExistentes}</strong> já cadastrados`;
+    }
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    containerList.innerHTML = grupos.map((g, idx) => {
+      const num = idx + 1;
+      const chkId = `chk-atp-grupo-${idx}`;
+      const checkedAttr = !g.jaExiste ? 'checked' : '';
+      const disabledAttr = g.jaExiste ? 'disabled' : '';
+      const bgCard = g.jaExiste ? '#f8fafc' : '#ffffff';
+      const borderCard = g.jaExiste ? '#e2e8f0' : '#cbd5e1';
+      const opacity = g.jaExiste ? 'opacity:0.85;' : '';
+
+      return `
+        <div class="rito-atp-item-card" data-idx="${idx}" style="background:${bgCard}; border:1px solid ${borderCard}; border-radius:6px; padding:7px 9px; display:flex; gap:8px; align-items:flex-start; ${opacity} transition:all 0.15s ease;">
+          <input type="checkbox" id="${chkId}" class="rito-atp-chk" data-idx="${idx}" ${checkedAttr} ${disabledAttr} style="margin-top:2.5px; cursor:${g.jaExiste ? 'not-allowed' : 'pointer'};" />
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:2px;">
+              <label for="${chkId}" style="font-size:11.5px; font-weight:700; color:${g.jaExiste ? '#64748b' : '#0f172a'}; cursor:${g.jaExiste ? 'not-allowed' : 'pointer'}; margin:0; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                ${num}. ${esc(g.nome)}
+              </label>
+              ${g.jaExiste 
+                ? '<span style="background:#fef3c7; border:1px solid #fde68a; color:#92400e; font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; white-space:nowrap;" title="Este grupo já existe no órgão atual e não pode ser reimportado">⚠️ Já Cadastrado</span>'
+                : '<span style="background:#dcfce7; border:1px solid #86efac; color:#166534; font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; white-space:nowrap;">Pronto</span>'
+              }
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; font-size:10.5px; color:#64748b; line-height:1.25;">
+              <span style="color:#0369a1; font-weight:600;">📊 ${esc(g.regras || 'Regras')}</span>
+              <span>•</span>
+              <span style="color:#475569;">📍 ${esc(g.localizadores || 'Localizadores')}</span>
+            </div>
+            <div style="font-size:10px; color:#94a3b8; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              Origem: ${esc(g.origem)}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function executarImportacaoGruposAtp() {
+    if (!ehTelaDeAutomatizacaoLocalizadores()) {
+      alert('Para importar grupos de automatização, você deve estar na tela de Automatizar Tramitação Processual.');
+      return;
+    }
+
+    const chks = document.querySelectorAll('.rito-atp-chk:checked:not(:disabled)');
+    const indicesSelecionados = Array.from(chks).map(c => parseInt(c.getAttribute('data-idx'), 10));
+
+    if (indicesSelecionados.length === 0) {
+      alert('Nenhum grupo disponível selecionado para importação. Marque ao menos um grupo que não esteja já cadastrado.');
+      return;
+    }
+
+    const gruposAImportar = indicesSelecionados.map(i => _eprocGruposAtpCarregados[i]).filter(Boolean);
+
+    const btnIniciar = document.getElementById('btn-atp-iniciar-importacao');
+    const btnParar = document.getElementById('btn-atp-parar-importacao');
+    const progContainer = document.getElementById('rito-atp-progresso-container');
+    const progTexto = document.getElementById('atp-progresso-texto');
+    const progBarra = document.getElementById('atp-progresso-barra');
+    const progPct = document.getElementById('atp-progresso-porcentagem');
+
+    _eprocAtpImportando = true;
+    _eprocAtpPararSolicitado = false;
+
+    if (btnIniciar) btnIniciar.style.display = 'none';
+    if (btnParar) btnParar.style.display = 'block';
+    if (progContainer) progContainer.style.display = 'block';
+
+    addLog(`🚀 Iniciando importação em lote de ${gruposAImportar.length} grupo(s) de automatização...`);
+
+    const resultados = [];
+    const total = gruposAImportar.length;
+
+    for (let i = 0; i < total; i++) {
+      if (_eprocAtpPararSolicitado) {
+        addLog('⏹ Importação de grupos interrompida a pedido do usuário.', 'warn');
+        break;
+      }
+
+      const g = gruposAImportar[i];
+      const passoAtual = i + 1;
+      const pct = Math.round((passoAtual / total) * 100);
+
+      if (progTexto) progTexto.textContent = `Importando ${passoAtual} de ${total}: ${g.nome}...`;
+      if (progBarra) progBarra.style.width = `${pct}%`;
+      if (progPct) progPct.textContent = `${pct}%`;
+
+      addLog(`⚡ [${passoAtual}/${total}] Importando grupo "${g.nome}"...`);
+
+      const itemCard = document.querySelector(`.rito-atp-item-card[data-idx="${indicesSelecionados[i]}"]`);
+      if (itemCard) {
+        itemCard.style.borderColor = '#0284c7';
+        itemCard.style.background = '#f0f9ff';
+      }
+
+      try {
+        const respImp = await fetch(g.urlImportar, {
+          method: 'GET',
+          credentials: 'same-origin'
+        });
+
+        if (!respImp.ok) {
+          throw new Error(`HTTP ${respImp.status}`);
+        }
+
+        const htmlImp = await lerRespostaTexto(respImp);
+        const msgEproc = extrairMensagensRespostaEproc(htmlImp);
+
+        addLog(`✅ [${passoAtual}/${total}] "${g.nome}" importado com sucesso! (${msgEproc})`);
+
+        resultados.push({
+          grupo: g,
+          sucesso: true,
+          mensagem: msgEproc
+        });
+
+        if (itemCard) {
+          itemCard.style.borderColor = '#16a34a';
+          itemCard.style.background = '#f0fdf4';
+          const chk = itemCard.querySelector('.rito-atp-chk');
+          if (chk) {
+            chk.checked = false;
+            chk.disabled = true;
+          }
+        }
+
+      } catch (err) {
+        console.error(`[Grupos ATP] Erro ao importar grupo ${g.nome}:`, err);
+        addLog(`❌ [${passoAtual}/${total}] Falha ao importar "${g.nome}": ${err.message}`, 'error');
+        resultados.push({
+          grupo: g,
+          sucesso: false,
+          mensagem: err.message
+        });
+
+        if (itemCard) {
+          itemCard.style.borderColor = '#dc2626';
+          itemCard.style.background = '#fef2f2';
+        }
+      }
+
+      if (i < total - 1 && !_eprocAtpPararSolicitado) {
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+
+    _eprocAtpImportando = false;
+    if (btnIniciar) btnIniciar.style.display = 'flex';
+    if (btnParar) btnParar.style.display = 'none';
+
+    const sucessos = resultados.filter(r => r.sucesso).length;
+    const falhas = resultados.filter(r => !r.sucesso).length;
+
+    addLog(`🏁 Importação concluída! Sucessos: ${sucessos} | Falhas: ${falhas} de ${total} grupo(s).`);
+
+    renderizarModalConclusaoImportacaoAtp({
+      total,
+      sucessos,
+      falhas,
+      interrompido: _eprocAtpPararSolicitado,
+      resultados
+    });
+  }
+
+  function renderizarModalConclusaoImportacaoAtp(relatorio) {
+    const modalExistente = document.getElementById('rito-modal-conclusao-atp');
+    if (modalExistente) modalExistente.remove();
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'rito-modal-conclusao-atp';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483647; background:rgba(15,23,42,0.65); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out;';
+
+    const linhasHtml = relatorio.resultados.map((r, i) => `
+      <li style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #f1f5f9; font-size:12px;">
+        <span style="font-weight:600; color:${r.sucesso ? '#166534' : '#dc2626'};">
+          ${r.sucesso ? '✅' : '❌'} ${i + 1}. ${esc(r.grupo.nome)}
+        </span>
+        <span style="font-size:11px; color:#64748b; max-width:260px; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(r.mensagem)}">
+          ${esc(r.mensagem)}
+        </span>
+      </li>
+    `).join('');
+
+    overlay.innerHTML = `
+      <div style="background:#ffffff; border-radius:10px; width:100%; max-width:560px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); border:1px solid #cbd5e1; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="background:linear-gradient(135deg, #00766c 0%, #005a52 100%); border-bottom:2px solid #004d40; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:18px;">🎉</span>
+            <strong style="color:#ffffff; font-size:14px;">Importação de Grupos Concluída</strong>
+          </div>
+          <button type="button" id="btn-fechar-modal-atp" style="background:none; border:none; font-size:18px; color:#ffffff; cursor:pointer; line-height:1; padding:0 4px;" title="Fechar">✕</button>
+        </div>
+        <div style="padding:16px; display:flex; flex-direction:column; gap:12px; font-size:12.5px; color:#334155; line-height:1.45;">
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px; text-align:center;">
+              <div style="font-size:20px; font-weight:800; color:#16a34a;">${relatorio.sucessos}</div>
+              <div style="font-size:11px; color:#166534; font-weight:600;">Importados com Sucesso</div>
+            </div>
+            ${relatorio.falhas > 0 ? `
+              <div style="flex:1; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px; text-align:center;">
+                <div style="font-size:20px; font-weight:800; color:#dc2626;">${relatorio.falhas}</div>
+                <div style="font-size:11px; color:#991b1b; font-weight:600;">Falhas</div>
+              </div>
+            ` : ''}
+          </div>
+
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; max-height:220px; overflow-y:auto;">
+            <ul style="margin:0; padding:0; list-style:none;">
+              ${linhasHtml}
+            </ul>
+          </div>
+          <div style="font-size:11.5px; color:#64748b; line-height:1.4;">
+            As regras e localizadores dos grupos importados foram gravados no órgão. Clique abaixo para atualizar a tela do eproc e visualizar as novas regras de automatização.
+          </div>
+        </div>
+        <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:10px 16px; display:flex; justify-content:flex-end; gap:8px;">
+          <button type="button" id="btn-concluir-modal-atp" style="padding:7px 14px; font-size:12px; font-weight:600; color:#475569; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">Fechar</button>
+          <button type="button" id="btn-recarregar-tela-atp" style="padding:7px 16px; font-size:12.5px; font-weight:700; color:#ffffff; background:#00766c; border:1px solid #005a52; border-radius:4px; cursor:pointer; box-shadow:0 1px 3px rgba(0,118,108,0.3);">🔄 Atualizar Tela do eproc</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const fechar = () => { overlay.remove(); };
+    overlay.querySelector('#btn-fechar-modal-atp').onclick = fechar;
+    overlay.querySelector('#btn-concluir-modal-atp').onclick = fechar;
+    overlay.querySelector('#btn-recarregar-tela-atp').onclick = () => {
+      fechar();
+      window.location.reload();
+    };
+    overlay.onclick = (e) => { if (e.target === overlay) fechar(); };
+  }
+
+  function inicializarModuloGruposAtp(forcarRecarregar = false) {
+    const termoInput = document.getElementById('rito-atp-pesquisa-termo');
+    const btnConsultar = document.getElementById('btn-atp-consultar');
+    const btnMarcar = document.getElementById('btn-atp-marcar-todos');
+    const btnDesmarcar = document.getElementById('btn-atp-desmarcar-todos');
+    const btnIniciar = document.getElementById('btn-atp-iniciar-importacao');
+    const btnParar = document.getElementById('btn-atp-parar-importacao');
+
+    if (btnConsultar) {
+      btnConsultar.onclick = () => {
+        const termo = termoInput ? termoInput.value.trim() : 'RPUB0101S';
+        consultarGruposAtpNoEproc(termo);
+      };
+    }
+
+    if (termoInput) {
+      termoInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const termo = termoInput.value.trim();
+          consultarGruposAtpNoEproc(termo);
+        }
+      };
+    }
+
+    if (btnMarcar) {
+      btnMarcar.onclick = () => {
+        document.querySelectorAll('.rito-atp-chk:not(:disabled)').forEach(chk => { chk.checked = true; });
+      };
+    }
+
+    if (btnDesmarcar) {
+      btnDesmarcar.onclick = () => {
+        document.querySelectorAll('.rito-atp-chk:not(:disabled)').forEach(chk => { chk.checked = false; });
+      };
+    }
+
+    if (btnIniciar) {
+      btnIniciar.onclick = () => {
+        executarImportacaoGruposAtp();
+      };
+    }
+
+    if (btnParar) {
+      btnParar.onclick = () => {
+        _eprocAtpPararSolicitado = true;
+        addLog('⏹ Solicitação de parada recebida. Finalizando grupo atual...', 'warn');
+      };
+    }
+
+    if (ehTelaDeAutomatizacaoLocalizadores()) {
+      if (forcarRecarregar || _eprocGruposAtpCarregados.length === 0) {
+        const termo = termoInput ? termoInput.value.trim() : 'RPUB0101S';
+        consultarGruposAtpNoEproc(termo);
+      }
+    }
+  }
+
 
   function criarPainel() {
 
@@ -18398,7 +18989,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.9.1</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.0</span></span>
 
         </div>
 
@@ -18455,6 +19046,12 @@
               <button type="button" id="btn-modulo-servidores" class="rito-btn-modulo ${moduloAtivo === 'servidores' ? 'active' : ''}" title="Módulo de Personalização de Servidores da Unidade">
                 <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 <span>Servidores</span>
+              </button>
+            </div>
+            <div class="rito-module-row-3" style="margin-top:5px;">
+              <button type="button" id="btn-modulo-grupos-atp" class="rito-btn-modulo ${moduloAtivo === 'grupos_atp' ? 'active' : ''}" style="width:100%; justify-content:center; gap:8px;" title="Módulo de Importação de Grupos de Automatização (ATPs da 2G)">
+                <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span>⚡ Grupos de Automatização (ATPs)</span>
               </button>
             </div>
           </div>
@@ -18532,6 +19129,69 @@
           <button type="button" class="rito-btn rito-btn-primary" id="btn-servidores-executar" style="width:100%; padding:9px; font-size:12px; font-weight:700; background:linear-gradient(135deg, #16a34a 0%, #15803d 100%); border-color:#14532d; box-shadow:0 2px 6px rgba(22,163,74,0.3);">
             <span>🚀</span> Personalizar Servidores da Unidade
           </button>
+        </div>
+
+        <!-- MÓDULO GRUPOS ATP: CONTAINER DEDICADO -->
+        <div id="rito-container-grupos-atp" style="display:${moduloAtivo === 'grupos_atp' ? 'block' : 'none'}; margin-top:8px;">
+          <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:10px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-size:12px; font-weight:700; color:#00766c; display:flex; align-items:center; gap:6px;">
+                <span>⚡</span> Grupos de Automatização (ATPs 2G)
+              </span>
+              <span id="atp-contador-badge" style="font-size:10.5px; color:#475569; font-weight:600; background:#f1f5f9; padding:2px 7px; border-radius:10px; border:1px solid #e2e8f0;">0 grupos</span>
+            </div>
+            <div style="font-size:11px; color:#475569; line-height:1.4; margin-bottom:8px;">
+              Filtre e importe os grupos de regras padronizados de <strong>2G - Direito Público</strong>. Grupos já existentes na unidade são identificados e desabilitados para prevenir duplicação.
+            </div>
+
+            <!-- Filtro de Origem / Termo de busca -->
+            <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
+              <div style="flex:1; position:relative;">
+                <input type="text" id="rito-atp-pesquisa-termo" value="RPUB0101S" placeholder="Filtrar por código/origem (ex: RPUB0101S)" style="width:100%; box-sizing:border-box; padding:6px 8px; font-size:11.5px; border:1px solid #cbd5e1; border-radius:4px; font-family:inherit; color:#1e293b;" />
+              </div>
+              <button type="button" id="btn-atp-consultar" class="rito-btn" style="padding:6px 12px; font-size:11.5px; font-weight:600; background:#00766c; color:#fff; border-radius:4px; border:1px solid #005a52; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+                <span>🔍</span> Consultar
+              </button>
+            </div>
+
+            <!-- Ações rápidas de seleção -->
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0 6px 0; border-bottom:1px solid #e2e8f0; margin-bottom:6px;">
+              <span style="font-size:11px; color:#64748b; font-weight:600;" id="atp-status-resumo">Carregando grupos disponíveis...</span>
+              <div style="display:flex; gap:6px;">
+                <button type="button" id="btn-atp-marcar-todos" style="background:none; border:none; color:#006cb5; font-size:10.5px; font-weight:600; cursor:pointer; padding:0 2px;">Marcar disponíveis</button>
+                <span style="color:#cbd5e1;">|</span>
+                <button type="button" id="btn-atp-desmarcar-todos" style="background:none; border:none; color:#64748b; font-size:10.5px; font-weight:600; cursor:pointer; padding:0 2px;">Desmarcar todos</button>
+              </div>
+            </div>
+
+            <!-- Lista de Grupos Encontrados com Checkbox e Alertas -->
+            <div id="rito-atp-grupos-list" style="max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; margin-bottom:10px; padding-right:2px;">
+              <div style="text-align:center; padding:20px 10px; color:#64748b; font-size:11.5px;">
+                Clique em <strong>Consultar</strong> ou aguarde o carregamento automático dos grupos da 2G...
+              </div>
+            </div>
+
+            <!-- Barra de Progresso da Importação -->
+            <div id="rito-atp-progresso-container" style="display:none; margin-bottom:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span id="atp-progresso-texto" style="font-size:11px; font-weight:600; color:#0f172a;">Importando grupos...</span>
+                <span id="atp-progresso-porcentagem" style="font-size:11px; font-weight:700; color:#00766c;">0%</span>
+              </div>
+              <div style="width:100%; height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
+                <div id="atp-progresso-barra" style="width:0%; height:100%; background:linear-gradient(90deg, #00766c, #006cb5); transition:width 0.25s ease;"></div>
+              </div>
+            </div>
+
+            <!-- Botões de Ação -->
+            <div style="display:flex; gap:6px;">
+              <button type="button" id="btn-atp-iniciar-importacao" class="rito-btn" style="flex:1; padding:9px; font-size:12px; font-weight:700; background:linear-gradient(135deg, #00766c 0%, #005a52 100%); color:#ffffff; border:1px solid #004d40; border-radius:4px; cursor:pointer; box-shadow:0 1px 3px rgba(0,118,108,0.3); display:flex; align-items:center; justify-content:center; gap:6px;">
+                <span>⚡</span> Iniciar Importação
+              </button>
+              <button type="button" id="btn-atp-parar-importacao" class="rito-btn" style="display:none; padding:9px 14px; font-size:12px; font-weight:700; background:#dc2626; color:#ffffff; border:1px solid #b91c1c; border-radius:4px; cursor:pointer;">
+                <span>⏹</span> Parar
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="rito-dropzone" id="rito-dropzone">
@@ -18773,6 +19433,17 @@
       };
     }
 
+    const btnModAtp = document.getElementById('btn-modulo-grupos-atp');
+    if (btnModAtp) {
+      btnModAtp.onclick = () => {
+        alternarModulo('grupos_atp');
+        if (!ehTelaDeAutomatizacaoLocalizadores()) {
+          const url = obterUrlAcaoMenu('automatizar_localizadores') || ('controlador.php?acao=automatizar_localizadores&hash=' + (typeof obterHashAtual === 'function' ? obterHashAtual() : ''));
+          window.location.href = url;
+        }
+      };
+    }
+
 
 
     const logsToggle = document.getElementById('rito-logs-header-toggle');
@@ -19002,6 +19673,12 @@
 
         if (moduloAtivo === 'servidores') {
           window.open(obterUrlAcaoMenu('localizador_orgao_listar'), '_blank');
+          return;
+        }
+
+        if (moduloAtivo === 'grupos_atp') {
+          const url = obterUrlAcaoMenu('automatizar_localizadores') || ('controlador.php?acao=automatizar_localizadores&hash=' + (typeof obterHashAtual === 'function' ? obterHashAtual() : ''));
+          window.location.href = url;
           return;
         }
 

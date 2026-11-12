@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Instruções — Criar Preferências em Lote 2G v3.9.1 (Segundo Grau TJSP)</title>
+  <title>Instruções — Criar Preferências em Lote 2G v3.10.0 (Segundo Grau TJSP)</title>
   <style>
     :root {
       --primary: #15803d;
@@ -251,6 +251,7 @@
         <li><b>⚡ Módulo 3 (Movimentações):</b> Lê a aba <code>Preferências - Movimentar</code> e grava preferências na tela de <b>Movimentação Processual</b> (<code>processo_movimento_consultar</code>), buscando o evento exato pelo nome completo da movimentação (desambiguando eventos que compartilham o mesmo código numérico, como o código <code>51</code> ou <code>123</code>), configurando o comportamento e os novos localizadores e respeitando a ausência de grupo quando a coluna <i>Grupo de preferência</i> estiver vazia. Também conta com o botão <b>🗓️ Tabela de Preferências</b> (com filtros por localizadores a incluir e a remover, órgãos, prazos de suspensão/tramitação e CSV).</li>
         <li><b>📄 Módulo 4 (Documentos / Área de Minutas):</b> Lê a aba <code>Preferências - Área de Minutas</code> e grava preferências na tela da <b>Área de Trabalho de Minutas</b> (<code>minuta_area_trabalho</code>), filtrando por tipo de documento (Despachos/Decisões e Votos), status da minuta, localizador de servidor e grupo de preferências. Também conta com o botão <b>🗓️ Tabela de Preferências</b> (com filtro dedicado por localizador filtrado e CSV).</li>
         <li><b>📬 Módulo 5 (Intimações):</b> Lê a aba correspondente de intimações e grava preferências na tela de <b>Intimação Eletrônica</b> (<code>processo_intimacao</code> / <code>processo_intimacao_bloco</code>), com prazos por polo/tipo de parte, urgência, encadeamento de eventos e localizadores. Também conta com o botão <b>🗓️ Tabela de Preferências</b> para auditar todas as configurações gravadas em grade completa.</li>
+        <li><b>⚡ Módulo 6 (Grupos de Automatização - ATPs):</b> Conecta diretamente à tela de <b>Automatizar Tramitação Processual</b> (<code>acao=automatizar_localizadores</code>), filtra grupos pela origem modelo de 2G - Direito Público (padrão <code>RPUB0101S</code>), detecta automaticamente os grupos que já existem no órgão para impedir duplicação acidental (desabilitando a seleção destes com badge de alerta), e executa a importação sequencial com bypass de popups, logs detalhados e relatório final.</li>
       </ul>
 
       <h2>2. Instalação e Ativação no Chrome / Edge</h2>
@@ -593,6 +594,40 @@
         </tbody>
       </table>
 
+      <h3>⚡ 5.6 Módulo 6: Grupos de Automatização (Tela Automatizar Tramitação Processual)</h3>
+      <p>Gerencia a importação de grupos padronizados de ATPs na tela <code>acao=automatizar_localizadores</code>:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Funcionalidade / Etapa</th>
+            <th>Comportamento Automatizado</th>
+            <th>Proteção e Regras</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Filtro de Origem</b></td>
+            <td>Busca por padrão o código <code>RPUB0101S</code> (ou texto personalizado digitado pelo usuário).</td>
+            <td>Carrega todos os grupos padronizados cadastrados no banco de regras do Segundo Grau.</td>
+          </tr>
+          <tr>
+            <td><b>Prevenção de Duplicidade</b></td>
+            <td>Inspeciona o seletor <code>selGrupoRegra</code> e os grupos de regras já existentes na unidade.</td>
+            <td>Se o grupo já existir no órgão, a caixa de seleção é <b>automaticamente desabilitada</b> com o selo <code>⚠️ Já Cadastrado</code>.</td>
+          </tr>
+          <tr>
+            <td><b>Importação Sequencial em Lote</b></td>
+            <td>Executa a chamada direta de importação de cada grupo selecionado sem popups manuais de confirmação.</td>
+            <td>Apresenta barra de progresso em tempo real, delay seguro entre requisições e botão de interrupção (⏹ Parar).</td>
+          </tr>
+          <tr>
+            <td><b>Relatório e Conclusão</b></td>
+            <td>Consolida os logs de retorno do eproc para cada grupo e abre modal de resumo com botão de atualização de página.</td>
+            <td>Garante que o órgão visualize imediatamente os novos grupos e regras aplicadas.</td>
+          </tr>
+        </tbody>
+      </table>
+
       <h2>6. Camadas de Proteção e Segurança Ativa 2G</h2>
       <div class="card-security">
         <h4>🔒 1. Validação Estrita de Localizadores e Eventos</h4>
@@ -613,7 +648,7 @@
 
     <div class="footer">
       <div>Tribunal de Justiça do Estado de São Paulo • eproc 2G (Segundo Grau)</div>
-      <div>Extensão 2G • Versão 3.9.1 - 11/11/2026</div>
+      <div>Extensão 2G • Versão 3.10.0 - 12/11/2026</div>
     </div>
   </div>
 
