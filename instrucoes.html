@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Instruções — Criar Preferências em Lote 2G v3.8.0 (Segundo Grau TJSP)</title>
+  <title>Instruções — Criar Preferências em Lote 2G v3.9.0 (Segundo Grau TJSP)</title>
   <style>
     :root {
       --primary: #15803d;
@@ -196,18 +196,29 @@
     <div class="header">
       <h1><span class="badge-icon-p">P</span> Criar Preferências em Lote 2G (eproc TJSP - Segundo Grau)</h1>
       <p>Guia Completo de Operação, Auditoria Prévia e Arquitetura de Segurança de Dados.</p>
-      <div class="badge-version">Versão 3.8.0 - 10/11/2026</div>
+      <div class="badge-version">Versão 3.9.0 - 12/11/2026</div>
+    </div>
+
+    <div class="card" style="border-left: 4px solid #b45309; background-color: #fffbeb;">
+      <h3 style="color: #b45309; margin-top: 0;">⚠️ Notas da Versão 3.9.0 (12/11/2026)</h3>
+      <p style="margin-bottom: 6px;">Status atual dos recursos em homologação e pendências anotadas:</p>
+      <ul style="margin-bottom: 0;">
+        <li><strong>Módulo Minutas:</strong> Não está incluindo evento complementar na preferência de minuta.</li>
+        <li><strong>Módulo Servidores / ATPs:</strong> Não está editando lembretes nas ATPs.</li>
+      </ul>
     </div>
 
     
     <div class="card" style="border-left: 4px solid #16a34a;">
-      <h2>👤 Módulo: Personalização de Servidores da Unidade (Onboarding)</h2>
-      <p>Permite substituir os localizadores genéricos (<code>👤Servidor 1👤</code> a <code>👤Servidor 9👤</code>), grupos de preferência (<code>Trabalho - Servidor 1</code> a <code>9</code>) e os títulos dos relatórios e documentos vinculados pelos nomes reais dos servidores da unidade com apenas 1 clique.</p>
+      <h2>👤 Módulo: Personalização de Servidores e Estagiários da Unidade (Onboarding)</h2>
+      <p>Permite substituir os localizadores genéricos (<code>👤Servidor 1👤</code> a <code>👤Servidor 9👤</code>, <code>👤Estagiário 1👤</code> e <code>👤Estagiário 2👤</code>), grupos de preferência (<code>Trabalho - Servidor 1..9</code> e <code>Trabalho - Estagiário 1..2</code>), os títulos dos relatórios/documentos vinculados e os lembretes das ATPs de Trânsito em Julgado pelos nomes reais da equipe, além de incluir servidores adicionais diretamente em <code>Gestão do Gabinete</code>.</p>
       
       <h3>Regras de Padronização, Segurança e Vínculo Automático de Perfis:</h3>
       <ul>
-        <li><strong>Leitura Automática do eproc (<code>🔄 Ler eproc</code>):</strong> Consulta os usuários cadastrados ativos do órgão (exibindo um nome único por servidor no menu de cada slot), todos os localizadores da unidade iniciados por <code>👤</code> (inclusive sem processos, tanto os originais <code>👤Servidor 1..9👤</code> quanto os já personalizados em rodadas anteriores), os respectivos grupos de preferências e a contagem prévia de <strong>Relatórios</strong> e <strong>Documentos</strong> vinculados a cada slot.</li>
-        <li><strong>Importação Direta da Planilha (<code>📋 Da Planilha</code>):</strong> Permite carregar o arquivo Excel (<code>.xlsx</code>) e preencher automaticamente os slots a partir da aba <code>Servidores</code> (colunas de usuário e flag de Gestão do Gabinete).</li>
+        <li><strong>Leitura Automática do eproc (<code>🔄 Ler eproc</code>):</strong> Consulta os usuários cadastrados ativos do órgão (exibindo um nome único por usuário no menu de cada slot), todos os localizadores da unidade iniciados por <code>👤</code> (inclusive sem processos, tanto os originais quanto os já personalizados em rodadas anteriores), os respectivos grupos de preferências e a contagem prévia de <strong>Relatórios</strong>, <strong>Documentos</strong> e <strong>ATPs TJ</strong> vinculados a cada slot.</li>
+        <li><strong>Exclusão Mútua entre Slots:</strong> Usuários já selecionados em um slot (Servidor 1..9 ou Estagiário 1..2) permanecem visíveis nos demais menus, porém em cinza e desabilitados, evitando seleções duplicadas.</li>
+        <li><strong>Importação Direta da Planilha (<code>📋 Da Planilha</code>):</strong> Permite carregar o arquivo Excel (<code>.xlsx</code>) e preencher automaticamente os slots a partir da aba <code>Servidores</code> (colunas de usuário, grupo de tarefa e <code>Grupo de Gestão</code>). Para Estagiário 1 e Estagiário 2, <em>Gestão</em> vem desmarcado por padrão (marcando somente se a planilha trouxer <code>sim</code> ou mediante seleção manual).</li>
+        <li><strong>Incluir na Gestão (sem grupo de tarefa):</strong> Campo de múltipla escolha populado com todos os servidores ativos da unidade para adicioná-los diretamente ao grupo <code>Gestão do Gabinete</code> em lote único (usuários já escolhidos em algum slot com <em>Gestão</em> marcado ficam desabilitados automaticamente nessa lista).</li>
         <li><strong>Sigla do Localizador:</strong> Primeiro Nome em formato padrão (ex: <code>Maria</code>) + <code>.</code> + Iniciais maiúsculas dos sobrenomes, ignorando preposições (<code>de</code>, <code>da</code>, <code>do</code>, <code>dos</code>, <code>das</code>, <code>e</code>). Exemplo: <em>Maria de Lourdes Almeida de Campos</em> &rarr; <code>👤Maria.LAC👤</code>.</li>
         <li><strong>Tratamento de Homônimos / Colisões:</strong> Caso duas pessoas gerem a mesma sigla ou o localizador já exista no eproc, o sistema acrescenta automaticamente <code>.2</code>, <code>.3</code> (ex: <code>👤Maria.LAC.2👤</code>).</li>
         <li><strong>Vínculo Automático de Todos os Tipos/Perfis:</strong> Ao selecionar o servidor no menu do slot e clicar em personalizar, todos os perfis/tipos ativos vinculados àquele usuário no órgão são incluídos automaticamente no grupo de trabalho (sem janelas extras).</li>
@@ -602,7 +613,7 @@
 
     <div class="footer">
       <div>Tribunal de Justiça do Estado de São Paulo • eproc 2G (Segundo Grau)</div>
-      <div>Extensão 2G • Versão 3.8.0 - 10/11/2026</div>
+      <div>Extensão 2G • Versão 3.9.0 - 11/11/2026</div>
     </div>
   </div>
 
