@@ -12040,9 +12040,9 @@
             if (semEvCompHook) idsEvCompHook = [];
             idsEvCompHook = Array.from(new Set(idsEvCompHook));
 
-            // Garante persistência top-level (essencial para Movimentações; NUNCA para Minutas onde deve ficar apenas em Agendamento)
+            // Garante persistência top-level de Eventos Complementares (Movimentações e Minutas)
             partes = partes.filter(p => !p.startsWith('selEventoComplementar|') && !p.startsWith('hdnEventosComplementares|') && !p.startsWith('NumIdEventoComplementar'));
-            if (ehContextoMovimentacaoHook && idsEvCompHook.length > 0) {
+            if (idsEvCompHook.length > 0) {
               partes.push('selEventoComplementar|' + idsEvCompHook.join(';'));
               partes.push('hdnEventosComplementares|' + idsEvCompHook.join(','));
               idsEvCompHook.forEach((idEv, idx) => {
@@ -12070,7 +12070,6 @@
                     pares.push('selectItemselEventoComplementar%5B%5D=' + encodeURIComponent(val));
                   }
                   if (idsEvCompHook.length > 0) {
-                    pares.push('selEventoComplementar=' + encodeURIComponent(idsEvCompHook.join(',')));
                     pares.push('hdnEventosComplementares=' + encodeURIComponent(idsEvCompHook.join(',')));
                     pares.push('mc_hdnEventosComplementares=' + encodeURIComponent(idsEvCompHook.join(',')));
                   }
@@ -13829,6 +13828,11 @@
     return iniciaisSobrenome ? `${primeiroNome}.${iniciaisSobrenome}` : primeiroNome;
   }
 
+  function obterTagSlot(tipoSlot, indiceTipo) {
+    const idx = parseInt(indiceTipo, 10) || 1;
+    return tipoSlot === 'estagiario' ? `_E${idx}` : `_S${idx}`;
+  }
+
   function resolverColisoesSiglas(slots, localizadoresExistentes = []) {
     const contagem = {};
     const usados = new Set();
@@ -13838,15 +13842,20 @@
         return { ...item, sigla: '' };
       }
 
-      const siglaBase = calcularSiglaServidor(item.nomeServidor);
+      const tipoSlot = item.tipoSlot || 'servidor';
+      const indiceTipo = item.indiceTipo || item.slot;
+      const tagSlot = obterTagSlot(tipoSlot, indiceTipo);
+
+      const siglaCrua = calcularSiglaServidor(item.nomeServidor).replace(/_(?:S[1-9]|E[1-2])$/i, '');
+      const siglaBase = `${siglaCrua}${tagSlot}`;
       const siglaAtualBase = String(item.nomeBase || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
       const mEst = siglaAtualBase.match(/^Estagi[aá]ri[oa]?\s*(\d+)$/i);
-      const aliasesProprioSlot = new Set([normalizar(`Servidor ${item.slot}`)]);
+      const aliasesProprioSlot = new Set([normalizar(`Servidor ${item.slot}`), normalizar(siglaAtualBase)]);
       if (siglaAtualBase && /^(?:Servidor|Estagi[aá]ri[oa]?)\s*\d+$/i.test(siglaAtualBase)) {
         aliasesProprioSlot.add(normalizar(siglaAtualBase));
       }
-      if (item.tipoSlot === 'estagiario' || mEst) {
-        const idxEst = item.indiceTipo || (mEst ? parseInt(mEst[1], 10) : null);
+      if (tipoSlot === 'estagiario' || mEst) {
+        const idxEst = indiceTipo || (mEst ? parseInt(mEst[1], 10) : null);
         if (idxEst) {
           aliasesProprioSlot.add(normalizar(`Estagiário ${idxEst}`));
           aliasesProprioSlot.add(normalizar(`Estagiario ${idxEst}`));
@@ -13855,7 +13864,7 @@
 
       const temLocGenericoSlot = Array.isArray(localizadoresExistentes) && localizadoresExistentes.some(x =>
         aliasesProprioSlot.has(normalizar(x.nomeCurto || '')) ||
-        aliasesProprioSlot.has(normalizar(x.nomeCompleto || ''))
+        aliasesProprioSlot.has(normalizar(String(x.nomeCompleto || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim()))
       );
 
       // Verifica se já existe no eproc um localizador diferente com essa mesma sigla
@@ -13864,7 +13873,7 @@
         const candNorm = normalizar(cand);
         return localizadoresExistentes.some(loc => {
           const lCurto = normalizar(loc.nomeCurto || '');
-          const lComp = normalizar(loc.nomeCompleto || '');
+          const lComp = normalizar(String(loc.nomeCompleto || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim());
           const bateCand = lCurto === candNorm || lComp === candNorm;
           if (!bateCand) return false;
           // Se o localizador já encontrado É o próprio localizador deste slot, não há colisão
@@ -13888,17 +13897,17 @@
         });
       };
 
-      if (!contagem[siglaBase]) {
-        contagem[siglaBase] = 1;
+      if (!contagem[siglaCrua]) {
+        contagem[siglaCrua] = 1;
       }
 
       let candidato = siglaBase;
       if (usados.has(normalizar(candidato)) || existeOutroNoEproc(candidato)) {
         let sufixo = 2;
-        while (usados.has(normalizar(`${siglaBase}.${sufixo}`)) || existeOutroNoEproc(`${siglaBase}.${sufixo}`)) {
+        while (usados.has(normalizar(`${siglaCrua}.${sufixo}${tagSlot}`)) || existeOutroNoEproc(`${siglaCrua}.${sufixo}${tagSlot}`)) {
           sufixo++;
         }
-        candidato = `${siglaBase}.${sufixo}`;
+        candidato = `${siglaCrua}.${sufixo}${tagSlot}`;
       }
 
       usados.add(normalizar(candidato));
@@ -14202,6 +14211,7 @@
           if (tds.length >= 3) {
             const col1 = tds[1].textContent.replace(/\u00a0/g, ' ').trim();
             const col2 = tds[2].textContent.replace(/\u00a0/g, ' ').trim();
+            const desc = tds.length > 3 ? Array.from(tds).slice(2).map(t => t.textContent.replace(/\u00a0/g, ' ').trim()).join(' ') : col2;
             const urlAlt = linkAlt.getAttribute('href');
             const mId = tr.innerHTML.match(/id_localizador_orgao=(\d+)/i);
             const idLoc = mId ? mId[1] : urlAlt;
@@ -14211,6 +14221,7 @@
                 id: mId ? mId[1] : null,
                 nomeCompleto: col1,
                 nomeCurto: col2,
+                descricao: desc,
                 urlAlterar: urlAlt
               });
             }
@@ -14247,7 +14258,7 @@
     }
   }
 
-  async function alterarLocalizadorEproc(urlAlterar, novoNomeCompleto, novoNomeCurto, nomeCurtoAtual = '') {
+  async function alterarLocalizadorEproc(urlAlterar, novoNomeCompleto, novoNomeCurto, nomeCurtoAtual = '', descricaoFallback = '') {
     if (!urlAlterar) throw new Error('URL de alteração do localizador não informada.');
     const fullUrl = new URL(urlAlterar.replace(/&amp;/g, '&'), window.location.href).href;
     const respGet = await fetch(fullUrl, { credentials: 'same-origin' });
@@ -14301,11 +14312,11 @@
         : null;
       const lblTxt = lbl ? normalizar(lbl.textContent) : '';
 
-      // Atenção: o campo de "Nome do Localizador" no eproc pode se chamar txtDescricao (DesLocalizador)
+      // Preserva a descrição existente ou aplica o fallback da ranhura (ex.: "Servidor 1")
       const ehCampoDescricaoLonga = (lblTxt.includes('descric') && !lblTxt.includes('nome')) ||
                                     (!lblTxt && nm.includes('descric') && (!nomeCurtoAtual || normalizar(val) !== normalizar(nomeCurtoAtual)) && !val.includes('👤'));
       if (ehCampoDescricaoLonga) {
-        setPair(ti.name, val);
+        setPair(ti.name, val || descricaoFallback || '');
         return;
       }
 
@@ -14595,7 +14606,7 @@
     return idsFallback;
   }
 
-  async function renomearGrupoEprocPreservandoTudo(dadosGrupo, novoNomeGrupo, idsUsuariosAdicionar = []) {
+  async function renomearGrupoEprocPreservandoTudo(dadosGrupo, novoNomeGrupo, idsUsuariosAdicionar = [], limparUsuarios = false) {
     if (!dadosGrupo) throw new Error('Dados do grupo inexistentes.');
     const form = dadosGrupo.form;
     const actionUrl = dadosGrupo.formAction;
@@ -14621,20 +14632,22 @@
     pairs.push(['hdnInfraTipoPagina', '1']);
     pairs.push(['iptDescricaoGrupo', novoNomeGrupo]);
 
-    const idsFinaisUsuarios = [...dadosGrupo.idsUsuarios];
+    const idsFinaisUsuarios = limparUsuarios ? [] : [...dadosGrupo.idsUsuarios];
     const novosAdicionados = [];
     const jaExistiam = [];
 
-    idsUsuariosAdicionar.forEach(uid => {
-      const sUid = String(uid).trim();
-      if (!sUid) return;
-      if (idsFinaisUsuarios.includes(sUid)) {
-        jaExistiam.push(sUid);
-      } else {
-        idsFinaisUsuarios.push(sUid);
-        novosAdicionados.push(sUid);
-      }
-    });
+    if (!limparUsuarios) {
+      idsUsuariosAdicionar.forEach(uid => {
+        const sUid = String(uid).trim();
+        if (!sUid) return;
+        if (idsFinaisUsuarios.includes(sUid)) {
+          jaExistiam.push(sUid);
+        } else {
+          idsFinaisUsuarios.push(sUid);
+          novosAdicionados.push(sUid);
+        }
+      });
+    }
 
     pairs.push(['iptUsuariosGrupo', idsFinaisUsuarios.length > 0 ? idsFinaisUsuarios.join('-') + '-' : '']);
     idsFinaisUsuarios.forEach(uid => pairs.push(['arrIdUsuarios[]', uid]));
@@ -15608,6 +15621,38 @@
       pairsSubmit.push(['hdnSinManterPagina', 'S']);
     }
 
+    // [Fix ATP TJ] Eproc exige strValorControle (IDs de eventos/dias/data do gatilho), hdnEventosRelacionados e sbmAlterarControleLocalizador
+    const selTipoControle = form.querySelector('#selTipoControle');
+    const tipoCtrl = (selTipoControle && selTipoControle.value) ? String(selTipoControle.value).trim() : 'E';
+    let strValorControle = '';
+    if (tipoCtrl === 'E') {
+      const chksEv = form.querySelectorAll('#divEventosRelacionados input[type="checkbox"][name="chkEventos"], input[type="checkbox"][name="chkEventos"]');
+      const arrEv = Array.from(chksEv).map(c => String(c.value || '').trim()).filter(Boolean);
+      strValorControle = arrEv.join(',');
+    } else if (tipoCtrl === 'D') {
+      const inpD = form.querySelector('#txtDataControle');
+      strValorControle = inpD ? String(inpD.value || '').trim() : '';
+    } else if (tipoCtrl === 'P') {
+      const inpHdnP = form.querySelector('#hdnIdTipoPeticao');
+      strValorControle = inpHdnP ? String(inpHdnP.value || '').trim() : '';
+    } else {
+      const inpDias = form.querySelector('#txtDiasControle');
+      strValorControle = inpDias ? String(inpDias.value || '').trim() : '';
+    }
+    if (strValorControle) {
+      const idxVc = pairsSubmit.findIndex(([k]) => k === 'strValorControle');
+      if (idxVc !== -1) pairsSubmit[idxVc][1] = strValorControle;
+      else pairsSubmit.push(['strValorControle', strValorControle]);
+      if (tipoCtrl === 'E') {
+        const idxEr = pairsSubmit.findIndex(([k]) => k === 'hdnEventosRelacionados');
+        if (idxEr !== -1) pairsSubmit[idxEr][1] = strValorControle + ',';
+        else pairsSubmit.push(['hdnEventosRelacionados', strValorControle + ',']);
+      }
+    }
+    if (!pairsSubmit.some(([k]) => k === 'sbmAlterarControleLocalizador' || k === 'sbmCadastrarControleLocalizador')) {
+      pairsSubmit.push(['sbmAlterarControleLocalizador', 'Salvar']);
+    }
+
     const actionAttr = decodeEntities(form.getAttribute ? (form.getAttribute('action') || '') : (form.action || ''));
     const urlPost = new URL(actionAttr || atpItem.urlEditar, atpItem.urlEditar).href;
     const respPost = await fetch(urlPost, {
@@ -15642,13 +15687,83 @@
   }
 
   // Persistência local (world: MAIN utiliza localStorage) e interface dinâmica de localizadores 👤
-  function analisarSlotGenericoPorTexto(texto) {
+  function analisarSlotGenericoPorTexto(texto, descExtra = '') {
     const limpo = String(texto || '')
       .replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!limpo) return null;
+    const descLimpa = String(descExtra || '')
+      .replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
+    // 1. Descrição no eproc (prioridade 1: preservada mesmo após alteração do nome do localizador)
+    const mDescServ = descLimpa.match(/(?:^|\b)(?:Servidor\s*([1-9])|_S([1-9]))(?:\b|$)/i);
+    if (mDescServ) {
+      const idx = parseInt(mDescServ[1] || mDescServ[2], 10);
+      return {
+        tipoSlot: 'servidor',
+        indiceTipo: idx,
+        chaveTipo: `servidor:${idx}`,
+        rotuloPadrao: `Servidor ${idx}`,
+        rotuloCard: `Slot ${idx}`,
+        nomeBasePadrao: `👤Servidor ${idx}👤`,
+        nomeGrupoPadrao: `Trabalho - Servidor ${idx}`,
+        tagSlot: `_S${idx}`,
+        origemDetecao: 'descricao'
+      };
+    }
+
+    const mDescEst = descLimpa.match(/(?:^|\b)(?:Estagi[aá]ri[oa]?\s*([1-2])|_E([1-2]))(?:\b|$)/i);
+    if (mDescEst) {
+      const idx = parseInt(mDescEst[1] || mDescEst[2], 10);
+      return {
+        tipoSlot: 'estagiario',
+        indiceTipo: idx,
+        chaveTipo: `estagiario:${idx}`,
+        rotuloPadrao: `Estagiário ${idx}`,
+        rotuloCard: `Estagiário ${idx}`,
+        nomeBasePadrao: `👤Estagiário ${idx}👤`,
+        nomeGrupoPadrao: `Trabalho - Estagiário ${idx}`,
+        tagSlot: `_E${idx}`,
+        origemDetecao: 'descricao'
+      };
+    }
+
+    // 2. Tag no Nome / Sigla do localizador (redundância 2: _S1.._S9 ou _E1.._E2)
+    const mTagServ = limpo.match(/(?:^|_)S([1-9])(?:\b|$)/i);
+    if (mTagServ) {
+      const idx = parseInt(mTagServ[1], 10);
+      return {
+        tipoSlot: 'servidor',
+        indiceTipo: idx,
+        chaveTipo: `servidor:${idx}`,
+        rotuloPadrao: `Servidor ${idx}`,
+        rotuloCard: `Slot ${idx}`,
+        nomeBasePadrao: `👤Servidor ${idx}👤`,
+        nomeGrupoPadrao: `Trabalho - Servidor ${idx}`,
+        tagSlot: `_S${idx}`,
+        origemDetecao: 'tag'
+      };
+    }
+
+    const mTagEst = limpo.match(/(?:^|_)E([1-2])(?:\b|$)/i);
+    if (mTagEst) {
+      const idx = parseInt(mTagEst[1], 10);
+      return {
+        tipoSlot: 'estagiario',
+        indiceTipo: idx,
+        chaveTipo: `estagiario:${idx}`,
+        rotuloPadrao: `Estagiário ${idx}`,
+        rotuloCard: `Estagiário ${idx}`,
+        nomeBasePadrao: `👤Estagiário ${idx}👤`,
+        nomeGrupoPadrao: `Trabalho - Estagiário ${idx}`,
+        tagSlot: `_E${idx}`,
+        origemDetecao: 'tag'
+      };
+    }
+
+    // 3. Padrão genérico de fábrica
     const mEst = limpo.match(/^Estagi[aá]ri[oa]?\s*(\d+)$/i);
     if (mEst) {
       const idx = parseInt(mEst[1], 10);
@@ -15659,7 +15774,9 @@
         rotuloPadrao: `Estagiário ${idx}`,
         rotuloCard: `Estagiário ${idx}`,
         nomeBasePadrao: `👤Estagiário ${idx}👤`,
-        nomeGrupoPadrao: `Trabalho - Estagiário ${idx}`
+        nomeGrupoPadrao: `Trabalho - Estagiário ${idx}`,
+        tagSlot: `_E${idx}`,
+        origemDetecao: 'generico'
       };
     }
 
@@ -15673,7 +15790,9 @@
         rotuloPadrao: `Servidor ${idx}`,
         rotuloCard: `Slot ${idx}`,
         nomeBasePadrao: `👤Servidor ${idx}👤`,
-        nomeGrupoPadrao: `Trabalho - Servidor ${idx}`
+        nomeGrupoPadrao: `Trabalho - Servidor ${idx}`,
+        tagSlot: `_S${idx}`,
+        origemDetecao: 'generico'
       };
     }
 
@@ -15852,19 +15971,21 @@
       });
     }
 
-    // Separa personalizados (ordem 0), genéricos "Servidor N" (ordem 1) e genéricos "Estagiário N" (ordem 2)
+    // Identifica e ordena: servidores 1..9 (ordemTipo 1), estagiários 1..2 (ordemTipo 2) e outros personalizados (ordemTipo 3)
     const enriquecidos = locsUsuario.map(loc => {
       const nomeComp = decodeEntities(loc.nomeCompleto || '').trim();
       const siglaLoc = nomeComp.replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
       const nomeCurto = decodeEntities(loc.nomeCurto || '').trim() || siglaLoc;
-      const gen = parseGen(siglaLoc) || parseGen(nomeCurto);
-      const ordemTipo = !gen ? 0 : (gen.tipoSlot === 'estagiario' ? 2 : 1);
+      const descLoc = decodeEntities(loc.descricao || '').trim();
+      const gen = parseGen(siglaLoc, descLoc) || parseGen(nomeCurto, descLoc);
+      const ordemTipo = !gen ? 3 : (gen.tipoSlot === 'estagiario' ? 2 : 1);
       return {
         loc,
         locId: loc.id || '',
         nomeComp,
         siglaLoc: siglaLoc || nomeCurto,
         nomeCurto,
+        descLoc,
         gen,
         ehGenerico: !!gen,
         tipoSlot: gen ? gen.tipoSlot : 'servidor',
@@ -15876,7 +15997,7 @@
 
     enriquecidos.sort((a, b) => {
       if (a.ordemTipo !== b.ordemTipo) return a.ordemTipo - b.ordemTipo;
-      if (a.ehGenerico && b.ehGenerico) return a.numGen - b.numGen;
+      if (a.numGen !== b.numGen) return a.numGen - b.numGen;
       return a.siglaLoc.localeCompare(b.siglaLoc, 'pt-BR');
     });
 
@@ -15935,7 +16056,9 @@
 
     const mapaUsuariosUnidade = window._eprocUsuariosUnidade || {};
     const resultado = enriquecidos.map((itemLoc, idx) => {
-      const slotNum = idx + 1;
+      const slotNum = itemLoc.gen
+        ? (itemLoc.gen.tipoSlot === 'estagiario' ? (9 + itemLoc.gen.indiceTipo) : itemLoc.gen.indiceTipo)
+        : (idx + 1);
       const matchSalvo = matchesPorIdx[idx];
       const fallbackGrupo = matchSalvo ? matchSalvo.nomeGrupoBase : '';
       const vinc = encontrarGrupoVinculadoAoLocalizador(itemLoc.siglaLoc || itemLoc.nomeCurto, grupos, fallbackGrupo);
@@ -16405,8 +16528,8 @@
       const nomeBaseAtual = sRaw.nomeBase || (tipoSlot === 'estagiario' ? `👤Estagiário ${indiceTipo}👤` : `👤Servidor ${i}👤`);
       const nomeGrupoBaseAtual = sRaw.nomeGrupoBase || (tipoSlot === 'estagiario' ? `Trabalho - Estagiário ${indiceTipo}` : `Trabalho - Servidor ${i}`);
       const locIdAtual = sRaw.locId || '';
-      const ehGenerico = !!analisarSlotGenericoPorTexto(nomeBaseAtual);
-      const ehPersonalizado = !ehGenerico;
+      const ehGenericoDeFabrica = /^👤?(?:Servidor|Estagi[aá]ri[oa]?)\s*\d+👤?$/i.test(nomeBaseAtual);
+      const ehPersonalizado = !ehGenericoDeFabrica;
       const ehEstagiario = tipoSlot === 'estagiario';
 
       let optionsUsuarios = ehPersonalizado
@@ -16459,10 +16582,13 @@
               <span style="font-weight:700; font-size:10.5px; background:${pillBg}; color:${pillColor}; padding:1px 6px; border-radius:4px; flex-shrink:0;">${esc(rotuloCard)}</span>
               <span id="srv-badge-base-${i}" data-loc-id="${esc(locIdAtual)}" data-tipo-slot="${tipoSlot}" data-indice-tipo="${indiceTipo}" data-rotulo-card="${esc(rotuloCard)}" data-base="${esc(nomeBaseAtual)}" data-grupo-base="${esc(nomeGrupoBaseAtual)}" data-grupo-encontrado="${sRaw.grupoEncontrado ? 'true' : 'false'}" style="font-size:10.5px; color:${ehPersonalizado ? '#0f766e' : '#475569'}; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Localizador atual no eproc: ${esc(nomeBaseAtual)}">${esc(nomeBaseAtual)}</span>
             </div>
-            <label style="font-size:10.5px; font-weight:600; color:#334155; display:flex; align-items:center; gap:4px; cursor:pointer; flex-shrink:0;">
-              <input type="checkbox" id="srv-gestao-${i}" class="srv-chk-gestao" ${sRaw.gestao ? 'checked' : ''} style="cursor:pointer;">
-              Gestão
-            </label>
+            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+              ${ehPersonalizado ? `<button type="button" class="btn-restaurar-slot" data-slot="${i}" style="background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:4px; font-size:9.5px; font-weight:700; padding:1px 6px; cursor:pointer; display:inline-flex; align-items:center; gap:3px;" title="Retornar ${esc(rotuloCard)} ao estado original de fábrica">↺ Retornar ao original</button>` : ''}
+              <label style="font-size:10.5px; font-weight:600; color:#334155; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                <input type="checkbox" id="srv-gestao-${i}" class="srv-chk-gestao" ${sRaw.gestao ? 'checked' : ''} style="cursor:pointer;">
+                Gestão
+              </label>
+            </div>
           </div>
           <div id="srv-grupo-info-${i}" style="font-size:9.5px; line-height:1.2; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Grupo de preferência vinculado no eproc">
             ${grupoHtml}
@@ -16485,6 +16611,7 @@
       const i = sRaw.slot || (idx + 1);
       const sel = document.getElementById(`srv-select-user-${i}`);
       const chk = document.getElementById(`srv-gestao-${i}`);
+      const btnRest = container.querySelector(`.btn-restaurar-slot[data-slot="${i}"]`);
       if (sel) {
         sel.addEventListener('change', () => {
           atualizarExclusaoDropdownsServidores();
@@ -16498,11 +16625,410 @@
           salvarServidoresStorage(false);
         });
       }
+      if (btnRest) {
+        btnRest.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          abrirModalConfirmacaoRestauracaoSlot(i);
+        });
+      }
     });
 
     atualizarExclusaoDropdownsServidores();
     atualizarSiglasEmTempoReal();
     sincronizarUiGestaoExtraServidores(listaSlots);
+  }
+
+  // Função compartilhada para renomear preferências de relatório ou documento vinculadas a um slot
+  async function executarRenomeacaoListaPrefsParaSlot(listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, idsDedup = new Set(), errArray = [], ignArray = []) {
+    let renomeadas = 0;
+    if (!Array.isArray(listaPrefs) || listaPrefs.length === 0 || !siglasOrigemSlot.length) return 0;
+
+    for (const pref of listaPrefs) {
+      if (window._eprocPararLote) break;
+      const chaveDedup = `${tipoLabel}:${pref.id}`;
+      if (idsDedup.has(chaveDedup)) continue;
+
+      const sub = substituirSiglaEmPreferencia(pref.nome, siglasOrigemSlot, novaSigla);
+      if (!sub.alterado) continue;
+
+      const colisao = listaPrefs.find(outro => outro.id !== pref.id && normalizar(outro.nome) === normalizar(sub.novoNome));
+      if (colisao) {
+        addLog(`  ⚠️ [${tipoLabel}] Mantido "${pref.nome}" porque "${sub.novoNome}" já existe no eproc.`, 'warn');
+        if (ignArray) ignArray.push({ slot: slotNum, tipo: tipoLabel, original: pref.nome, destino: sub.novoNome });
+        continue;
+      }
+
+      try {
+        await fnRenomear(pref, sub.novoNome);
+        idsDedup.add(chaveDedup);
+        renomeadas++;
+        addLog(`  ✅ [${tipoLabel}] Renomeado: "${sub.novoNome}"`);
+        await sleep(80);
+      } catch (ePref) {
+        addLog(`  ⚠️ [${tipoLabel}] Erro ao renomear "${pref.nome}": ${ePref.message}`, 'warn');
+        if (errArray) errArray.push({ slot: slotNum, tipo: tipoLabel, nome: pref.nome, erro: ePref.message });
+      }
+    }
+    return renomeadas;
+  }
+
+  function abrirModalConfirmacaoRestauracaoSlot(slotNum) {
+    const card = document.querySelector(`#rito-servidores-slots-lista .rito-srv-card[data-slot="${slotNum}"]`);
+    const badge = document.getElementById(`srv-badge-base-${slotNum}`);
+    const tipoSlot = (badge && badge.getAttribute('data-tipo-slot')) || (card && card.getAttribute('data-tipo-slot')) || (slotNum > 9 ? 'estagiario' : 'servidor');
+    const indiceTipo = parseInt((badge && badge.getAttribute('data-indice-tipo')) || (card && card.getAttribute('data-indice-tipo')) || (tipoSlot === 'estagiario' ? slotNum - 9 : slotNum), 10);
+    const rotuloCard = (badge && badge.getAttribute('data-rotulo-card')) || (card && card.getAttribute('data-rotulo-card')) || (tipoSlot === 'estagiario' ? `Estagiário ${indiceTipo}` : `Slot ${slotNum}`);
+    const nomeBaseAtual = (badge && badge.getAttribute('data-base')) || `Slot ${slotNum}`;
+    const nomeBasePadrao = tipoSlot === 'estagiario' ? `👤Estagiário ${indiceTipo}👤` : `👤Servidor ${indiceTipo}👤`;
+    const nomeCurtoPadrao = tipoSlot === 'estagiario' ? `Estagiário ${indiceTipo}` : `Servidor ${indiceTipo}`;
+    const nomeGrupoPadrao = tipoSlot === 'estagiario' ? `Trabalho - Estagiário ${indiceTipo}` : `Trabalho - Servidor ${indiceTipo}`;
+    const tagSlot = typeof obterTagSlot === 'function' ? obterTagSlot(tipoSlot, indiceTipo) : (tipoSlot === 'estagiario' ? `_E${indiceTipo}` : `_S${indiceTipo}`);
+
+    const modalExistente = document.getElementById('rito-modal-restaurar-slot');
+    if (modalExistente) modalExistente.remove();
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'rito-modal-restaurar-slot';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:999999; background:rgba(15,23,42,0.65); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out;';
+
+    overlay.innerHTML = `
+      <div style="background:#ffffff; border-radius:10px; width:100%; max-width:480px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3); border:1px solid #e2e8f0; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="background:#fef2f2; border-bottom:1px solid #fee2e2; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:18px;">⚠️</span>
+            <strong style="color:#991b1b; font-size:14px;">Retornar ${esc(rotuloCard)} ao Estado Original</strong>
+          </div>
+          <button type="button" id="btn-fechar-modal-restaurar" style="background:none; border:none; font-size:18px; color:#94a3b8; cursor:pointer; line-height:1; padding:0 4px;" title="Fechar">✕</button>
+        </div>
+        <div style="padding:16px; display:flex; flex-direction:column; gap:12px; font-size:12px; color:#334155; line-height:1.45;">
+          <div style="background:#fff7ed; border:1px solid #ffedd5; border-radius:6px; padding:10px 12px; color:#9a3412;">
+            <p style="margin:0 0 6px 0; font-weight:700;">Esta ação irá restaurar os seguintes itens no eproc:</p>
+            <ul style="margin:0; padding-left:18px; display:flex; flex-direction:column; gap:4px; font-size:11.5px;">
+              <li><strong>Localizador:</strong> renomear de <code>${esc(nomeBaseAtual)}</code> para <code>${esc(nomeBasePadrao)}</code> (tag <code>${tagSlot}</code> removida).</li>
+              <li><strong>Grupo de Trabalho:</strong> renomear para <code>${esc(nomeGrupoPadrao)}</code> e desvincular membros.</li>
+              <li><strong>Relatórios Gerais:</strong> preferências vinculadas renomeadas de volta para <code>${esc(nomeBasePadrao)}</code>.</li>
+              <li><strong>Documentos / Minutas:</strong> preferências vinculadas renomeadas de volta para <code>${esc(nomeBasePadrao)}</code>.</li>
+              <li><strong>ATPs TJ:</strong> lembretes vinculados restaurados para <code>${esc(nomeCurtoPadrao)}</code>.</li>
+            </ul>
+          </div>
+          <div>
+            <label for="inp-confirm-restaurar" style="display:block; font-weight:700; color:#0f172a; margin-bottom:6px;">
+              Para confirmar, digite <span style="background:#fee2e2; color:#b91c1c; padding:1px 5px; border-radius:3px; letter-spacing:1px;">RESTAURAR</span> abaixo:
+            </label>
+            <input type="text" id="inp-confirm-restaurar" placeholder="Digite RESTAURAR" autocomplete="off" style="width:100%; box-sizing:border-box; font-size:13px; font-weight:700; text-align:center; padding:8px 10px; border:2px solid #cbd5e1; border-radius:6px; outline:none; text-transform:uppercase;">
+          </div>
+        </div>
+        <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:10px 16px; display:flex; justify-content:flex-end; gap:8px;">
+          <button type="button" id="btn-cancelar-modal-restaurar" style="padding:6px 14px; font-size:12px; font-weight:600; color:#475569; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">Cancelar</button>
+          <button type="button" id="btn-confirmar-modal-restaurar" disabled style="padding:6px 14px; font-size:12px; font-weight:700; color:#ffffff; background:#94a3b8; border:none; border-radius:6px; cursor:not-allowed; transition:all 0.15s ease;">Confirmar Restauração</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const inp = overlay.querySelector('#inp-confirm-restaurar');
+    const btnConfirmar = overlay.querySelector('#btn-confirmar-modal-restaurar');
+    const btnFechar = overlay.querySelector('#btn-fechar-modal-restaurar');
+    const btnCancelar = overlay.querySelector('#btn-cancelar-modal-restaurar');
+
+    const fechar = () => { overlay.remove(); };
+
+    if (btnFechar) btnFechar.onclick = fechar;
+    if (btnCancelar) btnCancelar.onclick = fechar;
+    overlay.onclick = (e) => { if (e.target === overlay) fechar(); };
+
+    if (inp && btnConfirmar) {
+      setTimeout(() => { try { inp.focus(); } catch (err) {} }, 50);
+      inp.oninput = () => {
+        const digitado = String(inp.value || '').trim().toUpperCase();
+        if (digitado === 'RESTAURAR') {
+          btnConfirmar.disabled = false;
+          btnConfirmar.style.background = '#dc2626';
+          btnConfirmar.style.cursor = 'pointer';
+        } else {
+          btnConfirmar.disabled = true;
+          btnConfirmar.style.background = '#94a3b8';
+          btnConfirmar.style.cursor = 'not-allowed';
+        }
+      };
+      inp.onkeydown = (e) => {
+        if (e.key === 'Enter' && !btnConfirmar.disabled) {
+          e.preventDefault();
+          btnConfirmar.click();
+        } else if (e.key === 'Escape') {
+          fechar();
+        }
+      };
+
+      btnConfirmar.onclick = async () => {
+        const digitado = String(inp.value || '').trim().toUpperCase();
+        if (digitado !== 'RESTAURAR') return;
+        fechar();
+        await executarRestauracaoSlot(slotNum);
+      };
+    }
+  }
+
+  async function executarRestauracaoSlot(slotNum) {
+    if (gravacaoEmAndamento) {
+      alert('Há uma operação em andamento. Aguarde seu término antes de restaurar.');
+      return;
+    }
+
+    gravacaoEmAndamento = true;
+    window._eprocPararLote = false;
+
+    const btnExec = document.getElementById('btn-servidores-executar');
+    const btnParar = document.getElementById('btn-rito-parar');
+    if (btnExec) btnExec.disabled = true;
+    if (btnParar) btnParar.style.display = 'block';
+
+    const logsBox = document.getElementById('rito-logs');
+    if (logsBox) logsBox.style.display = 'block';
+
+    const banner = document.getElementById('srv-status-info');
+    if (banner) {
+      banner.style.display = 'block';
+      banner.style.background = '#e0f2fe';
+      banner.style.color = '#0369a1';
+      banner.innerHTML = `🔄 Restaurando Slot ${slotNum} ao estado original de fábrica...`;
+    }
+
+    adicionarSeparadorExecucaoNoLog(`RESTAURAÇÃO SLOT ${slotNum}`);
+    addLog(`↺ [Slot ${slotNum}] Iniciando restauração ao estado original de fábrica...`, 'info');
+
+    let rotuloCard = `Slot ${slotNum}`;
+
+    try {
+      // 1. Carrega dados essenciais do eproc caso ainda não existam em memória
+      let localizadores = window._eprocLocalizadoresUnidade || [];
+      if (!Array.isArray(localizadores) || localizadores.length === 0) {
+        addLog('  🔍 Consultando localizadores do órgão no eproc...');
+        localizadores = await obterLocalizadoresOrgaoEproc();
+      }
+
+      let grupos = window._eprocGruposUnidade || [];
+      if (!Array.isArray(grupos) || grupos.length === 0) {
+        addLog('  🔍 Consultando grupos de preferência da unidade...');
+        grupos = await obterGruposPreferenciaEproc();
+      }
+
+      let prefsRel = window._eprocPrefsRelatorioServidores || [];
+      let prefsDoc = window._eprocPrefsDocumentosServidores || [];
+      if (!Array.isArray(prefsRel) || prefsRel.length === 0 || !Array.isArray(prefsDoc) || prefsDoc.length === 0) {
+        addLog('  🔍 Consultando preferências de Relatórios e Documentos...');
+        const [relRes, docRes] = await Promise.all([
+          obterPreferenciasRelatorioParaServidores(),
+          obterPreferenciasDocumentosParaServidores()
+        ]);
+        prefsRel = relRes;
+        prefsDoc = docRes;
+      }
+
+      let atpsTj = window._eprocAtpsTransitoServidores || [];
+      if (!Array.isArray(atpsTj) || atpsTj.length === 0) {
+        addLog('  🔍 Consultando ATPs de Trânsito em Julgado...');
+        atpsTj = await obterAtpsTransitoJulgadoEproc();
+      }
+
+      // 2. Determina atributos da ranhura (slot)
+      const card = document.querySelector(`#rito-servidores-slots-lista .rito-srv-card[data-slot="${slotNum}"]`);
+      const badge = document.getElementById(`srv-badge-base-${slotNum}`);
+      const tipoSlot = (badge && badge.getAttribute('data-tipo-slot')) || (card && card.getAttribute('data-tipo-slot')) || (slotNum > 9 ? 'estagiario' : 'servidor');
+      const indiceTipo = parseInt((badge && badge.getAttribute('data-indice-tipo')) || (card && card.getAttribute('data-indice-tipo')) || (tipoSlot === 'estagiario' ? slotNum - 9 : slotNum), 10);
+      rotuloCard = (badge && badge.getAttribute('data-rotulo-card')) || (card && card.getAttribute('data-rotulo-card')) || (tipoSlot === 'estagiario' ? `Estagiário ${indiceTipo}` : `Slot ${slotNum}`);
+
+      const nomeBasePadrao = tipoSlot === 'estagiario' ? `👤Estagiário ${indiceTipo}👤` : `👤Servidor ${indiceTipo}👤`;
+      const nomeCurtoPadrao = tipoSlot === 'estagiario' ? `Estagiário ${indiceTipo}` : `Servidor ${indiceTipo}`;
+      const nomeGrupoPadrao = tipoSlot === 'estagiario' ? `Trabalho - Estagiário ${indiceTipo}` : `Trabalho - Servidor ${indiceTipo}`;
+      const tagSlot = typeof obterTagSlot === 'function' ? obterTagSlot(tipoSlot, indiceTipo) : (tipoSlot === 'estagiario' ? `_E${indiceTipo}` : `_S${indiceTipo}`);
+
+      const nomeBaseAtual = (badge && badge.getAttribute('data-base')) || '';
+      const locIdAtual = (badge && badge.getAttribute('data-loc-id')) || '';
+      const siglaSlotAtual = String(nomeBaseAtual || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
+
+      // 3. Localiza o localizador no eproc (por ID, nomeBase, descrição ou tag)
+      let locMatch = null;
+      if (locIdAtual) {
+        locMatch = localizadores.find(l => l.id && String(l.id) === String(locIdAtual));
+      }
+      if (!locMatch && nomeBaseAtual) {
+        locMatch = localizadores.find(l => normalizar(l.nomeCompleto) === normalizar(nomeBaseAtual));
+      }
+      if (!locMatch) {
+        locMatch = localizadores.find(l => {
+          const descL = decodeEntities(l.descricao || l.nomeCurto || '');
+          const compL = decodeEntities(l.nomeCompleto || '');
+          const gen = analisarSlotGenericoPorTexto(compL, descL);
+          return gen && gen.tipoSlot === tipoSlot && gen.indiceTipo === indiceTipo;
+        });
+      }
+
+      if (!locMatch || !locMatch.urlAlterar) {
+        throw new Error(`Localizador de ${rotuloCard} (${nomeBaseAtual || nomeBasePadrao}) não foi encontrado no eproc.`);
+      }
+
+      // 4. Reverte Localizador
+      addLog(`  ✏️ Revertendo localizador "${locMatch.nomeCompleto}" para "${nomeBasePadrao}" (Nome: "${nomeCurtoPadrao}")...`);
+      await alterarLocalizadorEproc(locMatch.urlAlterar, nomeBasePadrao, nomeCurtoPadrao, locMatch.nomeCurto, nomeCurtoPadrao);
+      locMatch.nomeCompleto = nomeBasePadrao;
+      locMatch.nomeCurto = nomeCurtoPadrao;
+      locMatch.descricao = nomeCurtoPadrao;
+      addLog(`  ✅ Localizador restaurado com sucesso: ${nomeBasePadrao}`);
+
+      await sleep(200);
+
+      // 5. Localiza e reverte Grupo de Trabalho
+      let grpMatch = null;
+      if (siglaSlotAtual) {
+        grpMatch = grupos.find(g => normalizar(g.nome) === normalizar(`Trabalho - ${siglaSlotAtual}`));
+      }
+      if (!grpMatch && badge) {
+        const gBase = badge.getAttribute('data-grupo-base');
+        if (gBase) grpMatch = grupos.find(g => normalizar(g.nome) === normalizar(gBase));
+      }
+      if (!grpMatch) {
+        grpMatch = grupos.find(g => normalizar(g.nome) === normalizar(nomeGrupoPadrao));
+      }
+
+      if (grpMatch && grpMatch.urlEditar) {
+        addLog(`  📁 Revertendo grupo "${grpMatch.nome}" para "${nomeGrupoPadrao}" e desvinculando membros...`);
+        const detGrupo = await obterDadosCompletosGrupoEproc(grpMatch.urlEditar);
+        if (detGrupo) {
+          await renomearGrupoEprocPreservandoTudo(detGrupo, nomeGrupoPadrao, [], true);
+          grpMatch.nome = nomeGrupoPadrao;
+          addLog(`  ✅ Grupo de trabalho restaurado: "${nomeGrupoPadrao}" (membros limpos).`);
+        }
+      } else {
+        addLog(`  ℹ️ Grupo de trabalho correspondente mantido como "${nomeGrupoPadrao}".`);
+      }
+
+      await sleep(200);
+
+      // 6. Reverte Preferências de Relatórios e Documentos
+      const siglasOrigemSlot = [
+        siglaSlotAtual,
+        siglaSlotAtual.replace(/_(?:S[1-9]|E[1-2])$/i, ''),
+        `${siglaSlotAtual}${tagSlot}`,
+        locMatch ? locMatch.nomeCurto : ''
+      ].map(s => String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim())
+       .filter(Boolean)
+       .filter((v, idxS, arrS) => arrS.indexOf(v) === idxS && normalizar(v) !== normalizar(nomeCurtoPadrao));
+
+      if (prefsRel.length > 0 && siglasOrigemSlot.length > 0) {
+        const qtdRel = await executarRenomeacaoListaPrefsParaSlot(
+          prefsRel,
+          'Relatório',
+          renomearPreferenciaRelatorioEproc,
+          slotNum,
+          siglasOrigemSlot,
+          nomeCurtoPadrao
+        );
+        if (qtdRel > 0) addLog(`  📊 ${qtdRel} preferência(s) de relatório restaurada(s) para "${nomeCurtoPadrao}".`);
+      }
+
+      if (prefsDoc.length > 0 && siglasOrigemSlot.length > 0) {
+        const qtdDoc = await executarRenomeacaoListaPrefsParaSlot(
+          prefsDoc,
+          'Documento',
+          renomearPreferenciaDocumentoEproc,
+          slotNum,
+          siglasOrigemSlot,
+          nomeCurtoPadrao
+        );
+        if (qtdDoc > 0) addLog(`  📄 ${qtdDoc} preferência(s) de documento restaurada(s) para "${nomeCurtoPadrao}".`);
+      }
+
+      await sleep(200);
+
+      // 7. Reverte ATPs TJ
+      if (atpsTj.length > 0) {
+        const origensLembrete = [
+          locMatch.nomeCurto,
+          siglaSlotAtual,
+          siglaSlotAtual.replace(/_(?:S[1-9]|E[1-2])$/i, ''),
+          `${siglaSlotAtual}${tagSlot}`
+        ].map(s => String(s || '').replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim())
+         .filter(Boolean)
+         .filter((v, idxL, arrL) => arrL.indexOf(v) === idxL && normalizar(v) !== normalizar(nomeCurtoPadrao));
+
+        const atpsSlot = filtrarAtpsTransitoParaSlot(atpsTj, origensLembrete);
+        for (const atp of atpsSlot) {
+          try {
+            const resAtp = await atualizarLembreteAtpEproc(atp, origensLembrete, nomeCurtoPadrao);
+            atp.siglasLoc = [nomeCurtoPadrao];
+            if (resAtp.atualizado) {
+              addLog(`  ⚡ [ATP #${atp.numRegra} TJ] Lembrete restaurado: "${resAtp.anterior}" ➔ "${resAtp.novo}"`);
+            }
+          } catch (eAtp) {
+            addLog(`  ⚠️ [ATP #${atp.numRegra} TJ] Erro ao restaurar lembrete: ${eAtp.message}`, 'warn');
+          }
+        }
+      }
+
+      // 8. Atualiza UI do slot diretamente
+      if (badge) {
+        badge.textContent = nomeBasePadrao;
+        badge.setAttribute('data-base', nomeBasePadrao);
+        badge.setAttribute('data-grupo-base', nomeGrupoPadrao);
+        badge.style.color = '#475569';
+        badge.setAttribute('title', `Localizador atual no eproc: ${nomeBasePadrao}`);
+      }
+      const grpInfo = document.getElementById(`srv-grupo-info-${slotNum}`);
+      if (grpInfo) {
+        grpInfo.innerHTML = `<span style="color:#0369a1; font-weight:600;">📁 ${nomeGrupoPadrao}</span>`;
+      }
+      const selUser = document.getElementById(`srv-select-user-${slotNum}`);
+      if (selUser) {
+        selUser.value = '';
+        const optVazia = selUser.querySelector('option[value=""]');
+        if (optVazia) optVazia.textContent = `-- Selecione o ${tipoSlot === 'estagiario' ? 'estagiário' : 'servidor'} da unidade --`;
+      }
+      const inpSigla = document.getElementById(`srv-sigla-${slotNum}`);
+      if (inpSigla) {
+        inpSigla.value = '';
+      }
+      const chkGestao = document.getElementById(`srv-gestao-${slotNum}`);
+      if (chkGestao) {
+        chkGestao.checked = false;
+      }
+      const divPerfis = document.getElementById(`srv-perfis-info-${slotNum}`);
+      if (divPerfis) {
+        divPerfis.innerHTML = '';
+        divPerfis.style.display = 'none';
+      }
+
+      atualizarExclusaoDropdownsServidores();
+      atualizarSiglasEmTempoReal();
+      salvarServidoresStorage(false);
+
+      // Re-renderiza tabela para atualizar badges e estado dos botões
+      const slotsAtualizados = obterDadosServidoresDosInputs();
+      renderizarTabelaServidores(slotsAtualizados);
+
+      addLog(`✅ [${rotuloCard}] Retornado com sucesso ao estado original de fábrica!`, 'success');
+      if (banner) {
+        banner.style.background = '#dcfce7';
+        banner.style.color = '#15803d';
+        banner.innerHTML = `✅ <strong>Sucesso:</strong> ${rotuloCard} restaurado ao estado original de fábrica!`;
+        setTimeout(() => { if (banner) banner.style.display = 'none'; }, 7000);
+      }
+    } catch (err) {
+      addLog(`❌ Erro ao restaurar ${rotuloCard || `Slot ${slotNum}`}: ${err.message}`, 'error');
+      if (banner) {
+        banner.style.background = '#fee2e2';
+        banner.style.color = '#991b1b';
+        banner.innerHTML = `❌ <strong>Erro:</strong> ${err.message}`;
+      }
+    } finally {
+      gravacaoEmAndamento = false;
+      if (btnExec) btnExec.disabled = false;
+      if (btnParar) btnParar.style.display = 'none';
+    }
   }
 
   async function sincronizarServidoresBasicoDoEproc(forcar = false) {
@@ -17104,38 +17630,8 @@
 
       const idsPrefsRenomeadasNoLote = new Set();
 
-      const renomearListaPrefsParaSlot = async (listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla) => {
-        let renomeadas = 0;
-        if (!Array.isArray(listaPrefs) || listaPrefs.length === 0 || !siglasOrigemSlot.length) return 0;
-
-        for (const pref of listaPrefs) {
-          if (window._eprocPararLote) break;
-          const chaveDedup = `${tipoLabel}:${pref.id}`;
-          if (idsPrefsRenomeadasNoLote.has(chaveDedup)) continue;
-
-          const sub = substituirSiglaEmPreferencia(pref.nome, siglasOrigemSlot, novaSigla);
-          if (!sub.alterado) continue;
-
-          const colisao = listaPrefs.find(outro => outro.id !== pref.id && normalizar(outro.nome) === normalizar(sub.novoNome));
-          if (colisao) {
-            addLog(`  ⚠️ [${tipoLabel}] Mantido "${pref.nome}" porque "${sub.novoNome}" já existe no eproc.`, 'warn');
-            preferenciasIgnoradasDuplicadas.push({ slot: slotNum, tipo: tipoLabel, original: pref.nome, destino: sub.novoNome });
-            continue;
-          }
-
-          try {
-            await fnRenomear(pref, sub.novoNome);
-            idsPrefsRenomeadasNoLote.add(chaveDedup);
-            renomeadas++;
-            addLog(`  ✅ [${tipoLabel}] Renomeado: "${sub.novoNome}"`);
-            await sleep(80);
-          } catch (ePref) {
-            addLog(`  ⚠️ [${tipoLabel}] Erro ao renomear "${pref.nome}": ${ePref.message}`, 'warn');
-            preferenciasComErro.push({ slot: slotNum, tipo: tipoLabel, nome: pref.nome, erro: ePref.message });
-          }
-        }
-        return renomeadas;
-      };
+      const renomearListaPrefsParaSlot = (listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla) =>
+        executarRenomeacaoListaPrefsParaSlot(listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, idsPrefsRenomeadasNoLote, preferenciasComErro, preferenciasIgnoradasDuplicadas);
 
       // Recalcula colisões considerando os localizadores reais da unidade
       const slotsFinais = resolverColisoesSiglas(slots, localizadores);
@@ -17154,6 +17650,14 @@
               normalizar(l.nomeCurto) === normalizar(siglaBaseAntiga)
             ))
           );
+        }
+        if (!m) {
+          m = localizadores.find(l => {
+            const descL = decodeEntities(l.descricao || l.nomeCurto || '');
+            const compL = decodeEntities(l.nomeCompleto || '');
+            const gen = analisarSlotGenericoPorTexto(compL, descL);
+            return gen && gen.tipoSlot === item.tipoSlot && gen.indiceTipo === (item.indiceTipo || (ehEst ? slotNum - 9 : slotNum));
+          });
         }
         if (!m && ehEst && idxEst) {
           m = localizadores.find(l => {
@@ -17288,7 +17792,8 @@
         } else {
           addLog(`  ✏️ Renomeando localizador "${locMatch.nomeCompleto}" para "${novoLocalizadorNome}" (Nome do Localizador: "${novoLocalizadorCurto}")...`);
           try {
-            await alterarLocalizadorEproc(locMatch.urlAlterar, novoLocalizadorNome, novoLocalizadorCurto, locMatch.nomeCurto);
+            const descPadraoSlot = item.tipoSlot === 'estagiario' ? `Estagiário ${item.indiceTipo || (slotNum - 9)}` : `Servidor ${slotNum}`;
+            await alterarLocalizadorEproc(locMatch.urlAlterar, novoLocalizadorNome, novoLocalizadorCurto, locMatch.nomeCurto, locMatch.descricao || descPadraoSlot);
             addLog(`  ✅ Localizador renomeado com sucesso: ${novoLocalizadorNome} (Nome: ${novoLocalizadorCurto})`);
             localizadoresSucesso++;
             localizadorOk = true;
@@ -17300,6 +17805,7 @@
         if (localizadorOk) {
           locMatch.nomeCompleto = novoLocalizadorNome;
           locMatch.nomeCurto = novoLocalizadorCurto;
+          locMatch.descricao = locMatch.descricao || (item.tipoSlot === 'estagiario' ? `Estagiário ${item.indiceTipo || (slotNum - 9)}` : `Servidor ${slotNum}`);
           const badge = document.getElementById(`srv-badge-base-${slotNum}`);
           if (badge) {
             badge.textContent = novoLocalizadorNome;
