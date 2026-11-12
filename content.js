@@ -1,7 +1,7 @@
 // ============================================================
 //  CRIAÇÃO DE PREFERÊNCIAS EM LOTE — eproc TJSP
 //  Arquivo: content.js
-//  Versão: 3.9.0 (atualizada em 12/11/2026)
+//  Versão: 3.9.1 (atualizada em 12/11/2026)
 //  Notas desta versão:
 //  - Módulo Minutas: Não está incluindo evento complementar na preferência de minuta.
 //  - Módulo Servidores / ATPs: Não está editando lembretes nas ATPs.
@@ -18398,7 +18398,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.9.0</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.9.1</span></span>
 
         </div>
 
@@ -23932,7 +23932,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.9.0</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.9.1</span>
 
           </h3>
 
@@ -29396,7 +29396,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #00665c 0%, #00766c 100%); border-bottom: 2px solid #00564e; padding: 12px 18px;">
           <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
             <span>📊</span> ${escapeHtmlViewer(config.titulo)}
-            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.9.0</span>
+            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.9.1</span>
           </h3>
           <button type="button" class="eproc-pref-modal-close" id="btn-viewer-fechar-topo" title="Fechar visualização">✕</button>
         </div>
