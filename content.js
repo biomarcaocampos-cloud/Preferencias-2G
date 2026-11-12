@@ -533,36 +533,40 @@
 
   function gerarStatusTelaHtml() {
     if (moduloAtivo === 'servidores') {
-      return '<span style="color:#15803d; font-weight:700;">👥 Personalização de Servidores (Pronto para executar)</span>';
+      if (ehTelaDeLocalizadores() || ehTelaDeGruposPreferencia()) {
+        return '<span style="color:#15803d; font-weight:700;">👥 Personalização de Servidores (Pronto para executar)</span>';
+      } else {
+        return '<div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; padding:7px 10px; color:#0369a1; font-size:12px; line-height:1.45; margin-top:2px;">👥 <strong>Módulo Servidores:</strong> Acesse a tela de <strong>Localizadores do Órgão</strong> para personalizar servidores da unidade.</div>';
+      }
     } else if (moduloAtivo === 'minutas') {
       if (ehTelaDeMinuta()) {
         return '<span style="color:#15803d; font-weight:700;">✅ Nova Minuta (Pronto)</span>';
       } else {
-        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px; color:#92400e; font-size:11.5px; line-height:1.4; margin-top:2px;">⚠️ <strong>Tela incompatível:</strong> Acesse a tela de <strong>Nova Minuta</strong> no processo para gravar preferências deste módulo.</div>';
+        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:7px 10px; color:#92400e; font-size:12px; line-height:1.45; margin-top:2px;">⚠️ Para este módulo, é necessário estar na tela de um processo. Por favor, abra qualquer processo da unidade e acesse a tela de <strong>Nova Minuta</strong>.</div>';
       }
     } else if (moduloAtivo === 'movimentacoes') {
       if (ehTelaDeMovimentacao()) {
         return '<span style="color:#15803d; font-weight:700;">✅ Movimentação Processual (Pronto)</span>';
       } else {
-        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px; color:#92400e; font-size:11.5px; line-height:1.4; margin-top:2px;">⚠️ <strong>Tela incompatível:</strong> Acesse a tela de <strong>Movimentação Processual</strong> no processo para gravar preferências deste módulo.</div>';
+        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:7px 10px; color:#92400e; font-size:12px; line-height:1.45; margin-top:2px;">⚠️ Para este módulo, é necessário estar na tela de um processo. Por favor, abra qualquer processo da unidade e acesse a tela de <strong>Movimentação</strong>.</div>';
       }
     } else if (moduloAtivo === 'area_minutas') {
       if (ehTelaDeMinutaAreaTrabalho()) {
         return '<span style="color:#15803d; font-weight:700;">✅ Área de Trabalho de Minutas (Pronto)</span>';
       } else {
-        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px; color:#92400e; font-size:11.5px; line-height:1.4; margin-top:2px;">⚠️ <strong>Tela incompatível:</strong> Acesse a tela de <strong>Minutas > Área de Trabalho</strong> para gravar preferências deste módulo.</div>';
+        return '<div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; padding:7px 10px; color:#0369a1; font-size:12px; line-height:1.45; margin-top:2px;">📄 <strong>Módulo Documentos:</strong> Acesse a tela de <strong>Minutas > Área de Trabalho</strong> para gravar preferências deste módulo.</div>';
       }
     } else if (moduloAtivo === 'intimacoes') {
       if (ehTelaDeIntimacao()) {
         return '<span style="color:#15803d; font-weight:700;">✅ Intimação Eletrônica (Pronto)</span>';
       } else {
-        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px; color:#92400e; font-size:11.5px; line-height:1.4; margin-top:2px;">⚠️ <strong>Tela incompatível:</strong> Acesse a tela de <strong>Intimação Eletrônica</strong> do processo para gravar preferências deste módulo.</div>';
+        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:7px 10px; color:#92400e; font-size:12px; line-height:1.45; margin-top:2px;">⚠️ Para este módulo, é necessário estar na tela de um processo. Por favor, abra qualquer processo da unidade e acesse a tela de <strong>Intimação</strong>.</div>';
       }
     } else {
       if (ehTelaDeRelatorio()) {
         return '<span style="color:#15803d; font-weight:700;">✅ Relatório Geral de Processos (Pronto)</span>';
       } else {
-        return '<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px; color:#92400e; font-size:11.5px; line-height:1.4; margin-top:2px;">⚠️ <strong>Tela incompatível:</strong> Acesse o menu <strong>Relatório Geral de Processos</strong> para gravar preferências deste módulo.</div>';
+        return '<div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; padding:7px 10px; color:#0369a1; font-size:12px; line-height:1.45; margin-top:2px;">📊 <strong>Módulo Relatórios:</strong> Acesse o menu <strong>Relatório Geral de Processos</strong> para gravar preferências deste módulo.</div>';
       }
     }
   }
@@ -12507,25 +12511,25 @@
 
         right: 18px;
 
-        z-index: 2147483647;
+        z-index: 100000;
 
         background: #ffffff;
 
         border: 1px solid #cbd5e1;
 
-        border-radius: 8px;
+        border-radius: 10px;
 
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-        font-size: 13px;
+        font-size: 13.5px;
 
         line-height: 1.45;
 
-        width: 440px;
+        width: 860px;
 
-        max-width: calc(100vw - 24px);
+        max-width: calc(100vw - 36px);
 
-        box-shadow: 0 8px 30px rgba(15, 23, 42, 0.22);
+        box-shadow: 0 10px 35px rgba(15, 23, 42, 0.28);
 
         color: #1e293b;
 
@@ -12543,13 +12547,13 @@
 
         justify-content: space-between;
 
-        padding: 8px 12px;
+        padding: 10px 14px;
 
         color: #ffffff;
 
         font-weight: 700;
 
-        font-size: 13px;
+        font-size: 14px;
 
         cursor: move;
 
@@ -12621,9 +12625,9 @@
 
       #rito-panel-body {
 
-        padding: 12px 14px;
+        padding: 14px 16px;
 
-        max-height: 540px;
+        max-height: calc(88vh - 46px);
 
         overflow-y: auto;
 
@@ -12644,6 +12648,22 @@
         width: auto !important;
 
         min-width: 260px !important;
+
+      }
+
+      #rito-servidores-slots-lista {
+
+        display: grid !important;
+
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+
+        gap: 8px !important;
+
+        max-height: 440px !important;
+
+        overflow-y: auto !important;
+
+        padding-right: 4px !important;
 
       }
 
@@ -13200,19 +13220,19 @@
 
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-        font-size: 11px;
+        font-size: 12.5px;
 
-        line-height: 1.4;
+        line-height: 1.45;
 
-        padding: 8px;
+        padding: 10px 12px;
 
         border-radius: 6px;
 
-        height: 250px;
+        height: 320px;
 
         overflow-y: auto;
 
-        margin-top: 8px;
+        margin-top: 10px;
 
         box-sizing: border-box;
 
@@ -16809,7 +16829,7 @@
 
     const overlay = document.createElement('div');
     overlay.id = 'rito-modal-restaurar-slot';
-    overlay.style.cssText = 'position:fixed; inset:0; z-index:999999; background:rgba(15,23,42,0.65); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out;';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483647; background:rgba(15,23,42,0.65); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out;';
 
     overlay.innerHTML = `
       <div style="background:#ffffff; border-radius:10px; width:100%; max-width:480px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3); border:1px solid #e2e8f0; overflow:hidden; display:flex; flex-direction:column;">
@@ -18243,7 +18263,7 @@
 
     overlay = document.createElement('div');
     overlay.id = 'rito-modal-servidores-conclusao';
-    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); z-index:999999; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(3px);';
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); z-index:2147483647; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(3px);';
 
     const rotuloItem = (it) => (it && it.rotuloSlot)
       ? it.rotuloSlot
@@ -18366,6 +18386,69 @@
     if (btnF2) btnF2.onclick = fechar;
   }
 
+  function abrirModalConfirmacaoPersonalizacaoServidores(slots, extrasGestao, onConfirmar) {
+    const modalExistente = document.getElementById('rito-modal-confirmar-personalizacao');
+    if (modalExistente) modalExistente.remove();
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'rito-modal-confirmar-personalizacao';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483647; background:rgba(15,23,42,0.65); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out;';
+
+    const listaHtml = slots.map(s => `
+      <li style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #f1f5f9; font-size:12px;">
+        <span><strong>${esc(s.rotuloCard || `Slot ${s.slot}`)}:</strong> ${esc(s.nomeServidor)}</span>
+        <span style="color:#0284c7; font-weight:700;">➔ ${esc(s.sigla || 'Sem sigla')}</span>
+      </li>
+    `).join('');
+
+    const extrasHtml = extrasGestao && extrasGestao.length > 0 ? `
+      <div style="margin-top:8px; padding-top:6px; border-top:1px solid #e2e8f0; font-size:11.5px; color:#475569;">
+        <strong>👥 Gestão do Gabinete (adicionais):</strong> ${esc(extrasGestao.join(', '))}
+      </div>
+    ` : '';
+
+    overlay.innerHTML = `
+      <div style="background:#ffffff; border-radius:10px; width:100%; max-width:520px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); border:1px solid #cbd5e1; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="background:#f0fdf4; border-bottom:1px solid #dcfce7; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:18px;">🚀</span>
+            <strong style="color:#15803d; font-size:14px;">Confirmar Personalização de Servidores</strong>
+          </div>
+          <button type="button" id="btn-fechar-modal-pers" style="background:none; border:none; font-size:18px; color:#94a3b8; cursor:pointer; line-height:1; padding:0 4px;" title="Fechar">✕</button>
+        </div>
+        <div style="padding:16px; display:flex; flex-direction:column; gap:12px; font-size:12.5px; color:#334155; line-height:1.45;">
+          <p style="margin:0; font-size:13px;">Deseja aplicar a personalização para <strong>${slots.length} servidor(es)</strong> configurado(s)?</p>
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; max-height:220px; overflow-y:auto;">
+            <ul style="margin:0; padding:0; list-style:none;">
+              ${listaHtml}
+            </ul>
+            ${extrasHtml}
+          </div>
+          <div style="font-size:11.5px; color:#64748b; line-height:1.4;">
+            Esta operação irá renomear localizadores 👤, atualizar os grupos de trabalho, vincular membros e renomear preferências e lembretes de ATPs no eproc.
+          </div>
+        </div>
+        <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:10px 16px; display:flex; justify-content:flex-end; gap:8px;">
+          <button type="button" id="btn-cancelar-modal-pers" style="padding:7px 14px; font-size:12px; font-weight:600; color:#475569; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">Cancelar</button>
+          <button type="button" id="btn-confirmar-modal-pers" style="padding:7px 16px; font-size:12.5px; font-weight:700; color:#ffffff; background:#16a34a; border:none; border-radius:6px; cursor:pointer; box-shadow:0 1px 3px rgba(22,163,74,0.3);">Sim, Personalizar Agora</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const fecharModal = () => { overlay.remove(); };
+    overlay.querySelector('#btn-fechar-modal-pers').onclick = fecharModal;
+    overlay.querySelector('#btn-cancelar-modal-pers').onclick = fecharModal;
+    overlay.querySelector('#btn-confirmar-modal-pers').onclick = () => {
+      fecharModal();
+      if (typeof onConfirmar === 'function') onConfirmar();
+    };
+    overlay.onclick = (e) => { if (e.target === overlay) fecharModal(); };
+  }
+
   async function inicializarModuloServidores() {
     const slotsSalvos = carregarServidoresStorage();
     renderizarTabelaServidores(slotsSalvos);
@@ -18394,7 +18477,24 @@
     vincularCheckboxPersistente('srv-chk-renomear-lembretes-atp', 'eproc_servidores_renomear_lembretes_atp');
 
     const btnExec = document.getElementById('btn-servidores-executar');
-    if (btnExec) btnExec.onclick = executarPersonalizacaoServidores;
+    if (btnExec) {
+      btnExec.onclick = () => {
+        const todosSlotsUi = obterDadosServidoresDosInputs();
+        const slots = todosSlotsUi.filter(s => s.nomeServidor && s.nomeServidor.trim());
+        const extrasGestao = typeof obterUsuariosExtrasGestaoSelecionados === 'function'
+          ? obterUsuariosExtrasGestaoSelecionados(todosSlotsUi)
+          : [];
+
+        if (slots.length === 0 && extrasGestao.length === 0) {
+          alert('Nenhum servidor selecionado para personalização ou inclusão na Gestão. Selecione pelo menos um servidor.');
+          return;
+        }
+
+        abrirModalConfirmacaoPersonalizacaoServidores(slots, extrasGestao, () => {
+          executarPersonalizacaoServidores();
+        });
+      };
+    }
 
     const btnLer = document.getElementById('btn-servidores-ler-eproc');
     if (btnLer) btnLer.onclick = lerLocalizadoresAtuaisDoEproc;
@@ -18761,36 +18861,72 @@
     const btnModMov = document.getElementById('btn-modulo-movimentacoes');
 
     if (btnModMin) {
-
-      btnModMin.onclick = () => alternarModulo('minutas');
-
+      btnModMin.onclick = () => {
+        alternarModulo('minutas');
+        if (!ehTelaDeMinuta()) {
+          const linkMin = document.querySelector('a[href*="minuta_cadastrar"], a[href*="minuta_criar"]');
+          if (linkMin && linkMin.href) {
+            window.location.href = linkMin.href;
+          }
+        }
+      };
     }
 
     if (btnModRel) {
-
-      btnModRel.onclick = () => alternarModulo('relatorios');
-
+      btnModRel.onclick = () => {
+        alternarModulo('relatorios');
+        if (!ehTelaDeRelatorio()) {
+          const url = obterUrlAcaoMenu('relatorio_geral_listar');
+          if (url) window.location.href = url;
+        }
+      };
     }
 
     if (btnModMov) {
-
-      btnModMov.onclick = () => alternarModulo('movimentacoes');
-
+      btnModMov.onclick = () => {
+        alternarModulo('movimentacoes');
+        if (!ehTelaDeMovimentacao()) {
+          const linkMov = document.querySelector('a[href*="processo_movimentar"], a[href*="movimentar_em_bloco"]');
+          if (linkMov && linkMov.href) {
+            window.location.href = linkMov.href;
+          }
+        }
+      };
     }
 
     const btnModAreaMin = document.getElementById('btn-modulo-area-minutas');
     if (btnModAreaMin) {
-      btnModAreaMin.onclick = () => alternarModulo('area_minutas');
+      btnModAreaMin.onclick = () => {
+        alternarModulo('area_minutas');
+        if (!ehTelaDeMinutaAreaTrabalho()) {
+          const url = obterUrlAcaoMenu('minuta_area_trabalho');
+          if (url) window.location.href = url;
+        }
+      };
     }
 
     const btnModIntim = document.getElementById('btn-modulo-intimacoes');
     if (btnModIntim) {
-      btnModIntim.onclick = () => alternarModulo('intimacoes');
+      btnModIntim.onclick = () => {
+        alternarModulo('intimacoes');
+        if (!ehTelaDeIntimacao()) {
+          const linkInt = document.querySelector('a[href*="intimacao_executar"], a[href*="intimacao_preparar"]');
+          if (linkInt && linkInt.href) {
+            window.location.href = linkInt.href;
+          }
+        }
+      };
     }
 
     const btnModSrv = document.getElementById('btn-modulo-servidores');
     if (btnModSrv) {
-      btnModSrv.onclick = () => alternarModulo('servidores');
+      btnModSrv.onclick = () => {
+        alternarModulo('servidores');
+        if (!ehTelaDeLocalizadores() && !ehTelaDeGruposPreferencia()) {
+          const url = obterUrlAcaoMenu('localizador_orgao_listar');
+          if (url) window.location.href = url;
+        }
+      };
     }
 
 
@@ -20149,55 +20285,30 @@
     }
 
     if (moduloAtivo === 'relatorios') {
-
       if (!ehTelaDeRelatorio()) {
-
         alertOriginal.call(window, 'Acesse a tela de "Relatório Geral de Processos" para criar as preferências de relatório.');
-
         return;
-
       }
-
     } else if (moduloAtivo === 'movimentacoes') {
-
       if (!ehTelaDeMovimentacao()) {
-
-        alertOriginal.call(window, 'Acesse a tela de "Movimentação Processual" para criar as preferências de movimentação.');
-
+        alertOriginal.call(window, '⚠️ Para este módulo, é necessário estar na tela de um processo. Por favor, abra qualquer processo da unidade e acesse a tela de Movimentação.');
         return;
-
       }
-
     } else if (moduloAtivo === 'area_minutas') {
-
       if (!ehTelaDeMinutaAreaTrabalho()) {
-
         alertOriginal.call(window, 'Acesse a tela de "Minutas > Área de Trabalho" para criar as preferências de documentos.');
-
         return;
-
       }
-
     } else if (moduloAtivo === 'intimacoes') {
-
       if (!ehTelaDeIntimacao()) {
-
-        alertOriginal.call(window, 'Acesse a tela de "Intimação Eletrônica" de um processo para criar as preferências de intimação.');
-
+        alertOriginal.call(window, '⚠️ Para este módulo, é necessário estar na tela de um processo. Por favor, abra qualquer processo da unidade e acesse a tela de Intimação.');
         return;
-
       }
-
     } else {
-
       if (!ehTelaDeMinuta()) {
-
-        alertOriginal.call(window, 'Acesse a tela de "Nova Minuta" para criar as preferências de minuta.');
-
+        alertOriginal.call(window, '⚠️ Para este módulo, é necessário estar na tela de um processo. Por favor, abra qualquer processo da unidade e acesse a tela de Nova Minuta.');
         return;
-
       }
-
     }
 
     const listaParaExecutar = exigirItensSelecionadosParaAcao('Nenhuma preferência carregada da planilha.');
