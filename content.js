@@ -18861,15 +18861,7 @@
     const btnModMov = document.getElementById('btn-modulo-movimentacoes');
 
     if (btnModMin) {
-      btnModMin.onclick = () => {
-        alternarModulo('minutas');
-        if (!ehTelaDeMinuta()) {
-          const linkMin = document.querySelector('a[href*="minuta_cadastrar"], a[href*="minuta_criar"]');
-          if (linkMin && linkMin.href) {
-            window.location.href = linkMin.href;
-          }
-        }
-      };
+      btnModMin.onclick = () => alternarModulo('minutas');
     }
 
     if (btnModRel) {
@@ -18883,15 +18875,7 @@
     }
 
     if (btnModMov) {
-      btnModMov.onclick = () => {
-        alternarModulo('movimentacoes');
-        if (!ehTelaDeMovimentacao()) {
-          const linkMov = document.querySelector('a[href*="processo_movimentar"], a[href*="movimentar_em_bloco"]');
-          if (linkMov && linkMov.href) {
-            window.location.href = linkMov.href;
-          }
-        }
-      };
+      btnModMov.onclick = () => alternarModulo('movimentacoes');
     }
 
     const btnModAreaMin = document.getElementById('btn-modulo-area-minutas');
@@ -18907,15 +18891,7 @@
 
     const btnModIntim = document.getElementById('btn-modulo-intimacoes');
     if (btnModIntim) {
-      btnModIntim.onclick = () => {
-        alternarModulo('intimacoes');
-        if (!ehTelaDeIntimacao()) {
-          const linkInt = document.querySelector('a[href*="intimacao_executar"], a[href*="intimacao_preparar"]');
-          if (linkInt && linkInt.href) {
-            window.location.href = linkInt.href;
-          }
-        }
-      };
+      btnModIntim.onclick = () => alternarModulo('intimacoes');
     }
 
     const btnModSrv = document.getElementById('btn-modulo-servidores');
