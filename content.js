@@ -12476,19 +12476,16 @@
   /* ================== PAINEL FLUTUANTE (ESTILO RITO TJSP) ================== */
 
   function corInstancia() {
-
-    const nav = document.querySelector('#navbar-accessibility, .bg-instancia, #divInfraBarraSistemaE, .infraBarraSistema');
-
+    // Busca a barra institucional do eproc 2G (evitando explicitamente a barra de acessibilidade escura #navbar-accessibility)
+    const nav = document.querySelector('.bg-instancia, #navbar-principal, nav.navbar:not(#navbar-accessibility), .navbar-dark:not(#navbar-accessibility), #divInfraBarraSistemaE, .infraBarraSistema');
     if (nav) {
-
       const bg = getComputedStyle(nav).backgroundColor;
-
-      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
-
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'rgb(255, 255, 255)' && !bg.includes('rgba(0, 0, 0')) {
+        return bg;
+      }
     }
-
-    return '#15803d';
-
+    // Verde-petróleo oficial da identidade visual do eproc TJSP 2G
+    return '#00766c';
   }
 
 
@@ -12504,61 +12501,36 @@
     st.textContent = `
 
       #rito-panel {
-
         position: fixed;
-
         bottom: 18px;
-
         right: 18px;
-
         z-index: 100000;
-
         background: #ffffff;
-
-        border: 1px solid #cbd5e1;
-
-        border-radius: 10px;
-
+        border: 1px solid #00766c;
+        border-radius: 6px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-
         font-size: 13.5px;
-
         line-height: 1.45;
-
         width: 860px;
-
         max-width: calc(100vw - 36px);
-
-        box-shadow: 0 10px 35px rgba(15, 23, 42, 0.28);
-
-        color: #1e293b;
-
+        box-shadow: 0 8px 30px rgba(0, 70, 60, 0.22);
+        color: #212529;
         overflow: hidden;
-
         user-select: none;
-
       }
 
       #rito-panel-header {
-
         display: flex;
-
         align-items: center;
-
         justify-content: space-between;
-
-        padding: 10px 14px;
-
+        padding: 9px 13px;
+        background: linear-gradient(135deg, #00665c 0%, #00766c 100%);
         color: #ffffff;
-
         font-weight: 700;
-
-        font-size: 14px;
-
+        font-size: 13.5px;
         cursor: move;
-
         letter-spacing: 0.2px;
-
+        border-bottom: 2px solid #00564e;
       }
 
       .rito-header-title {
@@ -12588,67 +12560,49 @@
       }
 
       .rito-header-btn {
-
-        background: transparent;
-
-        border: none;
-
+        background: rgba(255, 255, 255, 0.16);
+        border: 1px solid rgba(255, 255, 255, 0.28);
         color: #ffffff;
-
-        border-radius: 3px;
-
-        width: 22px;
-
-        height: 20px;
-
-        line-height: 18px;
-
+        border-radius: 4px;
+        width: 24px;
+        height: 22px;
+        line-height: 20px;
         text-align: center;
-
         cursor: pointer;
-
         font-weight: bold;
-
         font-size: 13px;
-
         padding: 0;
-
-        transition: background 0.15s;
-
+        transition: background 0.15s, border-color 0.15s;
       }
 
       .rito-header-btn:hover {
-
         background: rgba(255, 255, 255, 0.35);
-
+        border-color: rgba(255, 255, 255, 0.6);
       }
 
       #rito-panel-body {
-
-        padding: 14px 16px;
-
+        padding: 12px 14px;
         max-height: calc(88vh - 46px);
-
         overflow-y: auto;
-
-        background: #f8fafc;
-
+        background: #f4f6f9;
         user-select: text;
-
       }
 
       #rito-panel.rito-minimized #rito-panel-body {
-
         display: none !important;
-
       }
 
       #rito-panel.rito-minimized {
-
         width: auto !important;
-
         min-width: 260px !important;
+        border-radius: 6px !important;
+        border: 1px solid #00665c !important;
+        box-shadow: 0 4px 16px rgba(0, 70, 60, 0.3) !important;
+      }
 
+      #rito-panel.rito-minimized #rito-panel-header {
+        border-bottom: none !important;
+        border-radius: 5px !important;
       }
 
       #rito-servidores-slots-lista {
@@ -12668,33 +12622,23 @@
       }
 
       .rito-card {
-
         background: #ffffff;
-
-        border: 1px solid #e2e8f0;
-
-        border-radius: 6px;
-
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
         padding: 9px 12px;
-
         margin-bottom: 9px;
-
-        box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
       }
 
       .rito-card-title {
-
-        font-size: 11px;
-
+        font-size: 11.5px;
         text-transform: uppercase;
-
         font-weight: 700;
-
-        color: #64748b;
-
-        margin-bottom: 3px;
-
+        color: #006cb5;
+        border-left: 3px solid #00766c;
+        padding-left: 6px;
+        margin-bottom: 4px;
+        letter-spacing: 0.3px;
       }
 
       .rito-card-value {
@@ -12930,117 +12874,87 @@
       }
 
       .rito-dropzone {
-
-        border: 2px dashed #94a3b8;
-
-        border-radius: 6px;
-
+        border: 2px dashed #006cb5;
+        border-radius: 5px;
         padding: 12px;
-
         text-align: center;
-
         background: #ffffff;
-
+        color: #495057;
         cursor: pointer;
-
         transition: all 0.2s;
-
         margin-bottom: 9px;
-
       }
 
       .rito-dropzone:hover {
-
-        border-color: #0088cc;
-
+        border-color: #00766c;
         background: #f0fdf4;
-
       }
 
       .rito-btn {
-
         display: flex;
-
         align-items: center;
-
         justify-content: center;
-
         gap: 6px;
-
         width: 100%;
-
         padding: 8px 12px;
-
         font-size: 12.5px;
-
         font-weight: 600;
-
         border-radius: 4px;
-
         border: 1px solid transparent;
-
         cursor: pointer;
-
         color: #ffffff;
-
         transition: all 0.15s;
-
         margin-top: 6px;
-
       }
 
       .rito-btn-primary {
-
-        background: #0077b6;
-
-        border-color: #00669e;
-
+        background: #006cb5;
+        border-color: #005a96;
+        color: #ffffff;
+        font-weight: 600;
+        border-radius: 4px;
+        box-shadow: 0 1px 2px rgba(0, 108, 181, 0.2);
       }
 
       .rito-btn-primary:hover {
-
-        background: #005f92;
-
+        background: #005691;
+        border-color: #004b80;
       }
 
       .rito-btn-danger {
-
-        background: #b02a37;
-
-        border-color: #90232d;
-
+        background: #dc3545;
+        border-color: #bd2130;
+        color: #ffffff;
+        font-weight: 600;
+        border-radius: 4px;
       }
 
       .rito-btn-danger:hover {
-
-        background: #991b1b;
-
+        background: #c82333;
       }
 
       .rito-btn-secondary {
-
         background: #ffffff;
-
-        border: 1px solid #ced4da;
-
-        color: #0077b6;
-
+        border: 1px solid #006cb5;
+        color: #006cb5;
+        font-weight: 600;
+        border-radius: 4px;
       }
 
       .rito-btn-secondary:hover {
-
-        background: #e9ecef;
-
+        background: #f0f7fc;
+        border-color: #005088;
+        color: #005088;
       }
 
       .rito-module-tabs {
         display: flex;
         flex-direction: column;
         gap: 5px;
-        background: #f1f5f9;
-        padding: 6px;
-        border-radius: 8px;
-        border: 1px solid #cbd5e1;
+        background: #e9ecef;
+        padding: 5px;
+        border-radius: 5px;
+        border: 1px solid #ced4da;
         margin-bottom: 8px;
       }
 
@@ -13063,12 +12977,12 @@
         justify-content: center;
         gap: 6px;
         padding: 7px 6px;
-        border-radius: 6px;
-        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        border: 1px solid #ced4da;
         background: #ffffff;
-        color: #475569;
+        color: #495057;
         font-size: 11.5px;
-        font-weight: 700;
+        font-weight: 600;
         line-height: 1.2;
         white-space: nowrap;
         cursor: pointer;
@@ -13077,16 +12991,16 @@
       }
 
       .rito-btn-modulo:hover:not(.active) {
-        background: #f8fafc;
-        color: #15803d;
-        border-color: #94a3b8;
+        background: #f0f7fc;
+        color: #006cb5;
+        border-color: #006cb5;
       }
 
       .rito-btn-modulo.active {
-        background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+        background: #00766c;
         color: #ffffff;
-        border-color: #14532d;
-        box-shadow: 0 2px 6px rgba(21, 128, 61, 0.3);
+        border-color: #005a52;
+        box-shadow: 0 2px 5px rgba(0, 118, 108, 0.3);
       }
 
       .rito-btn-modulo svg {
@@ -13213,29 +13127,18 @@
       }
 
       .rito-logs-box {
-
-        background: #0f172a;
-
+        background: #1e293b;
         color: #f1f5f9;
-
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-
         font-size: 12.5px;
-
         line-height: 1.45;
-
         padding: 10px 12px;
-
-        border-radius: 6px;
-
+        border: 1px solid #cbd5e1;
+        border-radius: 5px;
         height: 320px;
-
         overflow-y: auto;
-
         margin-top: 10px;
-
         box-sizing: border-box;
-
       }
 
       .rito-log-card {
@@ -13249,10 +13152,10 @@
       .rito-log-run-divider {
         margin: 16px 0 12px 0;
         padding: 6px 8px;
-        border-top: 2px solid #38bdf8;
-        border-bottom: 1px solid #0284c7;
-        background: linear-gradient(90deg, rgba(14, 165, 233, 0.16), rgba(30, 41, 59, 0.85));
-        color: #7dd3fc;
+        border-top: 2px solid #00766c;
+        border-bottom: 1px solid #006cb5;
+        background: linear-gradient(90deg, rgba(0, 118, 108, 0.22), rgba(30, 41, 59, 0.85));
+        color: #5eead4;
         font-size: 10.5px;
         font-weight: 700;
         letter-spacing: 0.3px;
@@ -13459,33 +13362,20 @@
       }
 
       .rito-badge-p {
-
         display: inline-flex;
-
         align-items: center;
-
         justify-content: center;
-
-        width: 17px;
-
-        height: 17px;
-
-        background: #16a34a;
-
+        width: 19px;
+        height: 19px;
+        background: rgba(255, 255, 255, 0.22);
+        border: 1px solid rgba(255, 255, 255, 0.45);
         color: #ffffff !important;
-
         font-weight: 900;
-
-        font-size: 11px;
-
-        border-radius: 3.5px;
-
+        font-size: 11.5px;
+        border-radius: 4px;
         line-height: 1;
-
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
       }
 
       .rito-topbar-btn {
@@ -13695,63 +13585,38 @@
 
 
   function salvarPosicao(p, min) {
-
     try {
-
       const r = p.getBoundingClientRect();
-
+      const w = r.width || (p.classList.contains('rito-minimized') ? 260 : 860);
       const atual = JSON.parse(localStorage.getItem(KEY_POS) || '{}');
-
       localStorage.setItem(KEY_POS, JSON.stringify({
-
-        left: Math.max(10, Math.min(window.innerWidth - 440, r.left)),
-
-        top: Math.max(10, Math.min(window.innerHeight - 80, r.top)),
-
+        left: Math.max(10, Math.min(window.innerWidth - w, r.left)),
+        top: Math.max(10, Math.min(window.innerHeight - 60, r.top)),
         min: typeof min === 'boolean' ? min : !!atual.min
-
       }));
-
     } catch (e) {}
-
   }
 
 
 
   function restaurarPosicao(p, btnMin) {
-
     try {
-
       const pos = JSON.parse(localStorage.getItem(KEY_POS) || 'null');
-
       if (!pos) return;
-
+      const w = p.classList.contains('rito-minimized') ? 260 : 860;
       if (typeof pos.left === 'number' && typeof pos.top === 'number') {
-
-        const left = Math.max(10, Math.min(window.innerWidth - 440, pos.left));
-
-        const top = Math.max(10, Math.min(window.innerHeight - 80, pos.top));
-
+        const left = Math.max(10, Math.min(window.innerWidth - w, pos.left));
+        const top = Math.max(10, Math.min(window.innerHeight - 60, pos.top));
         p.style.left = left + 'px';
-
         p.style.top = top + 'px';
-
         p.style.right = 'auto';
-
         p.style.bottom = 'auto';
-
       }
-
       if (pos.min) {
-
         p.classList.add('rito-minimized');
-
         if (btnMin) btnMin.textContent = '+';
-
       }
-
     } catch (e) {}
-
   }
 
 
@@ -13792,9 +13657,9 @@
 
       let y = e.clientY - offY;
 
-      x = Math.max(10, Math.min(window.innerWidth - 440, x));
-
-      y = Math.max(10, Math.min(window.innerHeight - 80, y));
+      const w = p.offsetWidth || (p.classList.contains('rito-minimized') ? 260 : 860);
+      x = Math.max(10, Math.min(window.innerWidth - w, x));
+      y = Math.max(10, Math.min(window.innerHeight - 50, y));
 
       p.style.left = x + 'px';
 
@@ -16688,20 +16553,20 @@
       }
 
       const pillBg = ehEstagiario ? '#ede9fe' : '#e0f2fe';
-      const pillColor = ehEstagiario ? '#6d28d9' : '#0369a1';
-      const cardBorder = ehEstagiario ? '#ddd6fe' : '#e2e8f0';
-      const cardBg = ehEstagiario ? '#faf5ff' : '#f8fafc';
+      const pillColor = ehEstagiario ? '#6d28d9' : '#006cb5';
+      const cardBorder = ehEstagiario ? '#ddd6fe' : '#dee2e6';
+      const cardBg = ehEstagiario ? '#faf5ff' : '#ffffff';
 
       html += `
-        <div class="rito-srv-card" data-slot="${i}" data-tipo-slot="${tipoSlot}" data-indice-tipo="${indiceTipo}" data-rotulo-card="${esc(rotuloCard)}" style="background:${cardBg}; border:1px solid ${cardBorder}; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:3px;">
+        <div class="rito-srv-card" data-slot="${i}" data-tipo-slot="${tipoSlot}" data-indice-tipo="${indiceTipo}" data-rotulo-card="${esc(rotuloCard)}" style="background:${cardBg}; border:1px solid ${cardBorder}; border-radius:5px; padding:7px 9px; display:flex; flex-direction:column; gap:3px; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap:6px; min-width:0;">
               <span style="font-weight:700; font-size:10.5px; background:${pillBg}; color:${pillColor}; padding:1px 6px; border-radius:4px; flex-shrink:0;">${esc(rotuloCard)}</span>
-              <span id="srv-badge-base-${i}" data-loc-id="${esc(locIdAtual)}" data-tipo-slot="${tipoSlot}" data-indice-tipo="${indiceTipo}" data-rotulo-card="${esc(rotuloCard)}" data-base="${esc(nomeBaseAtual)}" data-grupo-base="${esc(nomeGrupoBaseAtual)}" data-grupo-encontrado="${sRaw.grupoEncontrado ? 'true' : 'false'}" style="font-size:10.5px; color:${ehPersonalizado ? '#0f766e' : '#475569'}; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Localizador atual no eproc: ${esc(nomeBaseAtual)}">${esc(nomeBaseAtual)}</span>
+              <span id="srv-badge-base-${i}" data-loc-id="${esc(locIdAtual)}" data-tipo-slot="${tipoSlot}" data-indice-tipo="${indiceTipo}" data-rotulo-card="${esc(rotuloCard)}" data-base="${esc(nomeBaseAtual)}" data-grupo-base="${esc(nomeGrupoBaseAtual)}" data-grupo-encontrado="${sRaw.grupoEncontrado ? 'true' : 'false'}" style="font-size:10.5px; color:${ehPersonalizado ? '#00766c' : '#495057'}; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Localizador atual no eproc: ${esc(nomeBaseAtual)}">${esc(nomeBaseAtual)}</span>
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-              ${ehPersonalizado ? `<button type="button" class="btn-restaurar-slot" data-slot="${i}" style="background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:4px; font-size:9.5px; font-weight:700; padding:1px 6px; cursor:pointer; display:inline-flex; align-items:center; gap:3px;" title="Retornar ${esc(rotuloCard)} ao estado original de fábrica">↺ Retornar ao original</button>` : ''}
-              <label style="font-size:10.5px; font-weight:600; color:#334155; display:flex; align-items:center; gap:4px; cursor:pointer;">
+              ${ehPersonalizado ? `<button type="button" class="btn-restaurar-slot" data-slot="${i}" style="background:#fff5f5; border:1px solid #fecaca; color:#c53030; border-radius:4px; font-size:9.5px; font-weight:700; padding:2px 6px; cursor:pointer; display:inline-flex; align-items:center; gap:3px;" title="Retornar ${esc(rotuloCard)} ao estado original de fábrica">↺ Retornar ao original</button>` : ''}
+              <label style="font-size:10.5px; font-weight:600; color:#495057; display:flex; align-items:center; gap:4px; cursor:pointer;">
                 <input type="checkbox" id="srv-gestao-${i}" class="srv-chk-gestao" ${sRaw.gestao ? 'checked' : ''} style="cursor:pointer;">
                 Gestão
               </label>
@@ -16712,10 +16577,10 @@
           </div>
           ${prefsVincHtml}
           <div style="display:grid; grid-template-columns: 1fr 110px; gap:6px;">
-            <select id="srv-select-user-${i}" class="srv-select-usuario" style="font-size:11px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:4px; outline:none; background:#ffffff; color:#0f172a; max-width:100%;">
+            <select id="srv-select-user-${i}" class="srv-select-usuario" style="font-size:11.5px; padding:4px 6px; border:1px solid #ced4da; border-radius:4px; outline:none; background:#ffffff; color:#212529; max-width:100%;">
               ${optionsUsuarios}
             </select>
-            <input type="text" id="srv-sigla-${i}" class="srv-input-sigla" readonly placeholder="👤Sigla👤" style="font-size:11px; font-weight:700; padding:4px 6px; border:1px solid #e2e8f0; background:#f1f5f9; border-radius:4px; color:#0f766e; text-align:center;" value="${sRaw.sigla ? `👤${esc(sRaw.sigla)}👤` : ''}">
+            <input type="text" id="srv-sigla-${i}" class="srv-input-sigla" readonly placeholder="👤Sigla👤" style="font-size:11px; font-weight:700; padding:4px 6px; border:1px solid #ced4da; background:#f8f9fa; border-radius:4px; color:#00766c; text-align:center;" value="${sRaw.sigla ? `👤${esc(sRaw.sigla)}👤` : ''}">
           </div>
           <div id="srv-perfis-info-${i}" style="font-size:10px; line-height:1.2; display:none; padding-left:2px;"></div>
         </div>
@@ -16832,7 +16697,7 @@
     overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483647; background:rgba(15,23,42,0.65); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out;';
 
     overlay.innerHTML = `
-      <div style="background:#ffffff; border-radius:10px; width:100%; max-width:480px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3); border:1px solid #e2e8f0; overflow:hidden; display:flex; flex-direction:column;">
+      <div style="background:#ffffff; border-radius:6px; width:100%; max-width:480px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3); border:1px solid #00766c; overflow:hidden; display:flex; flex-direction:column;">
         <div style="background:#fef2f2; border-bottom:1px solid #fee2e2; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:18px;">⚠️</span>
@@ -18320,7 +18185,7 @@
 
     overlay.innerHTML = `
       <div style="background:#ffffff; border-radius:12px; width:560px; max-width:92vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); overflow:hidden; font-family:system-ui, -apple-system, sans-serif;">
-        <div style="background:linear-gradient(135deg, #15803d 0%, #166534 100%); color:#ffffff; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="background:linear-gradient(135deg, #00665c 0%, #00766c 100%); color:#ffffff; border-bottom:2px solid #00564e; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:18px;">👤</span>
             <span style="font-size:14px; font-weight:700;">Relatório Final de Servidores</span>
@@ -18411,12 +18276,12 @@
 
     overlay.innerHTML = `
       <div style="background:#ffffff; border-radius:10px; width:100%; max-width:520px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); border:1px solid #cbd5e1; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="background:#f0fdf4; border-bottom:1px solid #dcfce7; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
+        <div style="background:linear-gradient(135deg, #00665c 0%, #00766c 100%); border-bottom:2px solid #00564e; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:18px;">🚀</span>
-            <strong style="color:#15803d; font-size:14px;">Confirmar Personalização de Servidores</strong>
+            <strong style="color:#ffffff; font-size:14px;">Confirmar Personalização de Servidores</strong>
           </div>
-          <button type="button" id="btn-fechar-modal-pers" style="background:none; border:none; font-size:18px; color:#94a3b8; cursor:pointer; line-height:1; padding:0 4px;" title="Fechar">✕</button>
+          <button type="button" id="btn-fechar-modal-pers" style="background:none; border:none; font-size:18px; color:#ffffff; cursor:pointer; line-height:1; padding:0 4px;" title="Fechar">✕</button>
         </div>
         <div style="padding:16px; display:flex; flex-direction:column; gap:12px; font-size:12.5px; color:#334155; line-height:1.45;">
           <p style="margin:0; font-size:13px;">Deseja aplicar a personalização para <strong>${slots.length} servidor(es)</strong> configurado(s)?</p>
@@ -18432,7 +18297,7 @@
         </div>
         <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:10px 16px; display:flex; justify-content:flex-end; gap:8px;">
           <button type="button" id="btn-cancelar-modal-pers" style="padding:7px 14px; font-size:12px; font-weight:600; color:#475569; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">Cancelar</button>
-          <button type="button" id="btn-confirmar-modal-pers" style="padding:7px 16px; font-size:12.5px; font-weight:700; color:#ffffff; background:#16a34a; border:none; border-radius:6px; cursor:pointer; box-shadow:0 1px 3px rgba(22,163,74,0.3);">Sim, Personalizar Agora</button>
+          <button type="button" id="btn-confirmar-modal-pers" style="padding:7px 16px; font-size:12.5px; font-weight:700; color:#ffffff; background:#006cb5; border:1px solid #005a96; border-radius:4px; cursor:pointer; box-shadow:0 1px 3px rgba(0,108,181,0.3);">Sim, Personalizar Agora</button>
         </div>
       </div>
     `;
@@ -18533,7 +18398,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:11px; font-weight:600; margin-left:3px; opacity:0.92;">v3.9.0</span></span>
+          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.9.0</span></span>
 
         </div>
 
@@ -18845,7 +18710,10 @@
 
     const header = panel.querySelector('#rito-panel-header');
 
-    header.style.background = corInstancia();
+        const corBase = corInstancia();
+    header.style.background = (corBase && corBase !== '#00766c' && !corBase.startsWith('rgb(0, 5') && !corBase.startsWith('rgb(0, 6'))
+      ? corBase
+      : 'linear-gradient(135deg, #00665c 0%, #00766c 100%)';
 
 
 
@@ -24058,7 +23926,7 @@
 
         <!-- HEADER -->
 
-        <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #005b8f 0%, #003e63 100%); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #0088cc;">
+        <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #00665c 0%, #00766c 100%); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #00564e;">
 
           <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px;">
 
@@ -29525,7 +29393,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
 
     overlay.innerHTML = `
       <div id="eproc-pref-modal-container" class="eproc-viewer-modal">
-        <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #005b8f 0%, #003e63 100%); padding: 12px 18px;">
+        <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #00665c 0%, #00766c 100%); border-bottom: 2px solid #00564e; padding: 12px 18px;">
           <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
             <span>📊</span> ${escapeHtmlViewer(config.titulo)}
             <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.9.0</span>
