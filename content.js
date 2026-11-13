@@ -21504,7 +21504,8 @@
 
       existentes = await obterPreferenciaRelatorioExistentes();
 
-      addLog('ℹ️ Encontradas ' + existentes.size + ' preferências de relatório cadastradas na Unidade.', 'info');
+      const totalUnicasRel = (window._eprocListaPreferenciasRelatorio && window._eprocListaPreferenciasRelatorio.length) || new Set(Array.from(existentes).map(normalizar)).size;
+      addLog('ℹ️ Encontradas ' + totalUnicasRel + ' preferências de relatório cadastradas na Unidade.', 'info');
 
       if (st.modoRelatorio !== 'alterar') {
         await garantirGruposRelatoriosEmLote(st.itens);
