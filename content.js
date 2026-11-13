@@ -5821,10 +5821,8 @@
     const lerOpcoesValidas = () => Array.from(selComp.options || []).filter(o => o.value && o.value !== 'null');
     const ajaxAtivo = () => Boolean(window.jQuery && Number(window.jQuery.active) > 0);
 
-    // Se havia opção residual de OUTRO evento, limpa antes de aguardar/buscar do evento atual
-    if (idEventoAtual && selComp.dataset && selComp.dataset.eprocEventoId && selComp.dataset.eprocEventoId !== idEventoAtual) {
-      limparEventosComplementares({ removerOpcoes: true });
-    }
+    // [v3.10.2] Não remove mais as <option> já carregadas pelo eproc (comportamento do JEC/v3.5):
+    // apagar as opções aqui deixava o combo vazio quando o fetch de contingência falhava.
 
     // 2. Aguarda eventuais requisições $.ajax já em voo (ex.: buscaEventosComplementares de selecionarEvento)
     for (let t = 0; t < 35; t++) {
@@ -12086,12 +12084,12 @@
                   .map(o => String(o.value).trim());
               }
             }
-            if (semEvCompHook) idsEvCompHook = [];
+            // [v3.10.2] Removida a trava que zerava os IDs selecionados (semEvCompHook)
             idsEvCompHook = Array.from(new Set(idsEvCompHook));
 
-            // Garante persistência top-level de Eventos Complementares (Movimentações e Minutas)
+            // Persistência top-level SOMENTE para Movimentações (formato nativo selEventoComplementar|id1;id2)
             partes = partes.filter(p => !p.startsWith('selEventoComplementar|') && !p.startsWith('hdnEventosComplementares|') && !p.startsWith('NumIdEventoComplementar'));
-            if (idsEvCompHook.length > 0) {
+            if (ehContextoMovimentacaoHook && idsEvCompHook.length > 0) {
               partes.push('selEventoComplementar|' + idsEvCompHook.join(';'));
               partes.push('hdnEventosComplementares|' + idsEvCompHook.join(','));
               idsEvCompHook.forEach((idEv, idx) => {
@@ -12099,8 +12097,8 @@
               });
             }
 
-            // Garante persistência dentro do payload Base64 (Agendamento| / frmDadosMinutaParaATP|)
-            if (!ehContextoMovimentacaoHook && (idsEvCompHook.length > 0 || semEvCompHook)) {
+            // Garante persistência dentro do payload Base64 (Agendamento| / frmDadosMinutaParaATP|) — formato JEC
+            if (!ehContextoMovimentacaoHook && idsEvCompHook.length > 0) {
               partes = partes.map(parte => {
                 const prefixo = ['Agendamento|', 'frmDadosMinutaParaATP|'].find(p => parte.startsWith(p));
                 if (!prefixo) return parte;
@@ -12111,16 +12109,11 @@
                     const kRaw = eqIdx !== -1 ? par.substring(0, eqIdx) : par;
                     let k = kRaw;
                     try { k = decodeURIComponent(kRaw.replace(/\+/g, ' ')); } catch (e) {}
-                    return !/^(?:selEventoComplementar|selectItemselEventoComplementar|hdnEventosComplementares|mc_hdnEventosComplementares)/i.test(k);
+                    return !k.startsWith('selEventoComplementar');
                   });
 
                   for (const val of idsEvCompHook) {
                     pares.push('selEventoComplementar%5B%5D=' + encodeURIComponent(val));
-                    pares.push('selectItemselEventoComplementar%5B%5D=' + encodeURIComponent(val));
-                  }
-                  if (idsEvCompHook.length > 0) {
-                    pares.push('hdnEventosComplementares=' + encodeURIComponent(idsEvCompHook.join(',')));
-                    pares.push('mc_hdnEventosComplementares=' + encodeURIComponent(idsEvCompHook.join(',')));
                   }
 
                   return prefixo + btoa(pares.join('&'));
