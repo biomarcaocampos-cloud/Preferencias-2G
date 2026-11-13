@@ -671,6 +671,19 @@
     return new URL(`controlador.php?acao=${acao}&hash=${hashAtual}`, window.location.href).href;
   }
 
+  function atualizarEstadoDropzonePlanilha() {
+    const dz = document.getElementById('rito-dropzone');
+    if (!dz) return;
+    const carregada = (typeof itensCarregados !== 'undefined' && Array.isArray(itensCarregados) && itensCarregados.length > 0)
+      || window._eprocUltimoArquivoPlanilha instanceof File || window._eprocUltimoArquivoPlanilha instanceof Blob;
+    dz.classList.toggle('rito-dz-carregada', carregada);
+    dz.classList.toggle('rito-dz-vazio', !carregada);
+    const tit = document.getElementById('rito-dropzone-titulo');
+    const sub = document.getElementById('rito-dropzone-sub');
+    if (tit) tit.textContent = carregada ? '✅ Planilha carregada' : '📂 Selecionar Planilha Excel (.xlsx)';
+    if (sub) sub.textContent = carregada ? 'Clique ou arraste para trocar a planilha' : 'Ou arraste a planilha da Unidade aqui';
+  }
+
   function alternarModulo(novoModulo, pularRecargaPlanilha = false) {
     moduloAtivo = novoModulo;
     sessionStorage.setItem('eproc_pref_2g_modulo_ativo', novoModulo);
@@ -729,12 +742,13 @@
     } else {
       if (containerSrv) containerSrv.style.display = 'none';
       if (containerAtp) containerAtp.style.display = 'none';
-      if (dropzone) dropzone.style.display = temPlanilha ? 'none' : 'block';
+      if (dropzone) dropzone.style.display = 'block';
       if (cardInfo) cardInfo.style.display = temPlanilha ? 'block' : 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = temPlanilha ? 'flex' : 'none';
       if (btnIniciar) btnIniciar.style.display = temPlanilha ? 'flex' : 'none';
     }
 
+    atualizarEstadoDropzonePlanilha();
     const pill = document.getElementById('rito-modulo-status-pill');
     if (pill) {
       pill.textContent = moduloAtivo === 'grupos_atp' ? 'GRUPOS ATP' : (moduloAtivo === 'servidores' ? 'SERVIDORES' : (moduloAtivo === 'intimacoes' ? 'INTIMAÇÕES' : (moduloAtivo === 'relatorios' ? 'RELATÓRIOS' : (moduloAtivo === 'movimentacoes' ? 'MOVIMENTAÇÃO' : (moduloAtivo === 'area_minutas' ? 'DOCS' : 'MINUTAS')))));
@@ -749,16 +763,16 @@
     const btnGerenciador = document.getElementById('btn-rito-abrir-gerenciador');
     if (btnGerenciador) {
       if (moduloAtivo === 'relatorios') {
-        btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências de Relatório Geral';
+        btnGerenciador.innerHTML = '<span>📋</span><span>Gerenciador de Preferências</span>';
         btnGerenciador.title = 'Abre a lista de preferências de Relatório Geral da Unidade';
       } else if (moduloAtivo === 'movimentacoes') {
-        btnGerenciador.innerHTML = '<span>📋</span> Abrir Gerenciador de Preferências (Movimentação)';
+        btnGerenciador.innerHTML = '<span>📋</span><span>Gerenciador de Preferências</span>';
         btnGerenciador.title = 'Abre a tela oficial do eproc para visualizar ou editar preferências de movimentação processual';
       } else if (moduloAtivo === 'area_minutas') {
-        btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências da Área de Minutas';
+        btnGerenciador.innerHTML = '<span>📋</span><span>Gerenciador de Preferências</span>';
         btnGerenciador.title = 'Abre a lista oficial de preferências da Área de Trabalho de Minutas da Unidade';
       } else if (moduloAtivo === 'intimacoes') {
-        btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências de Intimação';
+        btnGerenciador.innerHTML = '<span>📋</span><span>Gerenciador de Preferências</span>';
         btnGerenciador.title = 'Abre a lista oficial de preferências de Intimação Eletrônica da Unidade';
       } else if (moduloAtivo === 'servidores') {
         btnGerenciador.innerHTML = '<span>👥</span> Abrir Localizadores do Órgão';
@@ -12979,32 +12993,14 @@
       }
 
       .rito-module-tabs {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
         gap: 5px;
         background: #e9ecef;
         padding: 5px;
         border-radius: 5px;
         border: 1px solid #ced4da;
         margin-bottom: 8px;
-      }
-
-      .rito-module-row-1 {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 5px;
-      }
-
-      .rito-module-row-2 {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 5px;
-      }
-
-      .rito-module-row-3 {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 5px;
       }
 
       .rito-btn-modulo {
@@ -13015,29 +13011,105 @@
         gap: 6px;
         padding: 7px 6px;
         border-radius: 4px;
-        border: 1px solid #ced4da;
-        background: #ffffff;
-        color: #495057;
+        border: 1px solid #00453f;
+        background: #00564e;
+        color: #ffffff;
         font-size: 11.5px;
         font-weight: 600;
         line-height: 1.2;
         white-space: nowrap;
         cursor: pointer;
         transition: all 0.15s ease;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
       }
 
       .rito-btn-modulo:hover:not(.active) {
-        background: #f0f7fc;
-        color: #006cb5;
-        border-color: #006cb5;
-      }
-
-      .rito-btn-modulo.active {
         background: #00766c;
         color: #ffffff;
         border-color: #005a52;
-        box-shadow: 0 2px 5px rgba(0, 118, 108, 0.3);
+      }
+
+      .rito-btn-modulo.active {
+        background: #e6f4f1;
+        color: #00564e;
+        border-color: #00766c;
+        box-shadow: inset 0 0 0 1px #00766c;
+      }
+
+      /* Botão EXECUTAR (laranja claro) */
+      .rito-btn-executar {
+        background: #fdba74 !important;
+        color: #7c2d12 !important;
+        border: 1px solid #f59e0b !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.6px;
+        margin-bottom: 8px;
+      }
+
+      .rito-btn-executar:hover {
+        background: #fb923c !important;
+        color: #ffffff !important;
+      }
+
+      #rito-acoes-grid .rito-btn-modulo {
+        white-space: normal;
+        text-align: center;
+        font-size: 11px;
+        padding: 6px 4px;
+        min-height: 34px;
+      }
+
+      /* Linha única: De / Até / seleção de preferências */
+      .rito-pref-row {
+        display: grid;
+        grid-template-columns: 62px 62px 1fr;
+        gap: 6px;
+        align-items: end;
+      }
+
+      .rito-pref-row label {
+        font-size: 11px;
+        font-weight: 700;
+        color: #475569;
+        display: block;
+        margin-bottom: 2px;
+      }
+
+      .rito-pref-row input[type=number] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 4px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        font-weight: bold;
+        color: #0f172a;
+        text-align: center;
+      }
+
+      /* Lista de preferências em duas colunas alinhadas */
+      .rito-ms-list {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 4px;
+      }
+
+      .rito-ms-list .rito-ms-empty-search {
+        grid-column: 1 / -1;
+      }
+
+      /* Botão de planilha */
+      .rito-dropzone.rito-dz-vazio {
+        background: #9ad3cb;
+        border-color: #00766c;
+      }
+
+      .rito-dropzone.rito-dz-vazio:hover {
+        background: #86c7be;
+      }
+
+      .rito-dropzone.rito-dz-carregada {
+        background: #ffffff;
+        border-color: #006cb5;
       }
 
       .rito-btn-modulo svg {
@@ -19060,7 +19132,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">Criar preferências em Lote 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.1</span></span>
+          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.1</span></span>
 
         </div>
 
@@ -19087,44 +19159,40 @@
           </div>
 
           <div class="rito-module-tabs">
-            <div class="rito-module-row-1">
-              <button type="button" id="btn-modulo-minutas" class="rito-btn-modulo ${moduloAtivo === 'minutas' ? 'active' : ''}" title="Módulo de Preferências de Minutas">
-                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
-                <span>Minutas</span>
-              </button>
+            <button type="button" id="btn-modulo-minutas" class="rito-btn-modulo ${moduloAtivo === 'minutas' ? 'active' : ''}" title="Módulo de Preferências de Minutas">
+              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+              <span>Minutas</span>
+            </button>
 
-              <button type="button" id="btn-modulo-relatorios" class="rito-btn-modulo ${moduloAtivo === 'relatorios' ? 'active' : ''}" title="Módulo de Preferências de Relatório Geral">
-                <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                <span>Relatórios</span>
-              </button>
+            <button type="button" id="btn-modulo-relatorios" class="rito-btn-modulo ${moduloAtivo === 'relatorios' ? 'active' : ''}" title="Módulo de Preferências de Relatório Geral">
+              <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span>Relatórios</span>
+            </button>
 
-              <button type="button" id="btn-modulo-movimentacoes" class="rito-btn-modulo ${moduloAtivo === 'movimentacoes' ? 'active' : ''}" title="Módulo de Preferências de Movimentação Processual">
-                <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                <span>Movimentações</span>
-              </button>
-            </div>
-            <div class="rito-module-row-2">
-              <button type="button" id="btn-modulo-area-minutas" class="rito-btn-modulo ${moduloAtivo === 'area_minutas' ? 'active' : ''}" title="Módulo de Preferências da Área de Minutas (Documentos)">
-                <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                <span>Documentos</span>
-              </button>
+            <button type="button" id="btn-modulo-movimentacoes" class="rito-btn-modulo ${moduloAtivo === 'movimentacoes' ? 'active' : ''}" title="Módulo de Preferências de Movimentação Processual">
+              <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span>Movimentações</span>
+            </button>
 
-              <button type="button" id="btn-modulo-intimacoes" class="rito-btn-modulo ${moduloAtivo === 'intimacoes' ? 'active' : ''}" title="Módulo de Preferências de Intimação Eletrônica">
-                <svg viewBox="0 0 24 24"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/><line x1="2" y1="3" x2="22" y2="21"/></svg>
-                <span>Intimações</span>
-              </button>
+            <button type="button" id="btn-modulo-area-minutas" class="rito-btn-modulo ${moduloAtivo === 'area_minutas' ? 'active' : ''}" title="Módulo de Preferências da Área de Minutas (Documentos)">
+              <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              <span>Documentos</span>
+            </button>
 
-              <button type="button" id="btn-modulo-servidores" class="rito-btn-modulo ${moduloAtivo === 'servidores' ? 'active' : ''}" title="Módulo de Personalização de Servidores da Unidade">
-                <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                <span>Servidores</span>
-              </button>
-            </div>
-            <div class="rito-module-row-3" style="margin-top:5px;">
-              <button type="button" id="btn-modulo-grupos-atp" class="rito-btn-modulo ${moduloAtivo === 'grupos_atp' ? 'active' : ''}" style="width:100%; justify-content:center; gap:8px;" title="Módulo de Importação de Grupos de Automatização (ATPs da 2G)">
-                <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                <span>⚡ Grupos de Automatização (ATPs)</span>
-              </button>
-            </div>
+            <button type="button" id="btn-modulo-intimacoes" class="rito-btn-modulo ${moduloAtivo === 'intimacoes' ? 'active' : ''}" title="Módulo de Preferências de Intimação Eletrônica">
+              <svg viewBox="0 0 24 24"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/><line x1="2" y1="3" x2="22" y2="21"/></svg>
+              <span>Intimações</span>
+            </button>
+
+            <button type="button" id="btn-modulo-servidores" class="rito-btn-modulo ${moduloAtivo === 'servidores' ? 'active' : ''}" title="Módulo de Personalização de Servidores da Unidade">
+              <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>Servidores</span>
+            </button>
+
+            <button type="button" id="btn-modulo-grupos-atp" class="rito-btn-modulo ${moduloAtivo === 'grupos_atp' ? 'active' : ''}" title="Módulo de Importação de Grupos de Automatização (ATPs da 2G)">
+              <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span>ATPs</span>
+            </button>
           </div>
 
           <div class="rito-card-value" id="rito-status-tela" style="font-size:11.5px; line-height:1.4;">
@@ -19265,11 +19333,11 @@
           </div>
         </div>
 
-        <div class="rito-dropzone" id="rito-dropzone">
+        <div class="rito-dropzone rito-dz-vazio" id="rito-dropzone">
 
-          <div style="font-weight:700; font-size:12.5px; color:#005b8f;">📂 Selecionar Planilha Excel (.xlsx)</div>
+          <div id="rito-dropzone-titulo" style="font-weight:700; font-size:12.5px; color:#005b8f;">📂 Selecionar Planilha Excel (.xlsx)</div>
 
-          <div style="font-size:11px; color:#64748b; margin-top:2px;">Ou arraste a planilha da Unidade aqui</div>
+          <div id="rito-dropzone-sub" style="font-size:11px; color:#64748b; margin-top:2px;">Ou arraste a planilha da Unidade aqui</div>
 
           <input type="file" id="rito-file-input" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none;" />
 
@@ -19287,35 +19355,27 @@
 
           
 
-          <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
-
-            <div style="flex:1;">
-
-              <label style="font-size:11px; font-weight:700; color:#475569; display:block; margin-bottom:2px;">De (Nº da preferência):</label>
-
-              <input type="number" id="inp-rito-de" min="1" value="1" style="width:100%; box-sizing:border-box; padding:5px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:bold; color:#0f172a;" />
-
+          <div class="rito-ms-wrap" id="rito-ms-wrap" style="margin-top:8px;">
+            <div class="rito-pref-row">
+              <div>
+                <label for="inp-rito-de">De:</label>
+                <input type="number" id="inp-rito-de" min="1" value="1" />
+              </div>
+              <div>
+                <label for="inp-rito-ate">Até:</label>
+                <input type="number" id="inp-rito-ate" min="1" value="1" />
+              </div>
+              <div>
+                <div class="rito-ms-label-row">
+                  <label for="btn-rito-ms-toggle" style="font-size:11px; font-weight:700; color:#475569; margin:0;">Selecionar preferências:</label>
+                  <span id="rito-ms-count-badge" style="font-size:10.5px; font-weight:700; color:#0284c7;">0 / 0</span>
+                </div>
+                <button type="button" id="btn-rito-ms-toggle" class="rito-ms-toggle" aria-expanded="false" aria-controls="rito-ms-dropdown">
+                  <span id="rito-ms-toggle-text" class="rito-ms-toggle-text">Todas selecionadas (0)</span>
+                  <span id="rito-ms-toggle-arrow" class="rito-ms-toggle-arrow">▾</span>
+                </button>
+              </div>
             </div>
-
-            <div style="flex:1;">
-
-              <label style="font-size:11px; font-weight:700; color:#475569; display:block; margin-bottom:2px;">Até (Nº da preferência):</label>
-
-              <input type="number" id="inp-rito-ate" min="1" value="1" style="width:100%; box-sizing:border-box; padding:5px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:bold; color:#0f172a;" />
-
-            </div>
-
-          </div>
-
-          <div class="rito-ms-wrap" id="rito-ms-wrap">
-            <div class="rito-ms-label-row">
-              <label for="btn-rito-ms-toggle" style="font-size:11px; font-weight:700; color:#475569;">Selecionar preferências:</label>
-              <span id="rito-ms-count-badge" style="font-size:10.5px; font-weight:700; color:#0284c7;">0 / 0</span>
-            </div>
-            <button type="button" id="btn-rito-ms-toggle" class="rito-ms-toggle" aria-expanded="false" aria-controls="rito-ms-dropdown">
-              <span id="rito-ms-toggle-text" class="rito-ms-toggle-text">Todas selecionadas (0)</span>
-              <span id="rito-ms-toggle-arrow" class="rito-ms-toggle-arrow">▾</span>
-            </button>
             <div id="rito-ms-dropdown" class="rito-ms-dropdown" role="listbox" aria-multiselectable="true">
               <div class="rito-ms-toolbar">
                 <input type="text" id="inp-rito-ms-search" class="rito-ms-search" placeholder="🔎 Filtrar por nº ou nome..." autocomplete="off" />
@@ -19356,23 +19416,11 @@
 
 
 
-        <button type="button" class="rito-btn" id="btn-rito-diagnostico" style="display:none; background:#0284c7; border-color:#0369a1; color:#ffffff; font-weight:700; margin-top:6px;" title="Executa a verificação prévia completa da planilha contra os cadastros desta Vara no eproc">
+        <button type="button" class="rito-btn rito-btn-primary rito-btn-executar" id="btn-rito-iniciar" style="display:none;" title="Inicia a criação em lote das preferências selecionadas">
 
-          <span>🔍</span> Verificação prévia
-
-        </button>
-
-
-
-        <button type="button" class="rito-btn rito-btn-primary" id="btn-rito-iniciar" style="display:none;">
-
-          <span>▶️</span> Iniciar Criação em Lote
+          <span>▶️</span> EXECUTAR
 
         </button>
-
-
-
-
 
         <button type="button" class="rito-btn rito-btn-danger" id="btn-rito-parar" style="display:none;">
 
@@ -19380,44 +19428,37 @@
 
         </button>
 
+        <div class="rito-module-tabs" id="rito-acoes-grid" style="margin-top:8px; margin-bottom:0;">
 
-
-        <div style="display:flex; gap:6px; margin-top:6px;">
-
-          <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-ajuda" style="flex:1;">
-
-            <span>📖</span> Instruções
-
+          <button type="button" class="rito-btn-modulo" id="btn-rito-diagnostico" style="display:none;" title="Executa a verificação prévia completa da planilha contra os cadastros desta Vara no eproc">
+            <span>🔍</span><span>Verificação prévia</span>
           </button>
 
-          <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-limpar" style="flex:1;">
-
-            <span>🗑️</span> Limpar cache
-
+          <button type="button" class="rito-btn-modulo" id="btn-rito-limpar" title="Limpa o cache e recarrega a tela">
+            <span>🗑️</span><span>Limpar cache</span>
           </button>
 
-        </div>
-
-
-
-        <div style="margin-top:8px; border-top:1px solid #e2e8f0; padding-top:6px;">
-          <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-visualizar-preferencias" style="width:100%; font-size:11.5px; margin-bottom:6px; background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; font-weight:700; display:${moduloAtivo !== 'servidores' ? 'flex' : 'none'};" title="Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo">
-            <span>🗓️</span> Tabela de Preferências
+          <button type="button" class="rito-btn-modulo" id="btn-rito-visualizar-preferencias" style="display:${moduloAtivo !== 'servidores' ? 'flex' : 'none'};" title="Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo">
+            <span>🗓️</span><span>Tabela de Preferências</span>
           </button>
 
-          <button type="button" class="rito-btn rito-btn-secondary" id="btn-rito-abrir-gerenciador" style="width:100%; font-size:11.5px;" title="Abre a tela oficial do eproc para visualizar ou editar preferências">
+          <button type="button" class="rito-btn-modulo" id="btn-rito-abrir-gerenciador" title="Abre a tela oficial do eproc para visualizar ou editar preferências">
+            <span>⚙️</span><span>Gerenciador de Preferências</span>
+          </button>
 
-            <span>⚙️</span> Gerenciador de Preferências
+          <button type="button" class="rito-btn-modulo" id="btn-rito-ajuda" title="Instruções de uso">
+            <span>📖</span><span>Instruções</span>
+          </button>
 
+          <button type="button" class="rito-btn-modulo" id="btn-rito-abrir-log" title="Abrir / recolher o log e relatório da execução">
+            <span>📜</span><span>Log</span>
           </button>
 
         </div>
-
-
 
         <div id="rito-logs-section" style="margin-top: 10px;">
 
-          <div id="rito-logs-header-toggle" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 7px 10px; background: #e2e8f0; border-radius: 6px; font-size: 11.5px; font-weight: 700; color: #334155; user-select: none; transition: background 0.15s;" title="Clique para expandir ou recolher a tela de logs">
+          <div id="rito-logs-header-toggle" style="display: none;">
 
             <span id="rito-logs-title-text">📜 Logs e Relatório da Execução (Recolhido)</span>
 
@@ -19525,6 +19566,16 @@
 
     const logsTitle = document.getElementById('rito-logs-title-text');
 
+    const btnAbrirLog = document.getElementById('btn-rito-abrir-log');
+
+    const sincronizarBotaoLog = () => {
+      if (btnAbrirLog && logsBox) btnAbrirLog.classList.toggle('active', logsBox.style.display !== 'none');
+    };
+
+    if (logsBox && typeof MutationObserver === 'function') {
+      new MutationObserver(sincronizarBotaoLog).observe(logsBox, { attributes: true, attributeFilter: ['style'] });
+    }
+
     if (logsToggle && logsBox && logsArrow) {
 
       logsToggle.onclick = () => {
@@ -19541,8 +19592,14 @@
 
         }
 
+        sincronizarBotaoLog();
+
       };
 
+    }
+
+    if (btnAbrirLog && logsToggle) {
+      btnAbrirLog.onclick = () => logsToggle.onclick();
     }
 
 
@@ -19560,6 +19617,8 @@
         logsBox.style.display = 'block';
 
         if (logsArrow) logsArrow.textContent = '▼ Recolher';
+
+        sincronizarBotaoLog();
 
         if (logsTitle) logsTitle.textContent = '📜 Logs e Relatório da Execução';
 
@@ -19722,19 +19781,19 @@
 
       if (moduloAtivo === 'relatorios') {
 
-        btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências de Relatório Geral';
+        btnGerenciador.innerHTML = '<span>📋</span><span>Gerenciador de Preferências</span>';
 
         btnGerenciador.title = 'Abre a lista de preferências de Relatório Geral da Unidade';
 
       } else if (moduloAtivo === 'movimentacoes') {
 
-        btnGerenciador.innerHTML = '<span>📋</span> Abrir Gerenciador de Preferências (Movimentação)';
+        btnGerenciador.innerHTML = '<span>📋</span><span>Gerenciador de Preferências</span>';
 
         btnGerenciador.title = 'Abre a tela oficial do eproc para visualizar ou editar preferências de Movimentação Processual';
 
       } else if (moduloAtivo === 'area_minutas') {
 
-        btnGerenciador.innerHTML = '<span>📋</span> Listar Preferências da Área de Minutas';
+        btnGerenciador.innerHTML = '<span>📋</span><span>Gerenciador de Preferências</span>';
 
         btnGerenciador.title = 'Abre a lista de preferências da Área de Trabalho de Minutas';
 
@@ -20841,6 +20900,7 @@
 
 
       document.getElementById('rito-card-info').style.display = 'block';
+      atualizarEstadoDropzonePlanilha();
       document.getElementById('btn-rito-diagnostico').style.display = 'flex';
       document.getElementById('btn-rito-iniciar').style.display = 'flex';
 
@@ -29415,6 +29475,9 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       else if (typeof v === 'string' && v.trim().startsWith('[')) valFmt = extrairLabelsTagifyRelatorio(v).join(', ');
       else if (Array.isArray(v)) valFmt = v.join(', ');
       else valFmt = String(v).trim();
+      // Oculta campos técnicos de ID (ex.: selIdLocalizadorContem) e valores formados só por IDs numéricos
+      if (/^(selId(?!Sigilo)|numId|hdn)/i.test(k)) return;
+      if (/^[\d\s,;|]{10,}$/.test(valFmt)) return;
       if (valFmt && valFmt !== '[]') extras.push(`${nomeCampo}: ${valFmt}`);
     });
 
@@ -30556,7 +30619,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         : '';
       drawerEl.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong style="font-size:12.5px; color:#0f172a;">👁️ Ficha Completa — ${escapeHtmlViewer(row.nome)} <span style="font-weight:400; color:#64748b;">(ID: ${escapeHtmlViewer(row.id)})</span></strong>
+          <strong style="font-size:12.5px; color:#0f172a;">👁️ Ficha Completa — ${escapeHtmlViewer(row.nome)}</strong>
           <button type="button" id="btn-viewer-fechar-drawer" class="eproc-v-mini-btn">✕ Fechar ficha</button>
         </div>
         ${bannerErroHtml}
