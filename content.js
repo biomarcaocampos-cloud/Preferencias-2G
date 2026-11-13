@@ -1850,8 +1850,9 @@
 
     // Identifica dinamicamente as colunas pelo cabeçalho (linha 0)
     const cab = tabela[0] || {};
-    let colNum = 0, colNome = 1, colTipo = 2, colGrupo = 3, colPainel = 4, colPadrao = 5, colLoc = 6;
-    let colOperacao = -1, colSituacao = 7, colLembrete = 8, colClasses = 9, colObs = 10;
+    let colNum = 0, colNome = 1, colTipo = 2, colGrupo = 3, colPainel = 4, colPadrao = 5;
+    let colLocContem = -1, colLocNaoContem = -1, colLocContemTodos = -1, colLocGenerico = -1;
+    let colOperacao = -1, colSituacao = -1, colLembrete = -1, colClasses = -1, colObs = -1;
 
     for (const [idxStr, rawHeader] of Object.entries(cab)) {
       const c = parseInt(idxStr, 10);
@@ -1861,9 +1862,12 @@
       else if (h.includes('nome da preferencia') || h === 'preferencia' || h === 'nome') colNome = c;
       else if (h.includes('tipo de preferencia') || h === 'tipo') colTipo = c;
       else if (h.includes('grupo')) colGrupo = c;
-      else if (h.includes('painel inicial')) colPainel = c;
+      else if (h.includes('painel inicial') || h.includes('painel')) colPainel = c;
       else if (h.includes('padrao')) colPadrao = c;
-      else if (h.includes('localizador')) colLoc = c;
+      else if (h.includes('localizador') && (h.includes('menos um') || h.includes('ao menos') || h.includes('contem ao menos') || h.includes('contenham ao menos'))) colLocContem = c;
+      else if (h.includes('localizador') && (h.includes('nao contenha') || h.includes('nenhum'))) colLocNaoContem = c;
+      else if (h.includes('localizador') && (h.includes('todos') || h.includes('contem todos') || h.includes('contenham todos'))) colLocContemTodos = c;
+      else if (h.includes('localizador')) colLocGenerico = c;
       else if (h.includes('operacao') || h.includes('e ou') || h.includes('e/ou')) colOperacao = c;
       else if (h.includes('situacao')) colSituacao = c;
       else if (h.includes('lembrete')) colLembrete = c;
@@ -1871,12 +1875,37 @@
       else if (h.includes('observac') || h.includes('orientac')) colObs = c;
     }
 
-    // Se a coluna Operação foi detectada na posição 7 e as seguintes ainda estavam nos índices antigos, corrige deslocamento
-    if (colOperacao === 7 && colSituacao === 7) {
-      colSituacao = 8;
-      colLembrete = 9;
-      colClasses = 10;
-      colObs = 11;
+    // Se as novas colunas não foram detectadas por texto, utiliza posições padrão da nova planilha:
+    // G (6) = Contenha ao Menos Um, H (7) = Não Contenha Nenhum, I (8) = Contenha Todos
+    if (colLocContem === -1 && colLocContemTodos === -1) {
+      if (colLocGenerico !== -1) {
+        colLocContemTodos = colLocGenerico;
+      } else {
+        colLocContem = 6;
+        colLocNaoContem = 7;
+        colLocContemTodos = 8;
+      }
+    } else {
+      if (colLocContem === -1) colLocContem = 6;
+      if (colLocNaoContem === -1) colLocNaoContem = 7;
+      if (colLocContemTodos === -1) colLocContemTodos = 8;
+    }
+
+    // Ajusta posições padrão das colunas subsequentes se não detectadas
+    if (colOperacao === -1) colOperacao = 9;
+    if (colSituacao === -1) colSituacao = 10;
+    if (colLembrete === -1) colLembrete = 11;
+    if (colClasses === -1) colClasses = 12;
+    if (colObs === -1) colObs = 13;
+
+    function extrairListaLocs(val) {
+      if (!val) return [];
+      const s = String(val).trim();
+      if (!s || s === '-') return [];
+      const limpo = s.replace(/^localizador:\s*/i, '');
+      return limpo.split(';')
+        .map(x => x.trim().replace(/^localizador:\s*/i, ''))
+        .filter(x => x && x !== '-');
     }
 
     // Linha 0 é o cabeçalho
@@ -1885,15 +1914,20 @@
       const nome = String(row[colNome] || '').trim();
       if (!nome || nome === '-') continue;
 
-      const rawLoc = String(row[colLoc] || '').trim();
-      // Ex: "Localizador: 🔶Apelação🔶; 👤Servidor 1👤"
-      const locLimpo = rawLoc.replace(/^localizador:\s*/i, '');
-      const localizadores = locLimpo.split(';').map(x => x.trim()).filter(x => x && x !== '-');
+      const locContem = extrairListaLocs(row[colLocContem]);
+      const locNaoContem = extrairListaLocs(row[colLocNaoContem]);
+      let locContemTodos = extrairListaLocs(row[colLocContemTodos]);
+
+      // Regra de migração solicitada: tudo que estiver no campo "Contenha ao Menos Um"
+      // ou transferido na planilha vai para o campo "Que Contenha Todos"
+      if (locContemTodos.length === 0 && locContem.length > 0) {
+        locContemTodos = [...locContem];
+      }
 
       const rawOp = colOperacao !== -1 ? String(row[colOperacao] || '').trim().toUpperCase() : '';
-      const operacao = (rawOp === 'OU' || rawOp === 'E') ? rawOp : (localizadores.length === 2 ? 'E' : 'OU');
+      const operacao = (rawOp === 'OU' || rawOp === 'E') ? rawOp : (locContemTodos.length === 2 ? 'E' : 'OU');
 
-      const rawLem = String(row[colLembrete] || '').trim();
+      const rawLem = colLembrete !== -1 ? String(row[colLembrete] || '').trim() : '';
       const lemNorm = normalizar(rawLem);
       const lembreteLimpo = (!rawLem || rawLem === '-' || lemNorm === 'todos' || lemNorm === 'movimento' || lemNorm === 'suspenso' || lemNorm === 'baixado') ? '' : rawLem;
 
@@ -1905,12 +1939,15 @@
         grupo: String(row[colGrupo] || '').trim(),
         painelInicial: normalizar(row[colPainel]) === 'sim',
         padrao: normalizar(row[colPadrao]) === 'sim',
-        localizadores: localizadores,
+        localizadoresContem: locContem,
+        localizadoresNaoContem: locNaoContem,
+        localizadoresContemTodos: locContemTodos,
+        localizadores: locContemTodos,
         operacao: operacao,
-        situacao: String(row[colSituacao] || 'TODOS').trim(),
+        situacao: colSituacao !== -1 ? String(row[colSituacao] || 'TODOS').trim() : 'TODOS',
         lembrete: lembreteLimpo,
-        classes: String(row[colClasses] || '').split(';').map(x => x.trim()).filter(x => x && x !== '-'),
-        obs: String(row[colObs] || '').trim(),
+        classes: colClasses !== -1 ? String(row[colClasses] || '').split(';').map(x => x.trim()).filter(x => x && x !== '-') : [],
+        obs: colObs !== -1 ? String(row[colObs] || '').trim() : '',
         modulo: 'relatorios'
       });
     }
@@ -8949,11 +8986,53 @@
     return [];
   }
 
+  function extrairSlotSufixo(str) {
+    if (!str) return null;
+    const s = String(str);
+    const mSuf = s.match(/(?:_|\b)([sSeE][1-9])\b/i);
+    if (mSuf) return mSuf[1].toUpperCase();
+    const mServ = s.match(/servidor\s*([1-9])/i);
+    if (mServ) return 'S' + mServ[1];
+    const mEst = s.match(/estagi[aá]rio\s*([1-9])/i);
+    if (mEst) return 'E' + mEst[1];
+    return null;
+  }
+
+  function extrairRadicalPreferencia(nome) {
+    if (!nome) return '';
+    let r = String(nome)
+      .replace(/👤[^👤]*👤/g, '')
+      .replace(/\[\s*servidor[^\]]*\]/gi, '')
+      .replace(/servidor\s*[1-9]/gi, '')
+      .replace(/estagi[aá]rio\s*[1-9]/gi, '')
+      .replace(/_[sSeE][1-9]\b/gi, '');
+    return normalizar(removerEmojis(r)).replace(/[\s\-_/*]+/g, '');
+  }
+
   async function obterLocalizadoresRelatorioGeral() {
     if (window._eprocCatalogoLocalizadoresRelatorio && window._eprocCatalogoLocalizadoresRelatorio.length > 0) {
       return window._eprocCatalogoLocalizadoresRelatorio;
     }
     try {
+      // 0. Verifica se os novos campos de localizador (multi-select do Bootstrap) já estão no DOM da tela
+      const selLocEl = document.getElementById('selIdLocalizadorContemTodos') || document.getElementById('selIdLocalizadorContem');
+      if (selLocEl && selLocEl.options && selLocEl.options.length > 0) {
+        const listaOpts = [];
+        Array.from(selLocEl.options).forEach(opt => {
+          if (!opt.value) return;
+          listaOpts.push({
+            id: opt.value,
+            IdLocalizadorOrgao: opt.value,
+            SigLocalizador: opt.getAttribute('data-sig-localizador') || opt.text.split(' - ')[0] || opt.text,
+            DesLocalizador: opt.text
+          });
+        });
+        if (listaOpts.length > 0) {
+          window._eprocCatalogoLocalizadoresRelatorio = listaOpts;
+          return listaOpts;
+        }
+      }
+
       const autoObj = window.$ ? window.$('#selLocalizadorPrincipal').data('UI-multi-autocomplete-object') : null;
       if (autoObj && autoObj.tagifyObject && autoObj.tagifyObject.whitelist && autoObj.tagifyObject.whitelist.length > 0) {
         const wl = autoObj.tagifyObject.whitelist.map(x => x.data || x);
@@ -9003,6 +9082,18 @@
 
   function encontrarLocalizadorNoCatalogo(locNome, locsCatalogo) {
     if (!locNome || !locsCatalogo || locsCatalogo.length === 0) return null;
+
+    // 0. Match por Slot / Sufixo (_S1.._S9, _E1.._E2, Servidor X, Estagiário X)
+    const slotDesejado = extrairSlotSufixo(locNome);
+    if (slotDesejado) {
+      const achouPorSlot = locsCatalogo.find(c => {
+        const slotSig = extrairSlotSufixo(c.SigLocalizador);
+        const slotDes = extrairSlotSufixo(c.DesLocalizador);
+        return slotSig === slotDesejado || slotDes === slotDesejado;
+      });
+      if (achouPorSlot) return achouPorSlot;
+    }
+
     const nNorm = normalizar(locNome);
     const nRaw = String(locNome).trim().toLowerCase();
 
@@ -9061,7 +9152,20 @@
       }
       return nNorm.includes(sig);
     });
-    return achou || null;
+    if (achou) return achou;
+
+    // 7. Match ignorando emojis e formatações especiais
+    const nSemEmoji = normalizar(removerEmojis(locNome)).replace(/[\s\-_/*]+/g, '');
+    if (nSemEmoji.length >= 3) {
+      achou = locsCatalogo.find(c => {
+        const sigSemEmoji = normalizar(removerEmojis(c.SigLocalizador || '')).replace(/[\s\-_/*]+/g, '');
+        const desSemEmoji = normalizar(removerEmojis(c.DesLocalizador || '')).replace(/[\s\-_/*]+/g, '');
+        return sigSemEmoji === nSemEmoji || desSemEmoji === nSemEmoji || sigSemEmoji.includes(nSemEmoji) || desSemEmoji.includes(nSemEmoji);
+      });
+      if (achou) return achou;
+    }
+
+    return null;
   }
 
   function decodificarEntidadesHtml(str) {
@@ -9084,6 +9188,7 @@
   async function obterPreferenciaRelatorioExistentes() {
     const existentes = new Set();
     const mapaIds = new Map();
+    const listaObjetos = [];
 
     const registrarPref = (descBruta, id) => {
       if (!descBruta) return;
@@ -9095,6 +9200,12 @@
       if (id) {
         mapaIds.set(norm, String(id));
         mapaIds.set(descLimpa, String(id));
+        listaObjetos.push({
+          id: String(id),
+          nome: descLimpa,
+          slot: extrairSlotSufixo(descLimpa),
+          radical: extrairRadicalPreferencia(descLimpa)
+        });
       }
     };
 
@@ -9313,8 +9424,60 @@
       console.warn('Erro ao consultar endpoint JSON de preferências:', eList);
     }
 
+    // Se a lista estruturada estiver vazia ou com poucos itens, consulta o DataTable oficial
+    if (listaObjetos.length === 0 && typeof obterPreferenciasRelatorioServidores === 'function') {
+      try {
+        const prefsServ = await obterPreferenciasRelatorioServidores();
+        if (Array.isArray(prefsServ) && prefsServ.length > 0) {
+          prefsServ.forEach(p => {
+            registrarPref(p.nome, p.id);
+          });
+        }
+      } catch (eServ) {}
+    }
+
     window._eprocMapaPreferenciasRelatorio = mapaIds;
+    window._eprocListaPreferenciasRelatorio = listaObjetos;
     return existentes;
+  }
+
+  function encontrarPreferenciaRelatorioExistente(item) {
+    if (!item || !item.nome) return null;
+
+    const lista = window._eprocListaPreferenciasRelatorio || [];
+    const mapa = window._eprocMapaPreferenciasRelatorio;
+
+    const slotItem = extrairSlotSufixo(item.nome);
+    const radicalItem = extrairRadicalPreferencia(item.nome);
+
+    // 1. Busca na lista estruturada por Slot + Radical (ex: S1 + apelacao)
+    if (slotItem && lista.length > 0) {
+      const matchSlot = lista.find(p => {
+        const slotP = p.slot || extrairSlotSufixo(p.nome);
+        const radP = p.radical || extrairRadicalPreferencia(p.nome);
+        return slotP === slotItem && radP === radicalItem;
+      });
+      if (matchSlot) return { id: matchSlot.id, nome: matchSlot.nome, matchType: 'slot_' + slotItem };
+    }
+
+    // 2. Busca na lista estruturada por Radical (preferências de unidade sem servidor)
+    if (!slotItem && radicalItem && lista.length > 0) {
+      const matchRad = lista.find(p => {
+        const slotP = p.slot || extrairSlotSufixo(p.nome);
+        if (slotP) return false;
+        const radP = p.radical || extrairRadicalPreferencia(p.nome);
+        return radP === radicalItem || normalizar(removerEmojis(p.nome)) === normalizar(removerEmojis(item.nome));
+      });
+      if (matchRad) return { id: matchRad.id, nome: matchRad.nome, matchType: 'radical' };
+    }
+
+    // 3. Busca por nome exato ou normalizado no mapa tradicional
+    if (mapa) {
+      const idExato = mapa.get(normalizar(item.nome)) || mapa.get(item.nome.trim()) || null;
+      if (idExato) return { id: idExato, nome: item.nome, matchType: 'exato' };
+    }
+
+    return null;
   }
 
   async function executarDiagnosticoPreVooRelatorios() {
@@ -9356,7 +9519,7 @@
       const totalItens = itensSel.length;
       let jaExistemCount = 0;
       itensSel.forEach(it => {
-        if (preferenciaJaExiste(it.nome, existentes)) jaExistemCount++;
+        if (encontrarPreferenciaRelatorioExistente(it) || preferenciaJaExiste(it.nome, existentes)) jaExistemCount++;
       });
       const totalUnicas = new Set(Array.from(existentes).map(normalizar)).size;
       addLog('✓ ' + totalUnicas + ' preferência(s) existentes localizadas na Unidade.');
@@ -9366,7 +9529,7 @@
       addLog('=== RELATÓRIO DA VERIFICAÇÃO PRÉVIA (RELATÓRIOS) ===');
       addLog('• Preferências auditadas (seleção): ' + totalItens + (totalItens !== itensCarregados.length ? ' de ' + itensCarregados.length + ' na planilha' : ''));
       addLog('• Grupos mapeados: ' + gruposPlanilha.length + ' (' + gruposFaltantes.length + ' serão criados automaticamente)');
-      addLog('• Preferências já existentes na Unidade: ' + jaExistemCount + (jaExistemCount > 0 ? ' (serão puladas automaticamente)' : ''));
+      addLog('• Preferências identificadas para atualização na Unidade: ' + jaExistemCount + ' (serão atualizadas via sufixo _S1.._S9 no campo "Que Contenha Todos")');
       addLog('✅ Auditoria de integridade concluída com sucesso!', 'success');
     } catch (err) {
       console.error('Erro na verificação de relatórios:', err);
@@ -9419,7 +9582,7 @@
     container.innerHTML = '';
 
     // B. Limpeza preventiva de inputs residuais de localizadores anteriores
-    frmProc.querySelectorAll('input[name^="selLocalizadorPrincipal_value"]').forEach(el => {
+    frmProc.querySelectorAll('input[name^="selLocalizadorPrincipal_value"], input[name^="selIdLocalizador"]').forEach(el => {
       if (el.parentNode && el.parentNode !== container) {
         el.parentNode.removeChild(el);
       }
@@ -9432,30 +9595,108 @@
     }
     if (inpLoc) inpLoc.value = '';
 
+    // Limpa seleções dos novos selects Bootstrap se presentes
+    const selLocContem = document.getElementById('selIdLocalizadorContem');
+    const selLocNaoContem = document.getElementById('selIdLocalizadorNaoContem');
+    const selLocContemTodos = document.getElementById('selIdLocalizadorContemTodos');
+
+    [selLocContem, selLocNaoContem, selLocContemTodos].forEach(sel => {
+      if (!sel) return;
+      Array.from(sel.options).forEach(opt => { opt.selected = false; });
+      if (window.$ && typeof window.$(sel).selectpicker === 'function') {
+        try { window.$(sel).val([]); window.$(sel).selectpicker('refresh'); } catch (e) {}
+      }
+    });
+
     // C. Mapeamento e Inserção dos Localizadores
-    const itensAchados = [];
-    if (item.localizadores && item.localizadores.length > 0) {
-      const locsCatalogo = await obterLocalizadoresRelatorioGeral();
-      for (const locNome of item.localizadores) {
+    // Determina a lista que vai para "Localizador (Que Contenha Todos)" conforme solicitação
+    const locsParaTodos = (item.localizadoresContemTodos && item.localizadoresContemTodos.length > 0)
+      ? item.localizadoresContemTodos
+      : (item.localizadores && item.localizadores.length > 0 ? item.localizadores : (item.localizadoresContem || []));
+
+    const locsCatalogo = await obterLocalizadoresRelatorioGeral();
+
+    // Helper para processar e selecionar um grupo de localizadores em um select do eproc
+    function aplicarGrupoLocalizadoresNoSelect(listaNomes, selectEl, nomeCampoInput, tituloDestaque) {
+      if (!listaNomes || listaNomes.length === 0) return [];
+      const itensAchados = [];
+      const idsAchados = [];
+
+      for (const locNome of listaNomes) {
         const achou = encontrarLocalizadorNoCatalogo(locNome, locsCatalogo);
         if (achou) {
           itensAchados.push(achou);
+          const id = String(achou.IdLocalizadorOrgao || achou.id || achou.value);
+          idsAchados.push(id);
         } else {
-          addLog('⚠️ Localizador não localizado no catálogo: "' + locNome + '"', 'warn');
+          addLog('⚠️ Localizador não localizado no catálogo da Unidade: "' + locNome + '"', 'warn');
         }
       }
 
-      // Preenche o componente Tagify oficial do eproc primeiro
-      if (autoObj && typeof autoObj.add === 'function' && itensAchados.length > 0) {
-        try {
-          autoObj.add(itensAchados);
-        } catch (e) {
-          console.warn('Erro ao chamar autoObj.add:', e);
+      if (selectEl) {
+        Array.from(selectEl.options).forEach(opt => {
+          if (idsAchados.includes(String(opt.value))) {
+            opt.selected = true;
+          }
+        });
+        if (window.$ && typeof window.$(selectEl).selectpicker === 'function') {
+          try {
+            window.$(selectEl).val(idsAchados);
+            window.$(selectEl).selectpicker('refresh');
+          } catch (e) {}
+        }
+        dispararEventos(selectEl, ['change']);
+        if (itensAchados.length > 0) {
+          destacarCampoAtivo(selectEl, tituloDestaque, itensAchados.map(a => a.SigLocalizador || a.DesLocalizador).join('; '));
         }
       }
 
-      // Garante que os campos hidden esperados pelo backend PHP do eproc existam no form (sem duplicar se o Tagify já criou)
-      for (const achou of itensAchados) {
+      // Injeta hidden inputs para garantir serialização no form_request_id
+      idsAchados.forEach(id => {
+        const h = document.createElement('input');
+        h.type = 'hidden';
+        h.name = nomeCampoInput + '[]';
+        h.value = id;
+        container.appendChild(h);
+      });
+
+      return itensAchados;
+    }
+
+    // 1. Aplica no campo principal solicitado: "Localizador (Que Contenha Todos)"
+    const itensAchadosTodos = aplicarGrupoLocalizadoresNoSelect(
+      locsParaTodos,
+      selLocContemTodos,
+      'selIdLocalizadorContemTodos',
+      'Localizador (Que Contenha Todos)'
+    );
+
+    // 2. Aplica em "Localizador (Que NÃO Contenha Nenhum)" se houver dados
+    if (item.localizadoresNaoContem && item.localizadoresNaoContem.length > 0) {
+      aplicarGrupoLocalizadoresNoSelect(
+        item.localizadoresNaoContem,
+        selLocNaoContem,
+        'selIdLocalizadorNaoContem',
+        'Localizador (Que NÃO Contenha Nenhum)'
+      );
+    }
+
+    // 3. Aplica em "Localizador (Que Contenha ao Menos Um)" se explicitamente definido e diferente
+    if (item.localizadoresContem && item.localizadoresContem.length > 0 && item.localizadoresContem !== locsParaTodos) {
+      aplicarGrupoLocalizadoresNoSelect(
+        item.localizadoresContem,
+        selLocContem,
+        'selIdLocalizadorContem',
+        'Localizador (Que Contenha ao Menos Um)'
+      );
+    }
+
+    // 4. Fallback de retrocompatibilidade com telas antigas do eproc (Tagify #selLocalizadorPrincipal)
+    if (!selLocContemTodos && itensAchadosTodos.length > 0) {
+      if (autoObj && typeof autoObj.add === 'function') {
+        try { autoObj.add(itensAchadosTodos); } catch (e) {}
+      }
+      for (const achou of itensAchadosTodos) {
         const id = String(achou.IdLocalizadorOrgao || achou.id || achou.value);
         const sig = String(achou.SigLocalizador || '');
         const des = String(achou.DesLocalizador || '');
@@ -9481,9 +9722,8 @@
         }
       }
 
-      // Preenche o valor do input com JSON formatado para Tagify caso não preenchido
-      if (inpLoc && (!inpLoc.value || inpLoc.value === '[]') && itensAchados.length > 0) {
-        const tagifyData = itensAchados.map((achou, idx) => ({
+      if (inpLoc && (!inpLoc.value || inpLoc.value === '[]')) {
+        const tagifyData = itensAchadosTodos.map((achou, idx) => ({
           key: idx,
           isObject: false,
           value: (achou.SigLocalizador || '') + ' - ' + (achou.DesLocalizador || ''),
@@ -9491,13 +9731,12 @@
         }));
         inpLoc.value = JSON.stringify(tagifyData);
       }
-
       if (inpLoc) {
-        destacarCampoAtivo(inpLoc, 'Localizadores Filtro', item.localizadores.join('; '));
+        destacarCampoAtivo(inpLoc, 'Localizadores Filtro', locsParaTodos.join('; '));
       }
     }
 
-    // D. Operador do Localizador conforme coluna "Operação (E/OU)" da planilha
+    // D. Operador do Localizador (se existir no form)
     const opDesejada = (item.operacao && String(item.operacao).trim().toUpperCase() === 'OU') ? 'OU' : 'E';
     const rdOpE = document.querySelector('input[name="tipoOperacaoLocalizador"][value="E"]') || document.getElementById('operacaoELocalizador');
     const rdOpOU = document.querySelector('input[name="tipoOperacaoLocalizador"][value="OU"]') || document.getElementById('operacaoOuLocalizador');
@@ -9592,9 +9831,18 @@
       }
     }
 
-    addLog('Configurando preferência de Relatório: "' + item.nome + '" (Operação: ' + opDesejada + ')...');
+    // 1. Identifica se a preferência já existe na Unidade usando o novo matcher por Slot/Sufixo e Radical
+    const matchObj = encontrarPreferenciaRelatorioExistente(item);
+    const idExistente = matchObj ? matchObj.id : null;
+    const nomeNoEproc = matchObj ? matchObj.nome : null;
 
-    // 1. Garante grupo da preferência na unidade
+    if (idExistente) {
+      addLog('🔄 Atualizando preferência existente: "' + (nomeNoEproc || item.nome) + '" (ID: ' + idExistente + ')' + (matchObj.matchType ? ' [' + matchObj.matchType + ']' : '') + ' com localizadores em "Que Contenha Todos"...', 'info');
+    } else {
+      addLog('Configurando preferência de Relatório: "' + item.nome + '" (Operação: ' + opDesejada + ')...');
+    }
+
+    // 2. Garante grupo da preferência na unidade
     let idGrupo = '';
     if (item.grupo && item.grupo !== '-') {
       const resGrupo = await gerenciarGrupoPreferencia2G(item.grupo);
@@ -9603,17 +9851,7 @@
       }
     }
 
-    // 2. Identifica se a preferência já existe no eproc: se existir, pula como DUPLICADA
-    let idExistente = null;
-    if (window._eprocMapaPreferenciasRelatorio) {
-      idExistente = window._eprocMapaPreferenciasRelatorio.get(normalizar(item.nome)) ||
-                    window._eprocMapaPreferenciasRelatorio.get(item.nome.trim()) || null;
-    }
-    if (idExistente) {
-      throw new Error('DUPLICADA: Essa preferência já existe na unidade');
-    }
-
-    // 3. Aplica todos os filtros de pesquisa na tela (#frmProcessoLista)
+    // 3. Aplica todos os filtros de pesquisa na tela (#frmProcessoLista) com o novo campo "Que Contenha Todos"
     await aplicarFiltrosRelatorio(item);
     await sleep(100);
 
@@ -9639,8 +9877,9 @@
     const htmlModal = await respModal.text();
 
     // 5. Extrai as URLs com tokens/hashes atualizados gerados pelo eproc
-    const mAdd = htmlModal.match(/['"](controlador\.php\?acao=ui_preferencias\/adicionar_preferencia[^'"]*)['"]/i) ||
-                 htmlModal.match(/url:\s*['"]([^'"]*adicionar_preferencia[^'"]*)['"]/i);
+    const mAdd = htmlModal.match(/['"](controlador\.php\?acao=ui_preferencias\/(?:adicionar_preferencia|alterar_preferencia)[^'"]*)['"]/i) ||
+                 htmlModal.match(/['"](controlador\.php\?acao=ui_preferencias\/adicionar_preferencia[^'"]*)['"]/i) ||
+                 htmlModal.match(/url:\s*['"]([^'"]*(?:adicionar_preferencia|alterar_preferencia)[^'"]*)['"]/i);
     const mReq = htmlModal.match(/['"](controlador\.php\?acao=ui_preferencias\/salvar_request&[^'"]*modal_add_preferencia[^'"]*)['"]/i) ||
                  htmlModal.match(/['"](controlador\.php\?acao=ui_preferencias\/salvar_request[^'"]*)['"]/i);
 
@@ -9656,9 +9895,10 @@
     const formModal = docModal.getElementById('frm_alterar_preferencia');
     if (!formModal) throw new Error('Formulário frm_alterar_preferencia não encontrado no modal do eproc.');
 
-    // Descrição convertida para entidades decimais (compatível com emojis)
+    // Preserva a descrição personalizada já existente na unidade ou usa a da planilha
+    const descFinal = nomeNoEproc || item.nome;
     const inpDesc = formModal.querySelector('#Descricao');
-    if (inpDesc) inpDesc.value = toHtmlEntityDecimal(item.nome);
+    if (inpDesc) inpDesc.value = toHtmlEntityDecimal(descFinal);
 
     // Tipo de preferência: Unidade ('U')
     const rdUnidade = formModal.querySelector('#rdUnidade');
@@ -9723,7 +9963,7 @@
 
     let idPreferencia = idExistente || null;
     try {
-      addLog('📤 Salvando cabeçalho da preferência: "' + item.nome + '"' + (idExistente ? ' (Atualizando)' : '') + '...');
+      addLog('📤 ' + (idExistente ? 'Atualizando' : 'Salvando') + ' cabeçalho da preferência: "' + descFinal + '"...');
       const respAdd = await fetch(urlAdicionar, {
         method: 'POST',
         credentials: 'same-origin',
@@ -9773,7 +10013,9 @@
           errTxt.includes('u00e1 existe') ||
           errTxt.includes('mesma descri')
         ) {
-          throw new Error('DUPLICADA: Essa preferência já existe na unidade');
+          if (!idPreferencia) {
+            throw new Error('DUPLICADA: Essa preferência já existe na unidade');
+          }
         }
         let msgErro = '';
         if (errDecodificado) {
@@ -9783,11 +10025,13 @@
           if (mErro) msgErro = mErro[1].replace(/<[^>]+>/g, '').trim();
           else msgErro = errDecodificado.substring(0, 150).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
         }
-        throw new Error('Falha ao adicionar preferência (HTTP ' + respAdd.status + (msgErro ? ': ' + msgErro : '') + ')');
+        if (!idPreferencia) {
+          throw new Error('Falha ao adicionar preferência (HTTP ' + respAdd.status + (msgErro ? ': ' + msgErro : '') + ')');
+        }
       }
     } catch (eAdd) {
       if (!idPreferencia) throw eAdd;
-      addLog('ℹ️ Cabeçalho já existente no eproc, prosseguindo com vinculação de filtros...');
+      addLog('ℹ️ Cabeçalho já existente no eproc, prosseguindo com vinculação de novos filtros...');
     }
 
     if (idPreferencia) {
@@ -9798,7 +10042,7 @@
     }
 
     // 7. Vincula os filtros da pesquisa da tela à preferência criada/atualizada (salvar_request)
-    addLog('💾 Vinculando filtros do relatório (Operação: ' + opDesejada + ')...');
+    addLog('💾 Vinculando filtros do relatório (Localizadores em "Que Contenha Todos")...');
     let bodyReq = '';
     if (window.$ && window.$('#frmProcessoLista').length) {
       if (window.$('#frmIdPreferencia #IdPreferencia').length) {
@@ -9817,9 +10061,8 @@
       bodyReq = sp.toString();
     }
 
-    // Garante no payload serializado o valor exato de tipoOperacaoLocalizador (E/OU) e txtLembrete
+    // Garante no payload serializado o valor exato de tipoOperacaoLocalizador e txtLembrete
     const spFinal = new URLSearchParams(bodyReq);
-    spFinal.set('tipoOperacaoLocalizador', opDesejada);
     spFinal.set('txtLembrete', valLembreteFinal);
     bodyReq = spFinal.toString();
 
@@ -9840,23 +10083,26 @@
     }
 
     if (window._eprocMapaPreferenciasRelatorio) {
-      window._eprocMapaPreferenciasRelatorio.set(normalizar(item.nome), String(idPreferencia));
-      window._eprocMapaPreferenciasRelatorio.set(item.nome.trim(), String(idPreferencia));
+      window._eprocMapaPreferenciasRelatorio.set(normalizar(descFinal), String(idPreferencia));
+      window._eprocMapaPreferenciasRelatorio.set(descFinal.trim(), String(idPreferencia));
     }
 
-    addLog('✅ Preferência de Relatório gravada com filtros: "' + item.nome + '"', 'success');
+    const msgSucesso = idExistente
+      ? '🔄 Preferência de Relatório atualizada com filtros em "Que Contenha Todos": "' + descFinal + '"'
+      : '✅ Preferência de Relatório gravada com filtros: "' + descFinal + '"';
+    addLog(msgSucesso, 'success');
     gravacaoEmAndamento = false;
     await sleep(150);
 
     return {
       linha: item.linha,
-      nome: item.nome,
+      nome: descFinal,
       tipoPref: 'Unidade',
       grupo: item.grupo || '(Nenhum)',
       comoSalvar: idExistente ? 'Filtros Atualizados no Relatório Geral' : 'Filtros Criados no Relatório Geral',
       acaoPref: item.painelInicial ? 'Sim (Painel Inicial)' : 'Não',
       operacao: opDesejada,
-      localizadores: item.localizadores.join(', ') || '(Nenhum)',
+      localizadores: (item.localizadoresContemTodos || item.localizadores || []).join(', ') || '(Nenhum)',
       situacao: item.situacao || 'TODOS',
       lembrete: valLembreteFinal || '-'
     };
@@ -20020,18 +20266,21 @@
 
 
     if (moduloAtivo === 'relatorios') {
+      const statusBadge = (dados.comoSalvar && dados.comoSalvar.includes('Atualiz'))
+        ? '<span class="rito-badge-success">🔄 Atualizada (Relatório)</span>'
+        : '<span class="rito-badge-success">✅ Salva (Relatório)</span>';
       card.innerHTML = `
         <div class="rito-log-card-header">
           <span>📋 Linha ${dados.linha} (Planilha): "${dados.nome}"</span>
-          <span class="rito-badge-success">✅ Salva (Relatório)</span>
+          ${statusBadge}
         </div>
         <div class="rito-log-card-body">
           <div><span class="rito-log-label">• Nome:</span> ${dados.nome}</div>
+          <div><span class="rito-log-label">• Ação:</span> ${dados.comoSalvar || 'Filtros Salvos'}</div>
           <div><span class="rito-log-label">• Tipo:</span> ${dados.tipoPref || 'Unidade'}</div>
           <div><span class="rito-log-label">• Grupo:</span> ${dados.grupo || '(Nenhum)'}</div>
           <div><span class="rito-log-label">• Painel Inicial:</span> ${dados.acaoPref}</div>
-          <div><span class="rito-log-label">• Operador Localizador:</span> ${dados.operacao || 'E'}</div>
-          <div><span class="rito-log-label">• Localizadores Filtro:</span> ${dados.localizadores}</div>
+          <div><span class="rito-log-label">• Localizador (Que Contenha Todos):</span> ${dados.localizadores}</div>
           <div><span class="rito-log-label">• Situação Processual:</span> ${dados.situacao || 'TODOS'}</div>
           <div><span class="rito-log-label">• Lembrete:</span> ${dados.lembrete || '-'}</div>
         </div>
@@ -21220,7 +21469,8 @@
 
 
       // REGRA 6: Se já existe preferência de mesmo nome na Unidade, pula e contabiliza em Puladas
-      if (preferenciaJaExiste(item.nome, existentes)) {
+      // (No módulo de Relatórios, permitimos prosseguir para atualização em lote dos filtros existentes)
+      if (moduloAtivo !== 'relatorios' && preferenciaJaExiste(item.nome, existentes)) {
         totalPuladas++;
         renderizarLogCardSkipped(item, 'Essa preferência já existe na unidade');
         st.idx++;
