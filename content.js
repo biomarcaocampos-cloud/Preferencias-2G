@@ -9224,7 +9224,7 @@
     const mapaIds = new Map();
     const listaObjetos = [];
 
-    const registrarPref = (descBruta, id) => {
+    const registrarPref = (descBruta, id, grupo, idGrupo) => {
       if (!descBruta) return;
       const descLimpa = decodificarEntidadesHtml(descBruta).trim();
       if (!descLimpa || descLimpa.length < 2) return;
@@ -9234,12 +9234,20 @@
       if (id) {
         mapaIds.set(norm, String(id));
         mapaIds.set(descLimpa, String(id));
-        listaObjetos.push({
-          id: String(id),
-          nome: descLimpa,
-          slot: extrairSlotSufixo(descLimpa),
-          radical: extrairRadicalPreferencia(descLimpa)
-        });
+        const itemExistente = listaObjetos.find(o => o.id === String(id));
+        if (itemExistente) {
+          if (grupo && !itemExistente.grupo) itemExistente.grupo = decodificarEntidadesHtml(grupo).trim();
+          if (idGrupo && !itemExistente.idGrupo) itemExistente.idGrupo = String(idGrupo);
+        } else {
+          listaObjetos.push({
+            id: String(id),
+            nome: descLimpa,
+            grupo: grupo ? decodificarEntidadesHtml(grupo).trim() : '',
+            idGrupo: idGrupo ? String(idGrupo) : '',
+            slot: extrairSlotSufixo(descLimpa),
+            radical: extrairRadicalPreferencia(descLimpa)
+          });
+        }
       }
     };
 
@@ -9465,7 +9473,8 @@
         if (Array.isArray(prefsServ) && prefsServ.length > 0) {
           prefsServ.forEach(p => {
             if (p && p.nome && p.id) {
-              registrarPref(p.nome, p.id);
+              const idGrp = (p.row && (p.row.IdFormularioPersonalizacaoGrupo || p.row.IdGrupo)) ? (p.row.IdFormularioPersonalizacaoGrupo || p.row.IdGrupo) : '';
+              registrarPref(p.nome, p.id, p.grupo, idGrp);
             }
           });
         }
@@ -9486,7 +9495,16 @@
     // 0. Match direto por nome exato ou normalizado (unidades com os nomes originais da planilha)
     if (mapa) {
       const idExato = mapa.get(normalizar(item.nome)) || mapa.get(item.nome.trim()) || null;
-      if (idExato) return { id: idExato, nome: item.nome, matchType: 'exato' };
+      if (idExato) {
+        const pObj = lista.find(p => p.id === idExato);
+        return {
+          id: idExato,
+          nome: item.nome,
+          grupo: pObj ? (pObj.grupo || '') : '',
+          idGrupo: pObj ? (pObj.idGrupo || '') : '',
+          matchType: 'exato'
+        };
+      }
     }
 
     const slotItem = extrairSlotSufixo(item.nome);
@@ -9499,7 +9517,15 @@
         const radP = p.radical || extrairRadicalPreferencia(p.nome);
         return slotP === slotItem && radP === radicalItem;
       });
-      if (matchSlot) return { id: matchSlot.id, nome: matchSlot.nome, matchType: 'slot_' + slotItem };
+      if (matchSlot) {
+        return {
+          id: matchSlot.id,
+          nome: matchSlot.nome,
+          grupo: matchSlot.grupo || '',
+          idGrupo: matchSlot.idGrupo || '',
+          matchType: 'slot_' + slotItem
+        };
+      }
     }
 
     // 2. Busca na lista estruturada por Radical (preferências de unidade sem servidor)
@@ -9510,7 +9536,15 @@
         const radP = p.radical || extrairRadicalPreferencia(p.nome);
         return radP === radicalItem || normalizar(removerEmojis(p.nome)) === normalizar(removerEmojis(item.nome));
       });
-      if (matchRad) return { id: matchRad.id, nome: matchRad.nome, matchType: 'radical' };
+      if (matchRad) {
+        return {
+          id: matchRad.id,
+          nome: matchRad.nome,
+          grupo: matchRad.grupo || '',
+          idGrupo: matchRad.idGrupo || '',
+          matchType: 'radical'
+        };
+      }
     }
 
     return null;
@@ -9889,9 +9923,9 @@
       addLog('Configurando preferência de Relatório: "' + item.nome + '" (Operação: ' + opDesejada + ')...');
     }
 
-    // 2. Garante grupo da preferência na unidade
+    // 2. Garante grupo da preferência na unidade (SOMENTE no modo 'criar')
     let idGrupo = '';
-    if (item.grupo && item.grupo !== '-') {
+    if (modo !== 'alterar' && item.grupo && item.grupo !== '-') {
       const resGrupo = await gerenciarGrupoPreferencia2G(item.grupo);
       if (resGrupo && resGrupo.id) {
         idGrupo = String(resGrupo.id);
@@ -9973,20 +10007,69 @@
       if (inpIdForm) inpIdForm.value = idExistente;
     }
 
-    // Grupo: obtém da lista de opções reais do <select id="Grupo"> gerado pelo eproc
+    // Grupo: confere e mantém o grupo antigo/existente no modo 'alterar' ou vincula o novo no modo 'criar'
     const selGrupoModal = formModal.querySelector('#Grupo');
     let idGrupoModal = '';
-    if (selGrupoModal && item.grupo && item.grupo !== '-') {
-      const normG = normalizar(item.grupo);
-      const opt = Array.from(selGrupoModal.options).find(o => o.value && (normalizar(o.text) === normG || normalizar(o.text).includes(normG) || (idGrupo && o.value === idGrupo)));
-      if (opt) {
-        idGrupoModal = opt.value;
-        selGrupoModal.value = opt.value;
-        cacheGruposRelatorio.set(normG, opt.value);
+    let nomeGrupoLog = '';
+
+    if (modo === 'alterar') {
+      // 2.1 Confere e mantém o grupo antigo/existente no eproc
+      const grupoExistente = matchObj ? (matchObj.grupo || '') : '';
+      const idGrupoExistente = matchObj ? (matchObj.idGrupo || '') : '';
+
+      if (selGrupoModal) {
+        // A. Match por ID do grupo cadastrado na preferência
+        if (idGrupoExistente) {
+          const optById = Array.from(selGrupoModal.options).find(o => o.value === idGrupoExistente);
+          if (optById) { idGrupoModal = optById.value; nomeGrupoLog = optById.text.trim(); }
+        }
+        // B. Match pelo nome exato ou aproximado do grupo que a preferência já possuía
+        if (!idGrupoModal && grupoExistente) {
+          const normGE = normalizar(grupoExistente);
+          const optByText = Array.from(selGrupoModal.options).find(o => o.value && (normalizar(o.text) === normGE || normalizar(o.text).includes(normGE)));
+          if (optByText) { idGrupoModal = optByText.value; nomeGrupoLog = optByText.text.trim(); }
+        }
+        // C. Match pela sigla do servidor no nome da preferência no eproc (ex: 👤Adriano.LB_S1👤 -> grupo que contenha Adriano.LB)
+        if (!idGrupoModal && nomeNoEproc) {
+          const mSigla = nomeNoEproc.match(/👤([^👤_]+)(?:_[sSeE]\d+)?👤/i);
+          if (mSigla && mSigla[1]) {
+            const normSigla = normalizar(mSigla[1]);
+            const optSigla = Array.from(selGrupoModal.options).find(o => o.value && normalizar(o.text).includes(normSigla));
+            if (optSigla) { idGrupoModal = optSigla.value; nomeGrupoLog = optSigla.text.trim(); }
+          }
+        }
+        // D. Match por grupo geral da unidade (ex: Gestao do Gabinete)
+        if (!idGrupoModal && item.grupo && normalizar(item.grupo).includes('gabinete')) {
+          const optGab = Array.from(selGrupoModal.options).find(o => o.value && normalizar(o.text).includes('gabinete'));
+          if (optGab) { idGrupoModal = optGab.value; nomeGrupoLog = optGab.text.trim(); }
+        }
+        // E. Se o form do modal já tiver um grupo selecionado pelo eproc, mantém o atual
+        if (!idGrupoModal && selGrupoModal.value) {
+          idGrupoModal = selGrupoModal.value;
+          const optSel = selGrupoModal.options[selGrupoModal.selectedIndex];
+          if (optSel) nomeGrupoLog = optSel.text.trim();
+        }
+      }
+
+      if (idGrupoModal) {
+        addLog('📁 Mantendo grupo existente: "' + (nomeGrupoLog || grupoExistente) + '"', 'info');
+      } else {
+        addLog('📁 Grupo mantido sem alteração.', 'info');
+      }
+    } else {
+      // Modo 'criar': comportamento original para novas preferências
+      if (selGrupoModal && item.grupo && item.grupo !== '-') {
+        const normG = normalizar(item.grupo);
+        const opt = Array.from(selGrupoModal.options).find(o => o.value && (normalizar(o.text) === normG || normalizar(o.text).includes(normG) || (idGrupo && o.value === idGrupo)));
+        if (opt) {
+          idGrupoModal = opt.value;
+          cacheGruposRelatorio.set(normG, opt.value);
+        }
       }
     }
-    if (selGrupoModal && !idGrupoModal) {
-      selGrupoModal.value = '';
+
+    if (selGrupoModal) {
+      selGrupoModal.value = idGrupoModal || '';
     }
 
     // Monta os parâmetros exatamente como o form do eproc envia
@@ -21423,7 +21506,11 @@
 
       addLog('ℹ️ Encontradas ' + existentes.size + ' preferências de relatório cadastradas na Unidade.', 'info');
 
-      await garantirGruposRelatoriosEmLote(st.itens);
+      if (st.modoRelatorio !== 'alterar') {
+        await garantirGruposRelatoriosEmLote(st.itens);
+      } else {
+        addLog('📁 Modo ALTERAR: grupos existentes serão conferidos e mantidos (nenhum grupo novo será criado).', 'info');
+      }
 
     } else if (moduloAtivo === 'movimentacoes') {
 
