@@ -85,6 +85,21 @@
 
   }
 
+  function removerEmojis(txt) {
+    if (!txt) return '';
+    try {
+      return String(txt)
+        .replace(/\p{Extended_Pictographic}/gu, '')
+        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '')
+        .trim();
+    } catch (e) {
+      return String(txt)
+        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '')
+        .trim();
+    }
+  }
+  window.removerEmojis = removerEmojis;
+
 
 
   // Normalização de localizadores: MANTÉM emojis (⬛🟦 etc. distinguem localizadores homônimos);
@@ -716,6 +731,8 @@
     const cardInfo = document.getElementById('rito-card-info');
     const btnDiagnostico = document.getElementById('btn-rito-diagnostico');
     const btnIniciar = document.getElementById('btn-rito-iniciar');
+    const btnAlterar = document.getElementById('btn-rito-alterar-relatorio');
+    const containerBotoes = document.getElementById('rito-container-botoes-executar');
 
     const temPlanilha = window._eprocUltimoArquivoPlanilha instanceof File || window._eprocUltimoArquivoPlanilha instanceof Blob;
 
@@ -726,6 +743,8 @@
       if (cardInfo) cardInfo.style.display = 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = 'none';
       if (btnIniciar) btnIniciar.style.display = 'none';
+      if (btnAlterar) btnAlterar.style.display = 'none';
+      if (containerBotoes) containerBotoes.style.display = 'none';
       if (!pularRecargaPlanilha) {
         sincronizarServidoresBasicoDoEproc();
       }
@@ -736,6 +755,8 @@
       if (cardInfo) cardInfo.style.display = 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = 'none';
       if (btnIniciar) btnIniciar.style.display = 'none';
+      if (btnAlterar) btnAlterar.style.display = 'none';
+      if (containerBotoes) containerBotoes.style.display = 'none';
       if (typeof inicializarModuloGruposAtp === 'function') {
         inicializarModuloGruposAtp();
       }
@@ -745,7 +766,20 @@
       if (dropzone) dropzone.style.display = 'block';
       if (cardInfo) cardInfo.style.display = temPlanilha ? 'block' : 'none';
       if (btnDiagnostico) btnDiagnostico.style.display = temPlanilha ? 'flex' : 'none';
-      if (btnIniciar) btnIniciar.style.display = temPlanilha ? 'flex' : 'none';
+      if (containerBotoes) containerBotoes.style.display = temPlanilha ? 'flex' : 'none';
+      if (btnIniciar) {
+        btnIniciar.style.display = temPlanilha ? 'flex' : 'none';
+        if (moduloAtivo === 'relatorios') {
+          btnIniciar.innerHTML = '<span>➕</span> CRIAR PREFERÊNCIAS';
+          btnIniciar.title = 'Inicia a criação em lote das preferências da planilha (pula preferências já existentes na Unidade)';
+        } else {
+          btnIniciar.innerHTML = '<span>▶️</span> EXECUTAR';
+          btnIniciar.title = 'Inicia a criação em lote das preferências selecionadas';
+        }
+      }
+      if (btnAlterar) {
+        btnAlterar.style.display = (temPlanilha && moduloAtivo === 'relatorios') ? 'flex' : 'none';
+      }
     }
 
     atualizarEstadoDropzonePlanilha();
@@ -8464,9 +8498,9 @@
 
   /* ================== MOTOR DOS 13 PASSOS ================== */
 
-  async function executarPassoAPassoItem(item) {
+  async function executarPassoAPassoItem(item, modoRelatorio) {
     if (moduloAtivo === 'relatorios') {
-      return await executarPassoAPassoRelatorio(item);
+      return await executarPassoAPassoRelatorio(item, modoRelatorio);
     }
     if (moduloAtivo === 'movimentacoes') {
       return await executarPassoAPassoMovimentacao(item);
@@ -9425,12 +9459,14 @@
     }
 
     // Se a lista estruturada estiver vazia ou com poucos itens, consulta o DataTable oficial
-    if (listaObjetos.length === 0 && typeof obterPreferenciasRelatorioServidores === 'function') {
+    if (listaObjetos.length === 0 && typeof obterPreferenciasRelatorioParaServidores === 'function') {
       try {
-        const prefsServ = await obterPreferenciasRelatorioServidores();
+        const prefsServ = await obterPreferenciasRelatorioParaServidores();
         if (Array.isArray(prefsServ) && prefsServ.length > 0) {
           prefsServ.forEach(p => {
-            registrarPref(p.nome, p.id);
+            if (p && p.nome && p.id) {
+              registrarPref(p.nome, p.id);
+            }
           });
         }
       } catch (eServ) {}
@@ -9447,10 +9483,16 @@
     const lista = window._eprocListaPreferenciasRelatorio || [];
     const mapa = window._eprocMapaPreferenciasRelatorio;
 
+    // 0. Match direto por nome exato ou normalizado (unidades com os nomes originais da planilha)
+    if (mapa) {
+      const idExato = mapa.get(normalizar(item.nome)) || mapa.get(item.nome.trim()) || null;
+      if (idExato) return { id: idExato, nome: item.nome, matchType: 'exato' };
+    }
+
     const slotItem = extrairSlotSufixo(item.nome);
     const radicalItem = extrairRadicalPreferencia(item.nome);
 
-    // 1. Busca na lista estruturada por Slot + Radical (ex: S1 + apelacao)
+    // 1. Busca na lista estruturada por Slot + Radical (unidades personalizadas com _S1.._S9 ou originais)
     if (slotItem && lista.length > 0) {
       const matchSlot = lista.find(p => {
         const slotP = p.slot || extrairSlotSufixo(p.nome);
@@ -9471,12 +9513,6 @@
       if (matchRad) return { id: matchRad.id, nome: matchRad.nome, matchType: 'radical' };
     }
 
-    // 3. Busca por nome exato ou normalizado no mapa tradicional
-    if (mapa) {
-      const idExato = mapa.get(normalizar(item.nome)) || mapa.get(item.nome.trim()) || null;
-      if (idExato) return { id: idExato, nome: item.nome, matchType: 'exato' };
-    }
-
     return null;
   }
 
@@ -9486,12 +9522,14 @@
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     const btnIni = document.getElementById('btn-rito-iniciar');
+    const btnAlt = document.getElementById('btn-rito-alterar-relatorio');
     if (btnDiag) {
       btnDiag.disabled = true;
       btnDiag.classList.add('rito-diagnostico-ativo');
       btnDiag.innerHTML = '<span>⏳</span> Verificando (0%)...';
     }
     if (btnIni) btnIni.disabled = true;
+    if (btnAlt) btnAlt.disabled = true;
 
     try {
       adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • RELATÓRIOS');
@@ -9529,7 +9567,9 @@
       addLog('=== RELATÓRIO DA VERIFICAÇÃO PRÉVIA (RELATÓRIOS) ===');
       addLog('• Preferências auditadas (seleção): ' + totalItens + (totalItens !== itensCarregados.length ? ' de ' + itensCarregados.length + ' na planilha' : ''));
       addLog('• Grupos mapeados: ' + gruposPlanilha.length + ' (' + gruposFaltantes.length + ' serão criados automaticamente)');
-      addLog('• Preferências identificadas para atualização na Unidade: ' + jaExistemCount + ' (serão atualizadas via sufixo _S1.._S9 no campo "Que Contenha Todos")');
+      addLog('• Preferências já identificadas na Unidade: ' + jaExistemCount + ' de ' + totalItens);
+      addLog('  - [➕ CRIAR PREFERÊNCIAS]: as ' + jaExistemCount + ' já existentes serão puladas e apenas as novas serão criadas.');
+      addLog('  - [🔄 ALTERAR PREFERÊNCIAS]: as ' + jaExistemCount + ' existentes (personalizadas via _S1.._S9 ou originais) terão seus filtros atualizados com localizadores em "Que Contenha Todos".');
       addLog('✅ Auditoria de integridade concluída com sucesso!', 'success');
     } catch (err) {
       console.error('Erro na verificação de relatórios:', err);
@@ -9542,6 +9582,7 @@
         btnDiag.innerHTML = '<span>🔍</span> Reabrir Relatório da Verificação';
       }
       if (btnIni) btnIni.disabled = false;
+      if (btnAlt) btnAlt.disabled = false;
     }
   }
 
@@ -9817,10 +9858,11 @@
     }
   }
 
-  async function executarPassoAPassoRelatorio(item) {
+  async function executarPassoAPassoRelatorio(item, modoRelatorio) {
     if (window._eprocPararLote) throw new Error('PARADA_SOLICITADA');
     gravacaoEmAndamento = true;
 
+    const modo = modoRelatorio || 'criar';
     const opDesejada = (item.operacao && String(item.operacao).trim().toUpperCase() === 'OU') ? 'OU' : 'E';
     let valLembreteFinal = '';
     if (item.lembrete) {
@@ -9835,6 +9877,11 @@
     const matchObj = encontrarPreferenciaRelatorioExistente(item);
     const idExistente = matchObj ? matchObj.id : null;
     const nomeNoEproc = matchObj ? matchObj.nome : null;
+
+    // Se estiver no modo "CRIAR" e já existir na unidade, pula como DUPLICADA (comportamento original)
+    if (modo === 'criar' && idExistente) {
+      throw new Error('DUPLICADA: Essa preferência já existe na unidade');
+    }
 
     if (idExistente) {
       addLog('🔄 Atualizando preferência existente: "' + (nomeNoEproc || item.nome) + '" (ID: ' + idExistente + ')' + (matchObj.matchType ? ' [' + matchObj.matchType + ']' : '') + ' com localizadores em "Que Contenha Todos"...', 'info');
@@ -13275,7 +13322,7 @@
         box-shadow: inset 0 0 0 1px #00766c;
       }
 
-      /* Botão EXECUTAR (laranja claro) */
+      /* Botão EXECUTAR / CRIAR PREFERÊNCIAS (laranja claro) */
       .rito-btn-executar {
         background: #fdba74 !important;
         color: #7c2d12 !important;
@@ -13287,6 +13334,18 @@
 
       .rito-btn-executar:hover {
         background: #fb923c !important;
+        color: #ffffff !important;
+      }
+
+      /* Botão ALTERAR PREFERÊNCIAS (azul claro) */
+      .rito-btn-alterar {
+        background: #bae6fd !important;
+        color: #0369a1 !important;
+        border: 1px solid #38bdf8 !important;
+      }
+
+      .rito-btn-alterar:hover {
+        background: #0284c7 !important;
         color: #ffffff !important;
       }
 
@@ -19655,11 +19714,14 @@
 
 
 
-        <button type="button" class="rito-btn rito-btn-primary rito-btn-executar" id="btn-rito-iniciar" style="display:none;" title="Inicia a criação em lote das preferências selecionadas">
-
-          <span>▶️</span> EXECUTAR
-
-        </button>
+        <div id="rito-container-botoes-executar" style="display:none; width:100%; gap:8px; margin-bottom:8px;">
+          <button type="button" class="rito-btn rito-btn-primary rito-btn-executar" id="btn-rito-iniciar" style="display:flex; flex:1; margin-bottom:0;" title="Inicia a criação em lote das preferências selecionadas">
+            <span>▶️</span> EXECUTAR
+          </button>
+          <button type="button" class="rito-btn rito-btn-primary rito-btn-executar rito-btn-alterar" id="btn-rito-alterar-relatorio" style="display:none; flex:1; margin-bottom:0;" title="Altera em lote as preferências existentes no eproc (personalizadas via _S1.._S9 ou originais Servidor 1..9), movendo localizadores para 'Que Contenha Todos'">
+            <span>🔄</span> ALTERAR PREFERÊNCIAS
+          </button>
+        </div>
 
         <button type="button" class="rito-btn rito-btn-danger" id="btn-rito-parar" style="display:none;">
 
@@ -20111,7 +20173,11 @@
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     if (btnDiag) btnDiag.onclick = executarDiagnosticoPreVoo;
-    document.getElementById('btn-rito-iniciar').onclick = iniciarExecucao;
+    document.getElementById('btn-rito-iniciar').onclick = () => iniciarExecucao('criar');
+    const btnAltRel = document.getElementById('btn-rito-alterar-relatorio');
+    if (btnAltRel) {
+      btnAltRel.onclick = () => iniciarExecucao('alterar');
+    }
     configurarEventosComboboxPreferencias();
 
 
@@ -21144,7 +21210,14 @@
       document.getElementById('rito-card-info').style.display = 'block';
       atualizarEstadoDropzonePlanilha();
       document.getElementById('btn-rito-diagnostico').style.display = 'flex';
-      document.getElementById('btn-rito-iniciar').style.display = 'flex';
+      const containerBotoesDrop = document.getElementById('rito-container-botoes-executar');
+      if (containerBotoesDrop) containerBotoesDrop.style.display = 'flex';
+      const btnIniciarDrop = document.getElementById('btn-rito-iniciar');
+      if (btnIniciarDrop) btnIniciarDrop.style.display = 'flex';
+      const btnAlterarDrop = document.getElementById('btn-rito-alterar-relatorio');
+      if (btnAlterarDrop) {
+        btnAlterarDrop.style.display = (moduloAtivo === 'relatorios') ? 'flex' : 'none';
+      }
 
 
 
@@ -21162,7 +21235,7 @@
 
 
 
-  async function iniciarExecucao() {
+  async function iniciarExecucao(modo) {
     if (moduloAtivo === 'servidores') {
       return await executarPersonalizacaoServidores();
     }
@@ -21178,9 +21251,11 @@
       moduloAtivo = 'minutas';
     }
 
+    const modoRelatorio = (moduloAtivo === 'relatorios' && modo === 'alterar') ? 'alterar' : 'criar';
+
     if (moduloAtivo === 'relatorios') {
       if (!ehTelaDeRelatorio()) {
-        alertOriginal.call(window, 'Acesse a tela de "Relatório Geral de Processos" para criar as preferências de relatório.');
+        alertOriginal.call(window, 'Acesse a tela de "Relatório Geral de Processos" para criar ou alterar as preferências de relatório.');
         return;
       }
     } else if (moduloAtivo === 'movimentacoes') {
@@ -21239,7 +21314,12 @@
 
 
 
-    document.getElementById('btn-rito-iniciar').style.display = 'none';
+    const containerBotoes = document.getElementById('rito-container-botoes-executar');
+    if (containerBotoes) containerBotoes.style.display = 'none';
+    const btnIniciarEl = document.getElementById('btn-rito-iniciar');
+    if (btnIniciarEl) btnIniciarEl.style.display = 'none';
+    const btnAlterarEl = document.getElementById('btn-rito-alterar-relatorio');
+    if (btnAlterarEl) btnAlterarEl.style.display = 'none';
 
     document.getElementById('btn-rito-parar').style.display = 'flex';
 
@@ -21285,6 +21365,8 @@
 
       itens: listaParaExecutar,
 
+      modoRelatorio: modoRelatorio,
+
       de: de,
 
       ate: ate,
@@ -21297,7 +21379,10 @@
 
     saveState(st);
 
-    adicionarSeparadorExecucaoNoLog('EXECUÇÃO DE LOTE');
+    const descLote = (moduloAtivo === 'relatorios' && modoRelatorio === 'alterar')
+      ? 'ALTERAÇÃO DE PREFERÊNCIAS EM LOTE (Filtros em "Que Contenha Todos")'
+      : 'CRIAÇÃO DE PREFERÊNCIAS EM LOTE';
+    adicionarSeparadorExecucaoNoLog(descLote);
 
     if (selInfo.contiguo) {
       addLog(`=== INICIANDO LOTE: preferências de ${de} até ${ate} (${st.total} itens) ===`);
@@ -21469,24 +21554,27 @@
 
 
       // REGRA 6: Se já existe preferência de mesmo nome na Unidade, pula e contabiliza em Puladas
-      // (No módulo de Relatórios, permitimos prosseguir para atualização em lote dos filtros existentes)
-      if (moduloAtivo !== 'relatorios' && preferenciaJaExiste(item.nome, existentes)) {
-        totalPuladas++;
-        renderizarLogCardSkipped(item, 'Essa preferência já existe na unidade');
-        st.idx++;
-        saveState(st);
-        await sleep(150);
-        continue;
+      // (No modo 'alterar' de relatórios, não pula aqui; deixa a rotina de alteração atualizar os filtros)
+      const ehModoAlterarRelatorio = (moduloAtivo === 'relatorios' && st.modoRelatorio === 'alterar');
+      if (!ehModoAlterarRelatorio) {
+        let jaExiste = preferenciaJaExiste(item.nome, existentes);
+        if (!jaExiste && moduloAtivo === 'relatorios' && typeof encontrarPreferenciaRelatorioExistente === 'function') {
+          jaExiste = Boolean(encontrarPreferenciaRelatorioExistente(item));
+        }
+        if (jaExiste) {
+          totalPuladas++;
+          renderizarLogCardSkipped(item, 'Essa preferência já existe na unidade');
+          st.idx++;
+          saveState(st);
+          await sleep(150);
+          continue;
+        }
       }
 
-
-
-      // Executa os 13 passos para criar a preferência
-
+      // Executa os passos para criar ou alterar a preferência
       try {
         adicionarSeparadorItemExecucaoNoLog(pos, st.total, item);
-
-        const dados = await executarPassoAPassoItem(item);
+        const dados = await executarPassoAPassoItem(item, st.modoRelatorio);
 
         totalCriadas++;
 
@@ -21589,9 +21677,14 @@
 
     }
 
+    const containerBotoes = document.getElementById('rito-container-botoes-executar');
+    if (containerBotoes) containerBotoes.style.display = 'flex';
     const btnIniciar = document.getElementById('btn-rito-iniciar');
-
     if (btnIniciar) btnIniciar.style.display = 'flex';
+    const btnAlterar = document.getElementById('btn-rito-alterar-relatorio');
+    if (btnAlterar) {
+      btnAlterar.style.display = (moduloAtivo === 'relatorios') ? 'flex' : 'none';
+    }
 
 
 
