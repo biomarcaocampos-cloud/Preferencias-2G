@@ -19430,6 +19430,917 @@
     overlay.onclick = (e) => { if (e.target === overlay) fechar(); };
   }
 
+  /* ================== RELATÓRIO GERAL DE REGRAS ATP (TABELA, MÉTRICAS E FICHAS) ================== */
+
+  let _eprocCacheRegrasAtp = null;
+  const _eprocCacheMemosAtp = new Map();
+
+  function escapeHtmlAtp(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function extrairDadosRegraAtpTr(tr, idx) {
+    const cleanTxt = (str) => String(str ?? '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const mIdTr = (tr.id || '').match(/trLocalizadorAut_(\d+)/);
+    const inpId = tr.querySelector('input[name="id_controle_localizador[]"], input[id^="chkInfraItem"]');
+    const id = (mIdTr && mIdTr[1]) || (inpId ? String(inpId.value || '').trim() : String(idx + 1));
+
+    const tds = Array.from(tr.querySelectorAll('td'));
+    const tdNum = tds[1];
+    let numRegra = String(idx + 1);
+    let prioridade = '';
+
+    if (tdNum) {
+      const mUnder = tdNum.querySelector('span[style*="text-decoration: underline"], span[style*="text-decoration:underline"]');
+      if (mUnder && cleanTxt(mUnder.textContent)) {
+        numRegra = cleanTxt(mUnder.textContent);
+      } else {
+        const mN = cleanTxt(tdNum.textContent).match(/^(\d+)/);
+        if (mN) numRegra = mN[1];
+      }
+      const selPrio = tdNum.querySelector('select.selPrioridade, select');
+      if (selPrio && selPrio.selectedIndex >= 0) {
+        prioridade = cleanTxt(selPrio.options[selPrio.selectedIndex].text);
+      }
+    }
+
+    const mHdn = tr.querySelector('input[id^="hdnRegraAtivada"]');
+    const mChk = tr.querySelector('input[id^="customSwitch"]');
+    let ativa = true;
+    if (mHdn) {
+      ativa = (mHdn.value === 'S');
+    } else if (mChk) {
+      ativa = mChk.checked;
+    } else {
+      ativa = !tr.textContent.includes('** DESATIVADA **');
+    }
+
+    const spnGrupo = tr.querySelector('span[id^="spnGrupoRegra_"]');
+    let grupo = spnGrupo ? cleanTxt(spnGrupo.textContent) : '';
+    if (!grupo && tds[2]) {
+      const aGrp = tds[2].querySelector('a.link-info, a');
+      grupo = aGrp ? cleanTxt(aGrp.textContent) : cleanTxt(tds[2].textContent).split('==')[0].trim();
+    }
+    grupo = grupo.replace(/^==\s*[^=]+==\s*/g, '').trim() || '(Sem Grupo)';
+
+    const tdOrigem = tds[3];
+    let origem = '';
+    if (tdOrigem) {
+      const divComp = tdOrigem.querySelector('div[id^="dadosCompletos_"]');
+      origem = divComp ? cleanTxt(divComp.textContent) : cleanTxt(tdOrigem.textContent);
+      origem = origem.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+    }
+
+    const tdCriterio = tds[4];
+    let criterio = '';
+    if (tdCriterio) {
+      const divComp = tdCriterio.querySelector('div[id^="dadosCompletos_"]');
+      criterio = divComp ? cleanTxt(divComp.textContent) : cleanTxt(tdCriterio.textContent);
+      criterio = criterio.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+    }
+
+    const tdDestino = tds[5];
+    let destino = '';
+    let lembrete = '';
+    if (tdDestino) {
+      const mLemb = (tdDestino.innerHTML || '').match(/Lembrete:\s*<span[^>]*>([\s\S]*?)<\/span>/i);
+      if (mLemb) lembrete = cleanTxt(mLemb[1]);
+      destino = cleanTxt(tdDestino.textContent);
+      destino = destino.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+    }
+
+    const tdOutros = tds[6];
+    let outros = tdOutros ? cleanTxt(tdOutros.textContent) : '';
+    outros = outros.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+
+    const tdAcoes = tds[7];
+    let codMemo = '';
+    let memoTitle = '';
+    let temMemo = false;
+    let urlEditar = '';
+    let urlLog = '';
+    let urlSubformMemo = '';
+
+    if (tdAcoes) {
+      const linkMemo = tdAcoes.querySelector('a[class*="memoControleLocalizadorSistema"]');
+      if (linkMemo) {
+        const mCod = (linkMemo.className || '').match(/memoControleLocalizadorSistema(\d+)/) ||
+                     (linkMemo.getAttribute('href') || '').match(/cod_controle_localizador_sistema=(\d+)/i);
+        if (mCod) codMemo = mCod[1];
+        memoTitle = linkMemo.getAttribute('title') || '';
+        if (memoTitle && !memoTitle.toLowerCase().includes('incluir memo')) {
+          temMemo = true;
+        }
+        const mSub = (linkMemo.getAttribute('href') || '').match(/exibirSubFrm\(['"]([^'"]+)['"]\)/i);
+        if (mSub) {
+          urlSubformMemo = mSub[1].replace(/&amp;/g, '&');
+        }
+      }
+      const linkEdit = tdAcoes.querySelector('a[href*="automatizar_localizadores_alterar"]:not([href*="sin_duplicar_regra=S"])');
+      if (linkEdit && linkEdit.getAttribute('href')) {
+        urlEditar = linkEdit.getAttribute('href').replace(/&amp;/g, '&');
+      }
+      const linkLog = tdAcoes.querySelector('a[href*="automatizar_localizadores_log_por_regra"]');
+      if (linkLog && linkLog.getAttribute('href')) {
+        urlLog = linkLog.getAttribute('href').replace(/&amp;/g, '&');
+      }
+    }
+
+    return {
+      id,
+      numRegra,
+      ativa,
+      prioridade,
+      grupo,
+      origem,
+      criterio,
+      destino,
+      outros,
+      lembrete,
+      codMemo,
+      memo: temMemo ? memoTitle : (_eprocCacheMemosAtp.get(codMemo) || ''),
+      temMemo,
+      urlEditar,
+      urlLog,
+      urlSubformMemo
+    };
+  }
+
+  async function carregarRegrasAtpCompletas(forcar = false, onProgress = null) {
+    if (!forcar && _eprocCacheRegrasAtp && _eprocCacheRegrasAtp.length > 0) {
+      return _eprocCacheRegrasAtp;
+    }
+
+    if (onProgress) onProgress('Consultando tela de Automatização de Localizadores...', 10);
+
+    let docPrincipal = document;
+    let urlListar = window.location.href;
+
+    if (!ehTelaDeAutomatizacaoLocalizadores()) {
+      urlListar = obterUrlAcaoMenu('automatizar_localizadores') || ('controlador.php?acao=automatizar_localizadores&hash=' + (typeof obterHashAtual === 'function' ? obterHashAtual() : ''));
+      const resp = await fetch(urlListar, { credentials: 'same-origin' });
+      if (!resp.ok) throw new Error('Não foi possível carregar a tela de Automatizar Localizadores (HTTP ' + resp.status + ')');
+      const html = await lerRespostaTexto(resp);
+      docPrincipal = new DOMParser().parseFromString(html, 'text/html');
+    }
+
+    const lista = [];
+    const idsVistos = new Set();
+
+    const extrairDeDoc = (doc) => {
+      const rows = doc.querySelectorAll('#tableAutomatizacaoLocalizadores tr, tr[id^="trLocalizadorAut_"]');
+      rows.forEach((tr, i) => {
+        const item = extrairDadosRegraAtpTr(tr, lista.length + i);
+        if (item.id && !idsVistos.has(item.id)) {
+          idsVistos.add(item.id);
+          lista.push(item);
+        }
+      });
+    };
+
+    extrairDeDoc(docPrincipal);
+
+    // Paginação: se houver múltiplas páginas no seletor do eproc
+    const selPag = docPrincipal.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+    const frmPag = docPrincipal.querySelector('form[action*="automatizar_localizadores"]');
+    if (selPag && selPag.options && selPag.options.length > 1 && frmPag) {
+      const totalPags = selPag.options.length;
+      const actionPag = new URL((frmPag.getAttribute('action') || urlListar).replace(/&amp;/g, '&'), window.location.href).href;
+
+      for (let p = 1; p < totalPags; p++) {
+        if (onProgress) {
+          const pct = Math.round((p / totalPags) * 85);
+          onProgress('Lendo página ' + (p + 1) + ' de ' + totalPags + ' (' + lista.length + ' regras mapeadas)...', pct);
+        }
+        try {
+          const pairsPag = [];
+          frmPag.querySelectorAll('input[type="hidden"]').forEach(inp => {
+            if (inp.name) pairsPag.push([inp.name, inp.name === 'hdnInfraPaginaAtual' ? selPag.options[p].value : inp.value]);
+          });
+          const respP = await fetch(actionPag, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: encodeWindows1252Body(pairsPag),
+            credentials: 'same-origin'
+          });
+          if (respP.ok) {
+            const htmlP = await lerRespostaTexto(respP);
+            extrairDeDoc(new DOMParser().parseFromString(htmlP, 'text/html'));
+          }
+        } catch (ePag) {
+          console.warn('Erro ao carregar página ' + (p + 1) + ' de ATPs:', ePag);
+        }
+      }
+    }
+
+    // Ordena por número da regra numericamente
+    lista.sort((a, b) => (parseInt(a.numRegra, 10) || 0) - (parseInt(b.numRegra, 10) || 0));
+
+    _eprocCacheRegrasAtp = lista;
+    if (onProgress) onProgress('Total de ' + lista.length + ' regras carregadas com sucesso!', 100);
+    return lista;
+  }
+
+  async function obterTextoMemoAtpSubform(codMemo, urlSubform = '') {
+    if (!codMemo) return '';
+    if (_eprocCacheMemosAtp.has(String(codMemo))) {
+      return _eprocCacheMemosAtp.get(String(codMemo));
+    }
+
+    let urlFetch = urlSubform;
+    if (!urlFetch) {
+      const hashAtual = typeof obterHashAtual === 'function' ? obterHashAtual() : '';
+      urlFetch = 'controlador.php?acao=controle_localizador_sistema_tooltip_cadastrar_subform&cod_controle_localizador_sistema=' + encodeURIComponent(codMemo) + '&hash=' + hashAtual;
+    }
+
+    try {
+      const resp = await fetch(urlFetch, { credentials: 'same-origin' });
+      if (!resp.ok) return '';
+      const html = await lerRespostaTexto(resp);
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const txa = doc.querySelector('textarea[name="txaInformacoes"], #txaInformacoes, textarea');
+      const texto = txa ? (txa.value || txa.textContent || '').trim() : '';
+      if (texto) {
+        _eprocCacheMemosAtp.set(String(codMemo), texto);
+      }
+      return texto;
+    } catch (e) {
+      console.warn('Falha ao consultar texto do memo subform:', e);
+      return '';
+    }
+  }
+
+  function exportarRelatorioAtpCsv(regras) {
+    const cabecalhos = [
+      'Número da Regra',
+      'Status',
+      'Grupo',
+      'Prioridade',
+      'Localizador Origem (Remover)',
+      'Critério / Gatilho',
+      'Localizador Destino (Incluir)',
+      'Outros Critérios',
+      'Lembrete',
+      'Memo da Regra',
+      'URL Edição'
+    ];
+
+    const escCsv = (s) => {
+      const str = String(s ?? '').replace(/"/g, '""');
+      return '"' + str + '"';
+    };
+
+    const linhas = [cabecalhos.map(escCsv).join(';')];
+
+    regras.forEach(r => {
+      linhas.push([
+        escCsv(r.numRegra),
+        escCsv(r.ativa ? 'Ativa' : 'Desativada'),
+        escCsv(r.grupo),
+        escCsv(r.prioridade),
+        escCsv(r.origem),
+        escCsv(r.criterio),
+        escCsv(r.destino),
+        escCsv(r.outros),
+        escCsv(r.lembrete),
+        escCsv(r.memo || (_eprocCacheMemosAtp.get(r.codMemo) || '')),
+        escCsv(r.urlEditar)
+      ].join(';'));
+    });
+
+    const conteudo = '\uFEFF' + linhas.join('\r\n');
+    const blob = new Blob([conteudo], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dataHora = new Date().toISOString().slice(0, 10);
+    a.download = 'Relatorio_Regras_ATP_2G_' + dataHora + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function abrirRelatorioRegrasAtp() {
+    let overlay = document.getElementById('rito-modal-relatorio-atp');
+    if (overlay) overlay.remove();
+
+    overlay = document.createElement('div');
+    overlay.id = 'rito-modal-relatorio-atp';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483646; background:rgba(15,23,42,0.72); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out; box-sizing:border-box;';
+
+    overlay.innerHTML = `
+      <div style="background:#ffffff; border-radius:12px; width:100%; max-width:1200px; height:92vh; max-height:92vh; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4); border:1px solid #cbd5e1; overflow:hidden; display:flex; flex-direction:column; box-sizing:border-box;">
+        <!-- Header -->
+        <div style="background:linear-gradient(135deg, #00766c 0%, #005a52 100%); border-bottom:2px solid #004d40; padding:12px 18px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:22px;">📋</span>
+            <div>
+              <strong style="color:#ffffff; font-size:15px; letter-spacing:0.2px;">Relatório Geral de Regras • Automatizar Tramitação (ATPs)</strong>
+              <div style="color:#a7f3d0; font-size:11.5px; margin-top:1px;">Catálogo completo com métricas por grupo, fichas analíticas e dados de cada regra</div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" id="btn-atp-relat-exportar" style="background:#0284c7; color:#fff; border:1px solid #0369a1; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:5px; box-shadow:0 1px 2px rgba(0,0,0,0.15);" title="Baixar relatório completo em CSV para abrir no Excel">
+              <span>📥</span> Exportar CSV
+            </button>
+            <button type="button" id="btn-atp-relat-recarregar" style="background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px;" title="Atualizar dados da tabela lendo o eproc novamente">
+              <span>🔄</span> Atualizar
+            </button>
+            <button type="button" id="btn-atp-relat-fechar" style="background:none; border:none; font-size:20px; color:#ffffff; cursor:pointer; line-height:1; padding:0 6px;" title="Fechar">✕</button>
+          </div>
+        </div>
+
+        <!-- Conteúdo Interno com Loading Inicial -->
+        <div id="atp-relat-conteudo" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; padding:16px; gap:12px; box-sizing:border-box;">
+          <div id="atp-relat-spinner-box" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; gap:12px; color:#0f172a;">
+            <span style="font-size:32px; animation:ritoSpin 1s linear infinite;">⏳</span>
+            <strong id="atp-relat-spinner-msg" style="font-size:13.5px; color:#00766c;">Carregando regras de automatização do eproc...</strong>
+            <div style="width:300px; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
+              <div id="atp-relat-spinner-bar" style="width:15%; height:100%; background:linear-gradient(90deg, #00766c, #0284c7); transition:width 0.2s ease;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const fechar = () => { overlay.remove(); };
+    overlay.querySelector('#btn-atp-relat-fechar').onclick = fechar;
+    overlay.onclick = (e) => { if (e.target === overlay) fechar(); };
+
+    try {
+      const regras = await carregarRegrasAtpCompletas(false, (msg, pct) => {
+        const msgEl = overlay.querySelector('#atp-relat-spinner-msg');
+        const barEl = overlay.querySelector('#atp-relat-spinner-bar');
+        if (msgEl) msgEl.textContent = msg;
+        if (barEl) barEl.style.width = pct + '%';
+      });
+
+      renderizarModalRelatorioAtpConteudo(overlay, regras);
+    } catch (err) {
+      console.error('Erro ao carregar regras ATP:', err);
+      const conteudoEl = overlay.querySelector('#atp-relat-conteudo');
+      if (conteudoEl) {
+        conteudoEl.innerHTML = `
+          <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:20px; text-align:center; color:#991b1b; display:flex; flex-direction:column; align-items:center; gap:8px;">
+            <span style="font-size:28px;">❌</span>
+            <strong>Falha ao carregar as regras de automatização da Unidade</strong>
+            <div style="font-size:12px; color:#7f1d1d;">${escapeHtmlAtp(err.message || err)}</div>
+            <button type="button" onclick="document.getElementById('rito-modal-relatorio-atp')?.remove(); abrirRelatorioRegrasAtp();" style="margin-top:8px; padding:6px 14px; background:#dc2626; color:#fff; border:none; border-radius:4px; font-weight:600; cursor:pointer;">Tentar Novamente</button>
+          </div>
+        `;
+      }
+    }
+  }
+
+  function renderizarModalRelatorioAtpConteudo(overlay, regras) {
+    const conteudoEl = overlay.querySelector('#atp-relat-conteudo');
+    if (!conteudoEl) return;
+
+    // Métricas
+    const totalRegras = regras.length;
+    const totalAtivas = regras.filter(r => r.ativa).length;
+    const totalDesativadas = totalRegras - totalAtivas;
+    const totalComMemo = regras.filter(r => r.temMemo || r.memo || _eprocCacheMemosAtp.has(r.codMemo)).length;
+
+    // Agrupamento por Grupo
+    const gruposMap = new Map();
+    regras.forEach(r => {
+      const g = r.grupo || '(Sem Grupo)';
+      gruposMap.set(g, (gruposMap.get(g) || 0) + 1);
+    });
+
+    const gruposOrdenados = Array.from(gruposMap.entries()).sort((a, b) => b[1] - a[1]);
+
+    // Botão de exportação no header
+    const btnExp = overlay.querySelector('#btn-atp-relat-exportar');
+    if (btnExp) {
+      btnExp.onclick = () => { exportarRelatorioAtpCsv(regras); };
+    }
+
+    const btnRec = overlay.querySelector('#btn-atp-relat-recarregar');
+    if (btnRec) {
+      btnRec.onclick = async () => {
+        conteudoEl.innerHTML = `
+          <div id="atp-relat-spinner-box" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; gap:12px; color:#0f172a;">
+            <span style="font-size:32px; animation:ritoSpin 1s linear infinite;">⏳</span>
+            <strong id="atp-relat-spinner-msg" style="font-size:13.5px; color:#00766c;">Recarregando regras do eproc...</strong>
+            <div style="width:300px; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
+              <div id="atp-relat-spinner-bar" style="width:15%; height:100%; background:linear-gradient(90deg, #00766c, #0284c7); transition:width 0.2s ease;"></div>
+            </div>
+          </div>
+        `;
+        try {
+          const novasRegras = await carregarRegrasAtpCompletas(true, (msg, pct) => {
+            const msgEl = overlay.querySelector('#atp-relat-spinner-msg');
+            const barEl = overlay.querySelector('#atp-relat-spinner-bar');
+            if (msgEl) msgEl.textContent = msg;
+            if (barEl) barEl.style.width = pct + '%';
+          });
+          renderizarModalRelatorioAtpConteudo(overlay, novasRegras);
+        } catch (e) {
+          alertOriginal.call(window, 'Erro ao atualizar regras: ' + e.message);
+        }
+      };
+    }
+
+    // Chips de Grupo
+    const chipsHtml = [
+      `<button type="button" class="atp-chip-grupo active" data-grupo="" style="padding:4px 10px; font-size:11px; font-weight:700; border-radius:14px; border:1px solid #00766c; background:#00766c; color:#ffffff; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+        <span>Todos</span>
+        <span style="background:rgba(255,255,255,0.25); padding:1px 6px; border-radius:8px; font-size:10px;">${totalRegras}</span>
+      </button>`
+    ];
+
+    gruposOrdenados.forEach(([grp, count]) => {
+      chipsHtml.push(`
+        <button type="button" class="atp-chip-grupo" data-grupo="${escapeHtmlAtp(grp)}" style="padding:4px 10px; font-size:11px; font-weight:600; border-radius:14px; border:1px solid #cbd5e1; background:#f8fafc; color:#334155; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap; transition:all 0.15s ease;">
+          <span>${escapeHtmlAtp(grp)}</span>
+          <span style="background:#e2e8f0; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:700; color:#475569;">${count}</span>
+        </button>
+      `);
+    });
+
+    conteudoEl.innerHTML = `
+      <!-- Cards de Métricas do Topo -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+          <div style="background:#f0fdfa; border:1px solid #ccfbf1; border-radius:8px; width:38px; height:38px; display:flex; align-items:center; justify-content:center; font-size:20px;">📌</div>
+          <div>
+            <div style="font-size:10.5px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.3px;">Total de Regras</div>
+            <div style="font-size:18px; font-weight:800; color:#0f172a;">${totalRegras}</div>
+          </div>
+        </div>
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+          <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; width:38px; height:38px; display:flex; align-items:center; justify-content:center; font-size:20px;">✅</div>
+          <div>
+            <div style="font-size:10.5px; font-weight:600; color:#166534; text-transform:uppercase; letter-spacing:0.3px;">Regras Ativas</div>
+            <div style="font-size:18px; font-weight:800; color:#16a34a;">${totalAtivas}</div>
+          </div>
+        </div>
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+          <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; width:38px; height:38px; display:flex; align-items:center; justify-content:center; font-size:20px;">⏸️</div>
+          <div>
+            <div style="font-size:10.5px; font-weight:600; color:#991b1b; text-transform:uppercase; letter-spacing:0.3px;">Desativadas</div>
+            <div style="font-size:18px; font-weight:800; color:#dc2626;">${totalDesativadas}</div>
+          </div>
+        </div>
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; width:38px; height:38px; display:flex; align-items:center; justify-content:center; font-size:20px;">📁</div>
+          <div>
+            <div style="font-size:10.5px; font-weight:600; color:#475569; text-transform:uppercase; letter-spacing:0.3px;">Grupos de ATP</div>
+            <div style="font-size:18px; font-weight:800; color:#0284c7;">${gruposMap.size} grupos</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Barra de Chips de Grupo (Filtro Clicável) -->
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.3px;">
+            Filtrar por Grupo (${gruposMap.size} grupos encontrados):
+          </span>
+          <span id="atp-contador-regras-filtradas" style="font-size:11px; font-weight:600; color:#64748b;">
+            Exibindo ${totalRegras} de ${totalRegras} regras
+          </span>
+        </div>
+        <div id="atp-chips-container" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; max-height:76px; flex-wrap:wrap;">
+          ${chipsHtml.join('')}
+        </div>
+      </div>
+
+      <!-- Filtro de Texto e Status -->
+      <div style="display:flex; gap:8px; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px;">
+        <div style="flex:1; position:relative;">
+          <input type="text" id="atp-filtro-busca" placeholder="🔍 Digite para filtrar por qualquer campo (número, memo, grupo, evento, localizadores)..." style="width:100%; box-sizing:border-box; padding:7px 10px; font-size:12px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit; color:#1e293b; outline:none;" />
+        </div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <select id="atp-filtro-status" style="padding:6px 10px; font-size:11.5px; font-weight:600; border:1px solid #cbd5e1; border-radius:6px; color:#334155; background:#fff; cursor:pointer;">
+            <option value="">Status: Todos</option>
+            <option value="ativa">Somente Ativas</option>
+            <option value="desativada">Somente Desativadas</option>
+            <option value="memo">Somente com Memo/Lembrete</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tabela de Regras -->
+      <div style="flex:1; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; overflow:auto; position:relative; min-height:280px;">
+        <table id="tbl-atp-relatorio" style="width:100%; border-collapse:collapse; font-size:11.5px; text-align:left; color:#1e293b;">
+          <thead>
+            <tr style="background:#f1f5f9; color:#475569; position:sticky; top:0; z-index:10; border-bottom:2px solid #cbd5e1; text-transform:uppercase; font-size:10.5px; letter-spacing:0.3px;">
+              <th style="padding:8px 10px; width:65px; text-align:center;"># Regra</th>
+              <th style="padding:8px 10px; width:75px; text-align:center;">Status</th>
+              <th style="padding:8px 10px; width:170px;">Grupo</th>
+              <th style="padding:8px 10px; width:220px;">Localizador Origem</th>
+              <th style="padding:8px 10px; width:220px;">Gatilho / Critério</th>
+              <th style="padding:8px 10px;">Destino / Ações</th>
+              <th style="padding:8px 10px; width:130px; text-align:center;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-atp-relatorio-tbody">
+            <!-- Linhas geradas dinamicamente -->
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    let grupoAtivo = '';
+    let termoBusca = '';
+    let statusAtivo = '';
+
+    const tbody = overlay.querySelector('#tbl-atp-relatorio-tbody');
+    const contadorFiltradas = overlay.querySelector('#atp-contador-regras-filtradas');
+
+    const atualizarTabela = () => {
+      const termoNorm = normalizar(termoBusca);
+      const grupoNorm = normalizar(grupoAtivo);
+
+      const filtradas = regras.filter(r => {
+        if (grupoNorm && normalizar(r.grupo) !== grupoNorm) return false;
+        if (statusAtivo === 'ativa' && !r.ativa) return false;
+        if (statusAtivo === 'desativada' && r.ativa) return false;
+        if (statusAtivo === 'memo' && (!r.temMemo && !r.lembrete && !r.memo && !_eprocCacheMemosAtp.has(r.codMemo))) return false;
+
+        if (termoNorm) {
+          const haystack = normalizar([
+            r.numRegra,
+            r.grupo,
+            r.origem,
+            r.criterio,
+            r.destino,
+            r.outros,
+            r.lembrete,
+            r.memo,
+            r.prioridade,
+            _eprocCacheMemosAtp.get(r.codMemo) || ''
+          ].join(' '));
+          if (!haystack.includes(termoNorm)) return false;
+        }
+
+        return true;
+      });
+
+      if (contadorFiltradas) {
+        contadorFiltradas.textContent = `Exibindo ${filtradas.length} de ${totalRegras} regras`;
+      }
+
+      if (filtradas.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="padding:40px 10px; text-align:center; color:#64748b; font-size:12.5px;">
+              Nenhuma regra de automatização encontrada com os filtros selecionados.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filtradas.map((r, i) => {
+        const bgRow = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+        const temMemoRegra = r.temMemo || r.memo || _eprocCacheMemosAtp.has(r.codMemo);
+        const temLemb = !!r.lembrete;
+
+        return `
+          <tr class="atp-relat-row" data-id="${r.id}" style="background:${bgRow}; border-bottom:1px solid #e2e8f0; transition:background 0.1s ease; cursor:pointer;">
+            <td style="padding:8px 10px; text-align:center; font-weight:800; color:#0f172a; font-size:12px;">
+              ${r.numRegra}
+            </td>
+            <td style="padding:8px 10px; text-align:center;">
+              <span style="display:inline-block; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; ${r.ativa ? 'background:#dcfce7; color:#15803d; border:1px solid #86efac;' : 'background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5;'}">
+                ${r.ativa ? 'Ativa' : 'Desativada'}
+              </span>
+            </td>
+            <td style="padding:8px 10px; font-weight:600; color:#00766c;">
+              ${escapeHtmlAtp(r.grupo)}
+            </td>
+            <td style="padding:8px 10px; color:#334155; line-height:1.35; max-width:220px;">
+              <div style="overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;" title="${escapeHtmlAtp(r.origem)}">
+                ${escapeHtmlAtp(r.origem || '—')}
+              </div>
+            </td>
+            <td style="padding:8px 10px; color:#334155; line-height:1.35; max-width:220px;">
+              <div style="overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;" title="${escapeHtmlAtp(r.criterio)}">
+                ${escapeHtmlAtp(r.criterio || '—')}
+              </div>
+            </td>
+            <td style="padding:8px 10px; color:#334155; line-height:1.35;">
+              <div style="overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;" title="${escapeHtmlAtp(r.destino)}">
+                ${escapeHtmlAtp(r.destino || '—')}
+              </div>
+              ${temMemoRegra ? '<div style="margin-top:3px;"><span style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:4px;">📝 Possui Memo</span></div>' : ''}
+              ${temLemb ? '<div style="margin-top:2px;"><span style="background:#ffedd5; color:#9a3412; border:1px solid #fed7aa; font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:4px;">💬 Possui Lembrete</span></div>' : ''}
+            </td>
+            <td style="padding:8px 10px; text-align:center; white-space:nowrap;">
+              <div style="display:flex; gap:4px; justify-content:center;" onclick="event.stopPropagation();">
+                <button type="button" class="btn-atp-ver-ficha" data-num="${r.numRegra}" style="padding:4px 8px; font-size:10.5px; font-weight:700; background:#0284c7; color:#fff; border:1px solid #0369a1; border-radius:4px; cursor:pointer;" title="Abrir ficha completa da regra com apenas os campos preenchidos">
+                  📄 Ficha
+                </button>
+                ${r.urlEditar ? `
+                  <a href="${escapeHtmlAtp(r.urlEditar)}" target="_blank" style="padding:4px 7px; font-size:10.5px; font-weight:600; background:#ffffff; color:#475569; border:1px solid #cbd5e1; border-radius:4px; text-decoration:none; display:inline-flex; align-items:center;" title="Abrir tela de edição da regra no eproc">
+                    ✏️
+                  </a>
+                ` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Click handler para abrir a ficha ao clicar no botão ou na linha
+      tbody.querySelectorAll('.atp-relat-row').forEach(row => {
+        row.onclick = () => {
+          const id = row.getAttribute('data-id');
+          const regra = regras.find(r => r.id === id);
+          if (regra) exibirFichaRegraAtp(regra);
+        };
+      });
+
+      tbody.querySelectorAll('.btn-atp-ver-ficha').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const num = btn.getAttribute('data-num');
+          const regra = regras.find(r => r.numRegra === num);
+          if (regra) exibirFichaRegraAtp(regra);
+        };
+      });
+    };
+
+    // Eventos de filtro
+    const inputBusca = overlay.querySelector('#atp-filtro-busca');
+    if (inputBusca) {
+      inputBusca.oninput = (e) => {
+        termoBusca = e.target.value;
+        atualizarTabela();
+      };
+    }
+
+    const selectStatus = overlay.querySelector('#atp-filtro-status');
+    if (selectStatus) {
+      selectStatus.onchange = (e) => {
+        statusAtivo = e.target.value;
+        atualizarTabela();
+      };
+    }
+
+    overlay.querySelectorAll('.atp-chip-grupo').forEach(chip => {
+      chip.onclick = () => {
+        overlay.querySelectorAll('.atp-chip-grupo').forEach(c => {
+          c.classList.remove('active');
+          c.style.background = '#f8fafc';
+          c.style.color = '#334155';
+          c.style.borderColor = '#cbd5e1';
+          const badge = c.querySelector('span:last-child');
+          if (badge) { badge.style.background = '#e2e8f0'; badge.style.color = '#475569'; }
+        });
+        chip.classList.add('active');
+        chip.style.background = '#00766c';
+        chip.style.color = '#ffffff';
+        chip.style.borderColor = '#00766c';
+        const badgeActive = chip.querySelector('span:last-child');
+        if (badgeActive) { badgeActive.style.background = 'rgba(255,255,255,0.25)'; badgeActive.style.color = '#ffffff'; }
+
+        grupoAtivo = chip.getAttribute('data-grupo') || '';
+        atualizarTabela();
+      };
+    });
+
+    atualizarTabela();
+  }
+
+  async function exibirFichaRegraAtp(regra) {
+    let overlayFicha = document.getElementById('rito-modal-ficha-atp');
+    if (overlayFicha) overlayFicha.remove();
+
+    overlayFicha = document.createElement('div');
+    overlayFicha.id = 'rito-modal-ficha-atp';
+    overlayFicha.style.cssText = 'position:fixed; inset:0; z-index:2147483647; background:rgba(15,23,42,0.65); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out; box-sizing:border-box;';
+
+    // Se o memo ainda não estiver carregado e houver codMemo, tenta carregar
+    let memoTextoAtual = regra.memo || (_eprocCacheMemosAtp.get(regra.codMemo) || '');
+
+    overlayFicha.innerHTML = `
+      <div style="background:#ffffff; border-radius:12px; width:100%; max-width:750px; max-height:90vh; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); border:1px solid #cbd5e1; overflow:hidden; display:flex; flex-direction:column; box-sizing:border-box;">
+        <!-- Header da Ficha -->
+        <div style="background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding:12px 18px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:22px;">📄</span>
+            <div>
+              <strong style="color:#ffffff; font-size:15px;">Ficha Detalhada da Regra #${regra.numRegra}</strong>
+              <div style="color:#bae6fd; font-size:11px;">Exibindo apenas campos com dados efetivamente configurados na regra</div>
+            </div>
+          </div>
+          <button type="button" id="btn-fechar-ficha-topo" style="background:none; border:none; font-size:20px; color:#ffffff; cursor:pointer; line-height:1; padding:0 4px;" title="Fechar">✕</button>
+        </div>
+
+        <!-- Conteúdo com apenas campos onde há informação preenchida -->
+        <div style="padding:18px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; font-size:12.5px; color:#1e293b; line-height:1.45;">
+
+          <!-- Card 1: Identificação Básica -->
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px;">
+            <div style="font-size:11px; font-weight:700; color:#0369a1; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:8px; display:flex; align-items:center; gap:5px;">
+              <span>📌</span> Identificação da Regra
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+              <div>
+                <span style="font-size:11px; color:#64748b; font-weight:600;">Número:</span>
+                <div style="font-weight:800; font-size:14px; color:#0f172a;">#${regra.numRegra}</div>
+              </div>
+              <div>
+                <span style="font-size:11px; color:#64748b; font-weight:600;">Status no Órgão:</span>
+                <div>
+                  <span style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; ${regra.ativa ? 'background:#dcfce7; color:#15803d; border:1px solid #86efac;' : 'background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5;'}">
+                    ${regra.ativa ? '✅ Ativa' : '⏸️ Desativada'}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span style="font-size:11px; color:#64748b; font-weight:600;">Grupo:</span>
+                <div style="font-weight:700; color:#00766c;">${escapeHtmlAtp(regra.grupo)}</div>
+              </div>
+              ${regra.prioridade ? `
+                <div>
+                  <span style="font-size:11px; color:#64748b; font-weight:600;">Ordem de Prioridade:</span>
+                  <div style="font-weight:600; color:#475569;">${escapeHtmlAtp(regra.prioridade)}</div>
+                </div>
+              ` : ''}
+              ${regra.id ? `
+                <div>
+                  <span style="font-size:11px; color:#64748b; font-weight:600;">ID Sistema:</span>
+                  <div style="font-family:monospace; font-size:11px; color:#64748b;">${escapeHtmlAtp(regra.id)}</div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Card 2: Localizadores de Origem (Remover) -->
+          ${regra.origem ? `
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; box-shadow:0 1px 2px rgba(0,0,0,0.02);">
+              <div style="font-size:11px; font-weight:700; color:#b45309; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:6px; display:flex; align-items:center; gap:5px;">
+                <span>🚪</span> Localizadores de Origem (Remover)
+              </div>
+              <div style="background:#fffbeb; border:1px solid #fef3c7; border-radius:6px; padding:9px 12px; color:#92400e; font-size:12px; line-height:1.45; word-break:break-word;">
+                ${escapeHtmlAtp(regra.origem)}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Card 3: Critério / Gatilho Disparador -->
+          ${regra.criterio ? `
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; box-shadow:0 1px 2px rgba(0,0,0,0.02);">
+              <div style="font-size:11px; font-weight:700; color:#0369a1; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:6px; display:flex; align-items:center; gap:5px;">
+                <span>⚡</span> Tipo de Controle &amp; Critério Disparador
+              </div>
+              <div style="background:#f0f9ff; border:1px solid #e0f2fe; border-radius:6px; padding:9px 12px; color:#075985; font-size:12px; line-height:1.45; word-break:break-word;">
+                ${escapeHtmlAtp(regra.criterio)}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Card 4: Destino e Ações Programadas -->
+          ${regra.destino ? `
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; box-shadow:0 1px 2px rgba(0,0,0,0.02);">
+              <div style="font-size:11px; font-weight:700; color:#15803d; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:6px; display:flex; align-items:center; gap:5px;">
+                <span>🎯</span> Localizador Destino &amp; Ações Programadas
+              </div>
+              <div style="background:#f0fdf4; border:1px solid #dcfce7; border-radius:6px; padding:9px 12px; color:#166534; font-size:12px; line-height:1.45; word-break:break-word;">
+                ${escapeHtmlAtp(regra.destino)}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Card 5: Lembrete da Regra (se preenchido) -->
+          ${regra.lembrete ? `
+            <div style="background:#fff7ed; border:1px solid #ffedd5; border-radius:8px; padding:12px 14px;">
+              <div style="font-size:11px; font-weight:700; color:#c2410c; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:6px; display:flex; align-items:center; gap:5px;">
+                <span>💬</span> Lembrete Configurado na Ação
+              </div>
+              <div style="background:#ffffff; border:1px solid #fed7aa; border-radius:6px; padding:9px 12px; color:#9a3412; font-size:12px; line-height:1.45; font-weight:600;">
+                ${escapeHtmlAtp(regra.lembrete)}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Card 6: Outros Critérios (se preenchido) -->
+          ${regra.outros ? `
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px;">
+              <div style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:6px; display:flex; align-items:center; gap:5px;">
+                <span>📋</span> Outros Critérios Configurados
+              </div>
+              <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:9px 12px; color:#334155; font-size:12px; line-height:1.45;">
+                ${escapeHtmlAtp(regra.outros)}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Card 7: Memo da Regra (Anotação da Unidade) -->
+          <div style="background:#faf5ff; border:1px solid #f3e8ff; border-radius:8px; padding:12px 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <div style="font-size:11px; font-weight:700; color:#7e22ce; text-transform:uppercase; letter-spacing:0.3px; display:flex; align-items:center; gap:5px;">
+                <span>📝</span> Memo da Regra (Anotação da Unidade)
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button type="button" id="btn-atp-buscar-memo-online" style="background:#9333ea; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:10px; font-weight:700; cursor:pointer;" title="Consultar texto oficial gravado no eproc">
+                  🔍 Consultar no eproc
+                </button>
+                <button type="button" id="btn-atp-copiar-memo" style="display:${memoTextoAtual ? 'inline-block' : 'none'}; background:#ffffff; color:#7e22ce; border:1px solid #d8b4fe; border-radius:4px; padding:3px 8px; font-size:10px; font-weight:600; cursor:pointer;">
+                  📋 Copiar Memo
+                </button>
+              </div>
+            </div>
+            <div id="atp-memo-texto-box" style="background:#ffffff; border:1px solid #e9d5ff; border-radius:6px; padding:10px 12px; color:#581c87; font-size:12px; line-height:1.5; white-space:pre-wrap; min-height:48px;">
+              ${memoTextoAtual ? escapeHtmlAtp(memoTextoAtual) : '<span style="color:#a855f7; font-style:italic;">Nenhum texto de memo salvo em cache. Clique em "Consultar no eproc" para buscar online.</span>'}
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Footer da Ficha -->
+        <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:10px 18px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+          <div>
+            ${regra.urlLog ? `
+              <a href="${escapeHtmlAtp(regra.urlLog)}" target="_blank" style="padding:6px 12px; font-size:11.5px; font-weight:600; color:#475569; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                <span>🔍</span> Ver Logs da Regra
+              </a>
+            ` : ''}
+          </div>
+          <div style="display:flex; gap:8px;">
+            ${regra.urlEditar ? `
+              <a href="${escapeHtmlAtp(regra.urlEditar)}" target="_blank" style="padding:7px 14px; font-size:12px; font-weight:700; color:#ffffff; background:#0284c7; border:1px solid #0369a1; border-radius:6px; text-decoration:none; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 2px rgba(2,132,199,0.3);">
+                <span>✏️</span> Editar Regra no eproc
+              </a>
+            ` : ''}
+            <button type="button" id="btn-fechar-ficha-rodape" style="padding:7px 14px; font-size:12px; font-weight:600; color:#475569; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlayFicha);
+
+    const fecharFicha = () => { overlayFicha.remove(); };
+    overlayFicha.querySelector('#btn-fechar-ficha-topo').onclick = fecharFicha;
+    overlayFicha.querySelector('#btn-fechar-ficha-rodape').onclick = fecharFicha;
+    overlayFicha.onclick = (e) => { if (e.target === overlayFicha) fecharFicha(); };
+
+    // Botão de buscar memo online
+    const btnBuscarMemo = overlayFicha.querySelector('#btn-atp-buscar-memo-online');
+    const memoBox = overlayFicha.querySelector('#atp-memo-texto-box');
+    const btnCopiar = overlayFicha.querySelector('#btn-atp-copiar-memo');
+
+    if (btnBuscarMemo && memoBox) {
+      btnBuscarMemo.onclick = async () => {
+        btnBuscarMemo.disabled = true;
+        btnBuscarMemo.textContent = '⏳ Buscando...';
+        try {
+          const texto = await obterTextoMemoAtpSubform(regra.codMemo, regra.urlSubformMemo);
+          if (texto) {
+            regra.memo = texto;
+            memoBox.textContent = texto;
+            if (btnCopiar) btnCopiar.style.display = 'inline-block';
+          } else {
+            memoBox.innerHTML = '<span style="color:#64748b; font-style:italic;">Nenhum memo cadastrado nesta regra no eproc.</span>';
+          }
+        } catch (eM) {
+          memoBox.innerHTML = '<span style="color:#dc2626;">Erro ao buscar memo: ' + escapeHtmlAtp(eM.message || eM) + '</span>';
+        } finally {
+          btnBuscarMemo.disabled = false;
+          btnBuscarMemo.textContent = '🔍 Consultar no eproc';
+        }
+      };
+    }
+
+    if (btnCopiar && memoBox) {
+      btnCopiar.onclick = () => {
+        const txt = memoBox.textContent || '';
+        if (txt) {
+          navigator.clipboard.writeText(txt).then(() => {
+            btnCopiar.textContent = '✓ Copiado!';
+            setTimeout(() => { btnCopiar.textContent = '📋 Copiar Memo'; }, 1500);
+          });
+        }
+      };
+    }
+  }
+
   function inicializarModuloGruposAtp(forcarRecarregar = false) {
     const termoInput = document.getElementById('rito-atp-pesquisa-termo');
     const btnConsultar = document.getElementById('btn-atp-consultar');
@@ -19477,6 +20388,13 @@
       btnParar.onclick = () => {
         _eprocAtpPararSolicitado = true;
         addLog('⏹ Solicitação de parada recebida. Finalizando grupo atual...', 'warn');
+      };
+    }
+
+    const btnRelat = document.getElementById('btn-atp-abrir-relatorio');
+    if (btnRelat) {
+      btnRelat.onclick = () => {
+        abrirRelatorioRegrasAtp();
       };
     }
 
@@ -19660,6 +20578,11 @@
               </span>
               <span id="atp-contador-badge" style="font-size:10.5px; color:#475569; font-weight:600; background:#f1f5f9; padding:2px 7px; border-radius:10px; border:1px solid #e2e8f0;">0 grupos</span>
             </div>
+
+            <!-- Botão de Acesso ao Relatório Geral de Regras & Fichas -->
+            <button type="button" id="btn-atp-abrir-relatorio" class="rito-btn" style="width:100%; box-sizing:border-box; margin-bottom:10px; padding:8px 12px; font-size:12px; font-weight:700; background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color:#ffffff; border:1px solid #0284c7; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 2px 4px rgba(2,132,199,0.25);" title="Abre a tabela completa de regras com métricas por grupo, filtros instantâneos e ficha individual de cada regra">
+              <span>📋</span> RELATÓRIO DE REGRAS ATP (TABELA &amp; FICHAS)
+            </button>
             <div style="font-size:11px; color:#475569; line-height:1.4; margin-bottom:8px;">
               Filtre e importe os grupos de regras padronizados de <strong>2G - Direito Público</strong>. Grupos já existentes na unidade são identificados e desabilitados para prevenir duplicação.
             </div>
