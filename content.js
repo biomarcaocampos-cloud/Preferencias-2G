@@ -19503,37 +19503,74 @@
       const aGrp = tds[2].querySelector('a.link-info, a');
       grupo = aGrp ? cleanTxt(aGrp.textContent) : cleanTxt(tds[2].textContent).split('==')[0].trim();
     }
-    grupo = grupo.replace(/^==\s*[^=]+==\s*/g, '').trim() || '(Sem Grupo)';
+    grupo = grupo.replace(/^==\s*[^=]+==\s*/g, '').replace(/^[^\p{L}\p{N}\s.-]+/u, '').trim() || '(Sem Grupo)';
 
     const tdOrigem = tds[3];
-    let origem = '';
+    let origem = '—';
+    let operacaoOrigem = 'Manter na Origem';
     if (tdOrigem) {
       const divComp = tdOrigem.querySelector('div[id^="dadosCompletos_"]');
       origem = divComp ? cleanTxt(divComp.textContent) : cleanTxt(tdOrigem.textContent);
-      origem = origem.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+      origem = origem.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').replace(/(?:\s*OU\s*)+$/g, '').trim() || '—';
+      if (/Comportamento do Localizador REMOVER|Remover o processo/i.test(tdOrigem.innerHTML || tdOrigem.textContent)) {
+        operacaoOrigem = 'Remover da Origem';
+      }
     }
 
     const tdCriterio = tds[4];
-    let criterio = '';
+    let criterio = '—';
     if (tdCriterio) {
       const divComp = tdCriterio.querySelector('div[id^="dadosCompletos_"]');
       criterio = divComp ? cleanTxt(divComp.textContent) : cleanTxt(tdCriterio.textContent);
-      criterio = criterio.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+      criterio = criterio.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').replace(/(?:\s*OU\s*)+$/g, '').trim() || '—';
     }
 
     const tdDestino = tds[5];
-    let destino = '';
-    let lembrete = '';
+    let destino = '—';
+    let acaoProgramada = '—';
+    let eventoAutomatizado = '—';
+    let orgaoEvento = '—';
+    let localizadorErro = '—';
+    let lembrete = '—';
+
     if (tdDestino) {
-      const mLemb = (tdDestino.innerHTML || '').match(/Lembrete:\s*<span[^>]*>([\s\S]*?)<\/span>/i);
+      const raw5 = tdDestino.innerHTML || '';
+      const mAcao = raw5.match(/Executar Ação Programada:[\s\S]*?<div[^>]*style="[^"]*font-weight:\s*bold[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+                    raw5.match(/<div[^>]*style="[^"]*color:\s*blue[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      if (mAcao) acaoProgramada = cleanTxt(mAcao[1]);
+
+      const mEvt = raw5.match(/Evento:\s*<span[^>]*>([\s\S]*?)<\/span>|Evento:\s*([^\n<]+)/i);
+      if (mEvt) eventoAutomatizado = cleanTxt(mEvt[1] || mEvt[2]);
+
+      const mOrg = raw5.match(/(?:Órgão|Orgão Destino):\s*<span[^>]*>([\s\S]*?)<\/span>|(?:Órgão|Orgão Destino):\s*([^\n<]+)/i);
+      if (mOrg) orgaoEvento = cleanTxt(mOrg[1] || mOrg[2]);
+
+      const mErr = raw5.match(/Localizador de Erro:\s*([^\n<]+)/i);
+      if (mErr) localizadorErro = cleanTxt(mErr[1]);
+
+      const mLemb = raw5.match(/Lembrete:\s*<span[^>]*>([\s\S]*?)<\/span>/i);
       if (mLemb) lembrete = cleanTxt(mLemb[1]);
-      destino = cleanTxt(tdDestino.textContent);
-      destino = destino.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+
+      const parts5 = raw5.split(/Executar Ação Programada:/i);
+      destino = cleanTxt(parts5[0]).replace(/\s*\+\s*$/, '').trim() || '—';
     }
 
     const tdOutros = tds[6];
-    let outros = tdOutros ? cleanTxt(tdOutros.textContent) : '';
-    outros = outros.replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+    let classesFiltro = '—';
+    let outrosFiltros = '—';
+    let outros = '';
+    if (tdOutros) {
+      const raw6 = (tdOutros.querySelector('div[id^="dadosCompletos_"]') || tdOutros).innerHTML || '';
+      const mClasse = raw6.match(/<span[^>]*class="lblFiltro"[^>]*>Classe:\s*<\/span>([\s\S]*?)(?:<div|<\/div|$)/i) ||
+                      raw6.match(/Classe:\s*([\s\S]*?)(?:<div|<\/div|$)/i);
+      if (mClasse) {
+        classesFiltro = cleanTxt(mClasse[1]).replace(/(?:\s*OU\s*)+/g, ' OU ').trim() || '—';
+      }
+      let rest6 = raw6;
+      if (mClasse) rest6 = rest6.replace(mClasse[0], '');
+      outrosFiltros = cleanTxt(rest6).replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim() || '—';
+      outros = cleanTxt(tdOutros.textContent).replace(/\s*\[\s*\+\s*Expandir\s*\]\s*/gi, '').trim();
+    }
 
     const tdAcoes = tds[7];
     let codMemo = '';
@@ -19571,20 +19608,30 @@
     return {
       id,
       numRegra,
+      nome: `Regra ${numRegra}`,
       ativa,
-      prioridade,
+      situacao: ativa ? 'Ativa' : 'Desativada',
+      prioridade: prioridade || '—',
       grupo,
+      operacaoOrigem,
       origem,
       criterio,
       destino,
+      acaoProgramada,
+      eventoAutomatizado,
+      orgaoEvento,
+      localizadorErro,
+      classesFiltro,
+      outrosFiltros,
       outros,
       lembrete,
       codMemo,
-      memo: temMemo ? memoTitle : (_eprocCacheMemosAtp.get(codMemo) || ''),
+      memo: temMemo ? memoTitle : (_eprocCacheMemosAtp.get(codMemo) || '—'),
       temMemo,
       urlEditar,
       urlLog,
-      urlSubformMemo
+      urlSubformMemo,
+      detalhado: true
     };
   }
 
@@ -19744,77 +19791,7 @@
   }
 
   async function abrirRelatorioRegrasAtp() {
-    let overlay = document.getElementById('rito-modal-relatorio-atp');
-    if (overlay) overlay.remove();
-
-    overlay = document.createElement('div');
-    overlay.id = 'rito-modal-relatorio-atp';
-    overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483646; background:rgba(15,23,42,0.72); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; animation:ritoFadeIn 0.15s ease-out; box-sizing:border-box;';
-
-    overlay.innerHTML = `
-      <div style="background:#ffffff; border-radius:12px; width:100%; max-width:1200px; height:92vh; max-height:92vh; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4); border:1px solid #cbd5e1; overflow:hidden; display:flex; flex-direction:column; box-sizing:border-box;">
-        <!-- Header -->
-        <div style="background:linear-gradient(135deg, #00766c 0%, #005a52 100%); border-bottom:2px solid #004d40; padding:12px 18px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-size:22px;">📋</span>
-            <div>
-              <strong style="color:#ffffff; font-size:15px; letter-spacing:0.2px;">Relatório Geral de Regras • Automatizar Tramitação (ATPs)</strong>
-              <div style="color:#a7f3d0; font-size:11.5px; margin-top:1px;">Catálogo completo com métricas por grupo, fichas analíticas e dados de cada regra</div>
-            </div>
-          </div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <button type="button" id="btn-atp-relat-exportar" style="background:#0284c7; color:#fff; border:1px solid #0369a1; border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:5px; box-shadow:0 1px 2px rgba(0,0,0,0.15);" title="Baixar relatório completo em CSV para abrir no Excel">
-              <span>📥</span> Exportar CSV
-            </button>
-            <button type="button" id="btn-atp-relat-recarregar" style="background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:6px 12px; font-size:11.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px;" title="Atualizar dados da tabela lendo o eproc novamente">
-              <span>🔄</span> Atualizar
-            </button>
-            <button type="button" id="btn-atp-relat-fechar" style="background:none; border:none; font-size:20px; color:#ffffff; cursor:pointer; line-height:1; padding:0 6px;" title="Fechar">✕</button>
-          </div>
-        </div>
-
-        <!-- Conteúdo Interno com Loading Inicial -->
-        <div id="atp-relat-conteudo" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; padding:16px; gap:12px; box-sizing:border-box;">
-          <div id="atp-relat-spinner-box" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; gap:12px; color:#0f172a;">
-            <span style="font-size:32px; animation:ritoSpin 1s linear infinite;">⏳</span>
-            <strong id="atp-relat-spinner-msg" style="font-size:13.5px; color:#00766c;">Carregando regras de automatização do eproc...</strong>
-            <div style="width:300px; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
-              <div id="atp-relat-spinner-bar" style="width:15%; height:100%; background:linear-gradient(90deg, #00766c, #0284c7); transition:width 0.2s ease;"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    const fechar = () => { overlay.remove(); };
-    overlay.querySelector('#btn-atp-relat-fechar').onclick = fechar;
-    overlay.onclick = (e) => { if (e.target === overlay) fechar(); };
-
-    try {
-      const regras = await carregarRegrasAtpCompletas(false, (msg, pct) => {
-        const msgEl = overlay.querySelector('#atp-relat-spinner-msg');
-        const barEl = overlay.querySelector('#atp-relat-spinner-bar');
-        if (msgEl) msgEl.textContent = msg;
-        if (barEl) barEl.style.width = pct + '%';
-      });
-
-      renderizarModalRelatorioAtpConteudo(overlay, regras);
-    } catch (err) {
-      console.error('Erro ao carregar regras ATP:', err);
-      const conteudoEl = overlay.querySelector('#atp-relat-conteudo');
-      if (conteudoEl) {
-        conteudoEl.innerHTML = `
-          <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:20px; text-align:center; color:#991b1b; display:flex; flex-direction:column; align-items:center; gap:8px;">
-            <span style="font-size:28px;">❌</span>
-            <strong>Falha ao carregar as regras de automatização da Unidade</strong>
-            <div style="font-size:12px; color:#7f1d1d;">${escapeHtmlAtp(err.message || err)}</div>
-            <button type="button" onclick="document.getElementById('rito-modal-relatorio-atp')?.remove(); abrirRelatorioRegrasAtp();" style="margin-top:8px; padding:6px 14px; background:#dc2626; color:#fff; border:none; border-radius:4px; font-weight:600; cursor:pointer;">Tentar Novamente</button>
-          </div>
-        `;
-      }
-    }
+    return abrirModalVisualizadorPreferencias('grupos_atp');
   }
 
   function renderizarModalRelatorioAtpConteudo(overlay, regras) {
@@ -21090,11 +21067,7 @@
         btnVisualizarPrefs.title = 'Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo';
       }
       btnVisualizarPrefs.onclick = () => {
-        if (moduloAtivo === 'grupos_atp') {
-          abrirRelatorioRegrasAtp();
-        } else {
-          abrirModalVisualizadorPreferencias(moduloAtivo);
-        }
+        abrirModalVisualizadorPreferencias(moduloAtivo);
       };
     }
 
@@ -31037,6 +31010,80 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     return '\uFEFF' + [header, ...body].join('\r\n');
   }
 
+  // -------------------- MÓDULO 6: GRUPOS ATP --------------------
+  async function obterContextoAtpVisualizador() {
+    let docBase = document;
+    let urlListar = window.location.href;
+
+    if (!ehTelaDeAutomatizacaoLocalizadores()) {
+      urlListar = obterUrlAcaoMenu('automatizar_localizadores') || ('controlador.php?acao=automatizar_localizadores&hash=' + (typeof obterHashAtual === 'function' ? obterHashAtual() : ''));
+      try {
+        const resp = await fetch(urlListar, { credentials: 'same-origin' });
+        if (!resp.ok) {
+          return {
+            disponivel: false,
+            motivo: `Não foi possível carregar a tela de Automatização em segundo plano (HTTP ${resp.status}). Abra a tela de Automatização de Localizadores no eproc.`
+          };
+        }
+        const html = await lerRespostaTexto(resp);
+        docBase = new DOMParser().parseFromString(html, 'text/html');
+      } catch (e) {
+        return {
+          disponivel: false,
+          motivo: `Erro de conexão ao acessar a tela de Automatização: ${e.message || String(e)}`
+        };
+      }
+    }
+
+    return {
+      disponivel: true,
+      docBase,
+      urlListar
+    };
+  }
+
+  async function obterListaCompletaRegrasAtpVisualizador(contexto) {
+    const regrasCruas = await carregarRegrasAtpCompletas(false);
+    return (regrasCruas || []).map((r, i) => ({
+      _indice: i + 1,
+      id: r.id || String(i + 1),
+      numRegra: r.numRegra || String(i + 1),
+      nome: r.nome || `Regra ${r.numRegra || i + 1}`,
+      situacao: r.ativa ? 'Ativa' : 'Desativada',
+      prioridade: r.prioridade || '—',
+      grupo: r.grupo || '(Sem Grupo)',
+      operacaoOrigem: r.operacaoOrigem || 'Manter na Origem',
+      origem: r.origem || '—',
+      criterio: r.criterio || '—',
+      destino: r.destino || '—',
+      acaoProgramada: r.acaoProgramada || '—',
+      eventoAutomatizado: r.eventoAutomatizado || '—',
+      orgaoEvento: r.orgaoEvento || '—',
+      localizadorErro: r.localizadorErro || '—',
+      classesFiltro: r.classesFiltro || '—',
+      outrosFiltros: r.outrosFiltros || '—',
+      lembrete: r.lembrete || '—',
+      memo: r.memo || '—',
+      urlEditar: r.urlEditar || '',
+      urlLog: r.urlLog || '',
+      urlSubformMemo: r.urlSubformMemo || '',
+      detalhado: true
+    }));
+  }
+
+  async function carregarDetalhesRegraAtpVisualizador(item, contexto, opts = {}) {
+    if (item.urlSubformMemo && (!item.memo || item.memo === '—' || opts.forcarRecarga)) {
+      try {
+        const memoTexto = await obterTextoMemoAtpSubform(item.urlSubformMemo);
+        if (memoTexto) {
+          item.memo = memoTexto;
+        }
+      } catch (_) {}
+    }
+    item.detalhado = true;
+    return item;
+  }
+
   const MINUTAS_VIEWER_COLUNAS = [
     { key: '_indice', label: '#', sticky: 'num' },
     { key: 'nome', label: 'Preferência (Descrição)', sticky: 'nome' },
@@ -31183,6 +31230,26 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     { key: 'opcoesExtras', label: 'Outros Filtros' }
   ];
 
+  const ATP_VIEWER_COLUNAS = [
+    { key: '_indice', label: '#', sticky: 'num' },
+    { key: 'nome', label: 'Regra (Nº e Identificação)', sticky: 'nome' },
+    { key: 'situacao', label: 'Situação', pillType: 'situacao' },
+    { key: 'prioridade', label: 'Prioridade', pillType: 'prioridade' },
+    { key: 'grupo', label: 'Grupo de Regras', pillType: 'grupo' },
+    { key: 'operacaoOrigem', label: 'Operação Origem' },
+    { key: 'origem', label: 'Localizadores Origem' },
+    { key: 'criterio', label: 'Critério / Gatilho' },
+    { key: 'destino', label: 'Localizadores Destino' },
+    { key: 'acaoProgramada', label: 'Ação Programada' },
+    { key: 'eventoAutomatizado', label: 'Evento Automatizado' },
+    { key: 'orgaoEvento', label: 'Órgão do Evento' },
+    { key: 'localizadorErro', label: 'Localizador de Erro' },
+    { key: 'classesFiltro', label: 'Classes Filtro' },
+    { key: 'outrosFiltros', label: 'Outros Filtros' },
+    { key: 'lembrete', label: 'Lembrete' },
+    { key: 'memo', label: 'Memo (Observações)' }
+  ];
+
   const VISUALIZADORES_MODULOS_CONFIG = {
     minutas: {
       titulo: 'Preferências Criadas — Módulo Minutas (Nova Minuta)',
@@ -31237,11 +31304,24 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       obterContexto: obterContextoRelatorioVisualizador,
       obterLista: obterListaCompletaPreferenciasRelatorios,
       carregarDetalhe: carregarDetalhesPreferenciaRelatorio
+    },
+    grupos_atp: {
+      titulo: 'Regras de Automatização Processual — Módulo Grupos ATP (2G)',
+      subtitulo: 'Visualização tabular completa de regras de automatização de localizadores cadastradas no eproc',
+      nomeArquivoCsv: 'regras_automatizacao_atp_2g.csv',
+      placeholderBusca: '🔍 Buscar por regra, grupo, ação, condição, localizador, memo, classe...',
+      usaFiltrosLocIncluirRemover: false,
+      campoLocFiltroUnico: 'grupo',
+      labelLocFiltroUnico: 'Grupo: Todos',
+      colunas: ATP_VIEWER_COLUNAS,
+      obterContexto: obterContextoAtpVisualizador,
+      obterLista: obterListaCompletaRegrasAtpVisualizador,
+      carregarDetalhe: carregarDetalhesRegraAtpVisualizador
     }
   };
 
   function renderizarConteudoCelulaViewer(row, col) {
-    if (!row.detalhado && !['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial'].includes(col.key)) {
+    if (!row.detalhado && !['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial', 'situacao', 'prioridade'].includes(col.key)) {
       if (row.erroDetalhe) {
         return (col.key === 'modoLocalizadores' || col.key === 'tiposDocumento' || col.key === 'localizadoresFiltro')
           ? `<span class="eproc-v-pill eproc-v-pill-err" title="${escapeHtmlViewer(row.erroDetalhe)}">Erro ao ler</span>`
@@ -31262,6 +31342,13 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     if (col.pillType === 'simNao') {
       const cls = texto === 'Sim' ? 'eproc-v-pill-sim' : 'eproc-v-pill-nao';
       return `<span class="eproc-v-pill ${cls}">${escapeHtmlViewer(texto)}</span>`;
+    }
+    if (col.pillType === 'situacao') {
+      const cls = (/ativa/i.test(texto) && !/desativ/i.test(texto)) ? 'eproc-v-pill-sim' : 'eproc-v-pill-nao';
+      return `<span class="eproc-v-pill ${cls}">${escapeHtmlViewer(texto)}</span>`;
+    }
+    if (col.pillType === 'prioridade') {
+      return `<span class="eproc-v-pill eproc-v-pill-unidade" style="font-weight:600;">${escapeHtmlViewer(texto)}</span>`;
     }
     if (col.pillType === 'tipo') {
       const cls = /unidade/i.test(texto) ? 'eproc-v-pill-unidade' : 'eproc-v-pill-indiv';
@@ -31297,7 +31384,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
   }
 
   function ehColunaBasicaViewer(colKey) {
-    return ['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial'].includes(colKey);
+    return ['nome', 'tipo', 'padrao', 'grupo', 'acaoPreferencial', 'situacao', 'prioridade'].includes(colKey);
   }
 
   function coletarLocalizadoresToolbarViewer(linhas, opcoes = {}) {
@@ -31958,7 +32045,8 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
       const total = todasLinhas.length;
       const detalhadas = todasLinhas.filter(r => r.detalhado).length;
       const erros = todasLinhas.filter(r => r.erroDetalhe).length;
-      statsEl.textContent = `Total: ${total} preferências | Exibindo: ${filtradas.length} | Detalhadas: ${detalhadas}/${total}` + (erros > 0 ? ` | Erros: ${erros}` : '');
+      const txtTipo = modulo === 'grupos_atp' ? 'regras' : 'preferências';
+      statsEl.textContent = `Total: ${total} ${txtTipo} | Exibindo: ${filtradas.length} | Detalhadas: ${detalhadas}/${total}` + (erros > 0 ? ` | Erros: ${erros}` : '');
     };
 
     const abrirDrawerLinha = (row) => {
@@ -31984,7 +32072,11 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         : '';
       drawerEl.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong style="font-size:12.5px; color:#0f172a;">👁️ Ficha Completa — ${escapeHtmlViewer(row.nome)}</strong>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <strong style="font-size:12.5px; color:#0f172a;">👁️ Ficha Completa — ${escapeHtmlViewer(row.nome)}</strong>
+            ${row.urlEditar ? `<a href="${escapeHtmlViewer(row.urlEditar)}" target="_blank" class="eproc-v-mini-btn" style="text-decoration:none;" title="Editar no eproc">✏️ Editar no eproc</a>` : ''}
+            ${row.urlLog ? `<a href="${escapeHtmlViewer(row.urlLog)}" target="_blank" class="eproc-v-mini-btn" style="text-decoration:none;" title="Consultar log no eproc">📜 Ver Log</a>` : ''}
+          </div>
           <button type="button" id="btn-viewer-fechar-drawer" class="eproc-v-mini-btn">✕ Fechar ficha</button>
         </div>
         ${bannerErroHtml}
@@ -32045,8 +32137,10 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
                 <div class="eproc-v-nome-wrap">
                   ${tituloHtml}
                   <div class="eproc-v-row-actions">
-                    <button type="button" class="eproc-v-mini-btn btn-viewer-row-load" data-pref-id="${escapeHtmlViewer(row.id)}" title="${row.detalhado ? 'Recarregar dados desta preferência no eproc' : 'Carregar todos os campos desta preferência'}">${row.detalhado ? '↻ Atualizar' : '🔍 Detalhar'}</button>
+                    <button type="button" class="eproc-v-mini-btn btn-viewer-row-load" data-pref-id="${escapeHtmlViewer(row.id)}" title="${row.detalhado ? 'Recarregar dados no eproc' : 'Carregar todos os campos'}">${row.detalhado ? '↻ Atualizar' : '🔍 Detalhar'}</button>
                     <button type="button" class="eproc-v-mini-btn btn-viewer-row-ficha" data-pref-id="${escapeHtmlViewer(row.id)}" title="Abrir ficha detalhada em cartões">👁️ Ficha</button>
+                    ${row.urlEditar ? `<a href="${escapeHtmlViewer(row.urlEditar)}" target="_blank" class="eproc-v-mini-btn" style="text-decoration:none;" title="Editar regra no eproc">✏️ Editar</a>` : ''}
+                    ${row.urlLog ? `<a href="${escapeHtmlViewer(row.urlLog)}" target="_blank" class="eproc-v-mini-btn" style="text-decoration:none;" title="Consultar log da regra no eproc">📜 Log</a>` : ''}
                   </div>
                 </div>
               </td>
