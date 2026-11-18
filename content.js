@@ -790,8 +790,16 @@
 
     const btnVisualizarPrefs = document.getElementById('btn-rito-visualizar-preferencias');
     if (btnVisualizarPrefs) {
-      const modulosComTabela = ['minutas', 'relatorios', 'movimentacoes', 'area_minutas', 'intimacoes'];
-      btnVisualizarPrefs.style.display = modulosComTabela.includes(moduloAtivo) ? 'flex' : 'none';
+      if (moduloAtivo === 'grupos_atp') {
+        btnVisualizarPrefs.style.display = 'flex';
+        btnVisualizarPrefs.innerHTML = '<span>🗓️</span><span>Tabela de Regras</span>';
+        btnVisualizarPrefs.title = 'Abre a tabela completa de regras com métricas por grupo, filtros instantâneos e ficha individual de cada regra';
+      } else {
+        const modulosComTabela = ['minutas', 'relatorios', 'movimentacoes', 'area_minutas', 'intimacoes'];
+        btnVisualizarPrefs.style.display = modulosComTabela.includes(moduloAtivo) ? 'flex' : 'none';
+        btnVisualizarPrefs.innerHTML = '<span>🗓️</span><span>Tabela de Preferências</span>';
+        btnVisualizarPrefs.title = 'Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo';
+      }
     }
 
     const btnGerenciador = document.getElementById('btn-rito-abrir-gerenciador');
@@ -20579,10 +20587,6 @@
               <span id="atp-contador-badge" style="font-size:10.5px; color:#475569; font-weight:600; background:#f1f5f9; padding:2px 7px; border-radius:10px; border:1px solid #e2e8f0;">0 grupos</span>
             </div>
 
-            <!-- Botão de Acesso ao Relatório Geral de Regras & Fichas -->
-            <button type="button" id="btn-atp-abrir-relatorio" class="rito-btn" style="width:100%; box-sizing:border-box; margin-bottom:10px; padding:8px 12px; font-size:12px; font-weight:700; background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color:#ffffff; border:1px solid #0284c7; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 2px 4px rgba(2,132,199,0.25);" title="Abre a tabela completa de regras com métricas por grupo, filtros instantâneos e ficha individual de cada regra">
-              <span>📋</span> RELATÓRIO DE REGRAS ATP (TABELA &amp; FICHAS)
-            </button>
             <div style="font-size:11px; color:#475569; line-height:1.4; margin-bottom:8px;">
               Filtre e importe os grupos de regras padronizados de <strong>2G - Direito Público</strong>. Grupos já existentes na unidade são identificados e desabilitados para prevenir duplicação.
             </div>
@@ -20745,8 +20749,8 @@
             <span>🗑️</span><span>Limpar cache</span>
           </button>
 
-          <button type="button" class="rito-btn-modulo" id="btn-rito-visualizar-preferencias" style="display:${moduloAtivo !== 'servidores' ? 'flex' : 'none'};" title="Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo">
-            <span>🗓️</span><span>Tabela de Preferências</span>
+          <button type="button" class="rito-btn-modulo" id="btn-rito-visualizar-preferencias" style="display:${moduloAtivo !== 'servidores' ? 'flex' : 'none'};" title="${moduloAtivo === 'grupos_atp' ? 'Abre a tabela completa de regras com métricas por grupo, filtros instantâneos e ficha individual de cada regra' : 'Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo'}">
+            <span>🗓️</span><span>${moduloAtivo === 'grupos_atp' ? 'Tabela de Regras' : 'Tabela de Preferências'}</span>
           </button>
 
           <button type="button" class="rito-btn-modulo" id="btn-rito-abrir-gerenciador" title="Abre a tela oficial do eproc para visualizar ou editar preferências">
@@ -21076,8 +21080,22 @@
 
     const btnVisualizarPrefs = document.getElementById('btn-rito-visualizar-preferencias');
     if (btnVisualizarPrefs) {
-      btnVisualizarPrefs.style.display = ['minutas', 'relatorios', 'movimentacoes', 'area_minutas', 'intimacoes'].includes(moduloAtivo) ? 'flex' : 'none';
-      btnVisualizarPrefs.onclick = () => abrirModalVisualizadorPreferencias(moduloAtivo);
+      if (moduloAtivo === 'grupos_atp') {
+        btnVisualizarPrefs.style.display = 'flex';
+        btnVisualizarPrefs.innerHTML = '<span>🗓️</span><span>Tabela de Regras</span>';
+        btnVisualizarPrefs.title = 'Abre a tabela completa de regras com métricas por grupo, filtros instantâneos e ficha individual de cada regra';
+      } else {
+        btnVisualizarPrefs.style.display = ['minutas', 'relatorios', 'movimentacoes', 'area_minutas', 'intimacoes'].includes(moduloAtivo) ? 'flex' : 'none';
+        btnVisualizarPrefs.innerHTML = '<span>🗓️</span><span>Tabela de Preferências</span>';
+        btnVisualizarPrefs.title = 'Abre tabela completa com todos os campos preenchidos das preferências criadas neste módulo';
+      }
+      btnVisualizarPrefs.onclick = () => {
+        if (moduloAtivo === 'grupos_atp') {
+          abrirRelatorioRegrasAtp();
+        } else {
+          abrirModalVisualizadorPreferencias(moduloAtivo);
+        }
+      };
     }
 
     const btnGerenciador = document.getElementById('btn-rito-abrir-gerenciador');
