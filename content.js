@@ -1,11 +1,12 @@
 // ============================================================
 //  CRIAÇÃO DE PREFERÊNCIAS EM LOTE — eproc TJSP
 //  Arquivo: content.js
-//  Versão: 3.10.3 (atualizada em 23/11/2026)
+//  Versão: 3.10.4 (atualizada em 24/11/2026)
 //  Notas desta versão:
-//  - Visualizador de Tabelas: Desmembramento de múltiplos localizadores/classes no dropdown da coluna e busca de correspondência por item individual.
-//  - Módulo Minutas: Não está incluindo evento complementar na preferência de minuta.
-//  - Módulo Servidores / ATPs: Não está editando lembretes nas ATPs.
+//  - Mapeamento de Equipe por Unidade: particionamento de cache por órgão/unidade (eproc_servidores_personalizados_{idUnidade}), eliminando vazamento de servidores entre varas/gabinetes ao alternar unidades.
+//  - Módulo Documentos / Área de Minutas: verificação prévia e gravação com equivalência inteligente (encontrarPreferenciaAreaMinutasExistente) por slot/radical e leitura multi-páginas/DataTables no eproc.
+//  - Área de Minutas: inclusão automática do usuário criador da minuta na personalização da equipe.
+//  - Restauração de Fábrica: remoção cirúrgica apenas do membro restaurado, preservando os demais integrantes do grupo.
 // ============================================================
 
 
@@ -784,6 +785,9 @@
     }
 
     atualizarEstadoDropzonePlanilha();
+    if (typeof atualizarUiMapeamentoEquipe === 'function') {
+      atualizarUiMapeamentoEquipe();
+    }
     const pill = document.getElementById('rito-modulo-status-pill');
     if (pill) {
       pill.textContent = moduloAtivo === 'grupos_atp' ? 'GRUPOS ATP' : (moduloAtivo === 'servidores' ? 'SERVIDORES' : (moduloAtivo === 'intimacoes' ? 'INTIMAÇÕES' : (moduloAtivo === 'relatorios' ? 'RELATÓRIOS' : (moduloAtivo === 'movimentacoes' ? 'MOVIMENTAÇÃO' : (moduloAtivo === 'area_minutas' ? 'DOCS' : 'MINUTAS')))));
@@ -9560,8 +9564,13 @@
   }
 
   async function executarDiagnosticoPreVooRelatorios() {
-    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
-    if (!itensSel) return;
+    const itensSelBrutos = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itensSelBrutos) return;
+
+    const mapaEquipe = (typeof isMapeamentoEquipeAtivo === 'function' && isMapeamentoEquipeAtivo()) ? obterMapaEquipeUnidade() : new Map();
+    const itensSel = (mapaEquipe && mapaEquipe.size > 0)
+      ? itensSelBrutos.map(it => adaptarItemPreferenciaParaEquipe(it, mapaEquipe))
+      : itensSelBrutos;
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     const btnIni = document.getElementById('btn-rito-iniciar');
@@ -9577,6 +9586,9 @@
     try {
       adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • RELATÓRIOS');
       addLog('🔍 Iniciando Verificação prévia: Módulo Relatório Geral...');
+      if (mapaEquipe && mapaEquipe.size > 0) {
+        addLog(`👥 Auditoria com Mapeamento de Equipe ATIVO: ${mapaEquipe.size} slots mapeados aplicados.`);
+      }
       atualizarProgressoDiagnostico(15, 'Etapa 1/3', '1. Mapeando Localizadores de Relatório...', true);
       await sleep(80);
 
@@ -9600,7 +9612,7 @@
       const totalItens = itensSel.length;
       let jaExistemCount = 0;
       itensSel.forEach(it => {
-        if (encontrarPreferenciaRelatorioExistente(it) || preferenciaJaExiste(it.nome, existentes)) jaExistemCount++;
+        if (encontrarPreferenciaRelatorioExistente(it) || preferenciaJaExiste(it.nome, existentes) || (it._itemOriginal && (encontrarPreferenciaRelatorioExistente(it._itemOriginal) || preferenciaJaExiste(it._itemOriginal.nome, existentes)))) jaExistemCount++;
       });
       const totalUnicas = new Set(Array.from(existentes).map(normalizar)).size;
       addLog('✓ ' + totalUnicas + ' preferência(s) existentes localizadas na Unidade.');
@@ -10611,8 +10623,13 @@
   }
 
   async function executarDiagnosticoPreVooMovimentacoes() {
-    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
-    if (!itensSel) return;
+    const itensSelBrutos = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itensSelBrutos) return;
+
+    const mapaEquipe = (typeof isMapeamentoEquipeAtivo === 'function' && isMapeamentoEquipeAtivo()) ? obterMapaEquipeUnidade() : new Map();
+    const itensSel = (mapaEquipe && mapaEquipe.size > 0)
+      ? itensSelBrutos.map(it => adaptarItemPreferenciaParaEquipe(it, mapaEquipe))
+      : itensSelBrutos;
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     const btnIni = document.getElementById('btn-rito-iniciar');
@@ -10626,6 +10643,9 @@
     try {
       adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • MOVIMENTAÇÕES');
       addLog('🔍 Iniciando Verificação prévia: Módulo Movimentações...');
+      if (mapaEquipe && mapaEquipe.size > 0) {
+        addLog(`👥 Auditoria com Mapeamento de Equipe ATIVO: ${mapaEquipe.size} slots mapeados aplicados.`);
+      }
       atualizarProgressoDiagnostico(15, 'Etapa 1/3', '1. Mapeando Localizadores de Destino na Unidade...', true);
       await sleep(80);
 
@@ -14886,12 +14906,23 @@
       const mAjax = html.match(/controlador_ajax\.php\?acao_ajax=buscar_usuarios_orgao[^'"\\]*/i);
       const urlAjaxUsuarios = mAjax ? new URL(mAjax[0].replace(/&amp;/g, '&'), window.location.href).href : null;
 
+      const membrosUsuarios = [];
+      doc.querySelectorAll('tr').forEach(tr => {
+        const inp = tr.querySelector('input[name="arrIdUsuarios[]"], input[name^="chkInfraItem"], input[id^="chkInfraItem"]');
+        if (inp && inp.value) {
+          const uid = String(inp.value).trim();
+          const txt = (tr.textContent || '').replace(/\s+/g, ' ').trim();
+          membrosUsuarios.push({ id: uid, texto: txt });
+        }
+      });
+
       return {
         url: fullUrl,
         formAction: new URL((form.getAttribute('action') || fullUrl).replace(/&amp;/g, '&'), window.location.href).href,
         urlAjaxUsuarios,
         nomeGrupo: inpDesc ? inpDesc.value.trim() : '',
         idsUsuarios: idsAtuais,
+        membros: membrosUsuarios,
         prefsStr,
         idsPreferencias: prefsAtuais,
         autStr,
@@ -14990,7 +15021,7 @@
     return idsFallback;
   }
 
-  async function renomearGrupoEprocPreservandoTudo(dadosGrupo, novoNomeGrupo, idsUsuariosAdicionar = [], limparUsuarios = false) {
+  async function renomearGrupoEprocPreservandoTudo(dadosGrupo, novoNomeGrupo, idsUsuariosAdicionar = [], limparUsuarios = false, idsUsuariosRemover = []) {
     if (!dadosGrupo) throw new Error('Dados do grupo inexistentes.');
     const form = dadosGrupo.form;
     const actionUrl = dadosGrupo.formAction;
@@ -15016,9 +15047,15 @@
     pairs.push(['hdnInfraTipoPagina', '1']);
     pairs.push(['iptDescricaoGrupo', novoNomeGrupo]);
 
-    const idsFinaisUsuarios = limparUsuarios ? [] : [...dadosGrupo.idsUsuarios];
+    let idsFinaisUsuarios = limparUsuarios ? [] : [...dadosGrupo.idsUsuarios];
     const novosAdicionados = [];
     const jaExistiam = [];
+
+    // Se especificado idsUsuariosRemover, remove pontualmente esses IDs (mantendo todos os outros membros intactos)
+    if (!limparUsuarios && Array.isArray(idsUsuariosRemover) && idsUsuariosRemover.length > 0) {
+      const setRemover = new Set(idsUsuariosRemover.map(String));
+      idsFinaisUsuarios = idsFinaisUsuarios.filter(uid => !setRemover.has(String(uid)));
+    }
 
     if (!limparUsuarios) {
       idsUsuariosAdicionar.forEach(uid => {
@@ -16580,6 +16617,10 @@
         ? `Estagiário ${indiceTipo}`
         : `Slot ${slotNum}`;
 
+      const ehNomeGen = /^(?:Servidor|Estagi[aá]ri[oa]?)\s*\d+$/i.test(itemLoc.siglaLoc);
+      const siglaFinal = (matchSalvo && matchSalvo.sigla) || (!ehNomeGen ? itemLoc.siglaLoc : '');
+      const nomeServFinal = nomeServ || (matchSalvo ? matchSalvo.nomeServidor : '') || (!ehNomeGen ? (itemLoc.nomeCurto || itemLoc.descLoc || itemLoc.siglaLoc) : '');
+
       return {
         slot: slotNum,
         tipoSlot,
@@ -16589,7 +16630,8 @@
         nomeBase: itemLoc.nomeComp,
         nomeGrupoBase: vinc.nomeGrupo,
         grupoEncontrado: vinc.encontrado,
-        nomeServidor: nomeServ,
+        nomeServidor: nomeServFinal,
+        sigla: siglaFinal,
         perfis: perfisSlot,
         gestao: matchSalvo ? !!matchSalvo.gestao : false
       };
@@ -16760,11 +16802,67 @@
     });
   }
 
+  function obterIdentificadorUnidadeAtualEproc() {
+    try {
+      // 1. Tenta obter do select de lotações do cabeçalho (#selInfraUnidades)
+      const selLotacao = document.getElementById('selInfraUnidades') ||
+                         document.querySelector('select.selInfraUnidades, .frm-lotacoes select');
+      if (selLotacao) {
+        const optSel = (selLotacao.selectedIndex >= 0 ? selLotacao.options[selLotacao.selectedIndex] : null) ||
+                       selLotacao.querySelector('option[selected]');
+        if (optSel) {
+          const val = String(optSel.value || '').trim();
+          const txt = String(optSel.textContent || optSel.innerText || '').trim();
+          if (val && val !== 'null') return `id_${val}`;
+          if (txt) {
+            const limpo = normalizar(txt).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+            if (limpo) return `unid_${limpo.slice(0, 45)}`;
+          }
+        }
+      }
+
+      // 2. Tenta extrair do elemento de lotação/órgão do cabeçalho
+      const elUnid = document.querySelector('.infraUnidade, #lblInfraUnidade, .sigla-lotacao, .lotacao-atual, #lblLotacao, #spanInfraUnidade');
+      if (elUnid && elUnid.textContent.trim()) {
+        const limpo = normalizar(elUnid.textContent.trim()).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        if (limpo) return `unid_${limpo.slice(0, 45)}`;
+      }
+
+      // 3. Tenta extrair do input hidden de órgão proprietário
+      const hdnOrgao = document.getElementById('hdnIdOrgaoProprietario');
+      if (hdnOrgao && hdnOrgao.value && hdnOrgao.value !== 'null') {
+        return `id_${hdnOrgao.value.trim()}`;
+      }
+
+      // 4. Fallback: sigla do órgão proprietário
+      const texOrgao = document.getElementById('texOrgaoProprietario');
+      if (texOrgao && texOrgao.value && normalizar(texOrgao.value) !== 'todos') {
+        const limpo = normalizar(texOrgao.value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        if (limpo) return `sigla_${limpo}`;
+      }
+    } catch (e) {}
+
+    return 'padrao';
+  }
+
+  function obterChaveStorageServidoresUnidade() {
+    const idUnid = obterIdentificadorUnidadeAtualEproc();
+    return `eproc_servidores_personalizados_${idUnid}`;
+  }
+
+  function obterChaveStorageGestaoExtraUnidade() {
+    const idUnid = obterIdentificadorUnidadeAtualEproc();
+    return `eproc_servidores_gestao_extra_${idUnid}`;
+  }
+
   function salvarServidoresStorage(notificar = false) {
     const slots = obterDadosServidoresDosInputs();
     try {
-      localStorage.setItem('eproc_servidores_personalizados', JSON.stringify(slots));
-      if (notificar) addLog('💾 Rascunho dos servidores salvo com sucesso!');
+      const chave = obterChaveStorageServidoresUnidade();
+      localStorage.setItem(chave, JSON.stringify(slots));
+      // Remove a chave legada sem escopo para impedir contaminação cruzada entre unidades
+      try { localStorage.removeItem('eproc_servidores_personalizados'); } catch (eL) {}
+      if (notificar) addLog('💾 Rascunho dos servidores salvo com sucesso para esta unidade!');
     } catch (e) {
       console.warn('[Servidores] Erro ao salvar rascunho:', e);
     }
@@ -16772,8 +16870,11 @@
 
   function carregarServidoresStorage() {
     try {
-      const raw = localStorage.getItem('eproc_servidores_personalizados');
-      return raw ? JSON.parse(raw) : null;
+      const chave = obterChaveStorageServidoresUnidade();
+      const raw = localStorage.getItem(chave);
+      if (raw) return JSON.parse(raw);
+      // NUNCA lê chave global legada para não carregar servidores de outra unidade!
+      return null;
     } catch (e) {
       return null;
     }
@@ -16782,7 +16883,8 @@
   // Persistência e UI da opção múltipla "Incluir na Gestão" (sem grupo de tarefas)
   function carregarGestaoExtraStorage() {
     try {
-      const raw = localStorage.getItem('eproc_servidores_gestao_extra');
+      const chave = obterChaveStorageGestaoExtraUnidade();
+      const raw = localStorage.getItem(chave);
       const arr = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(arr)) return [];
       const vistos = new Set();
@@ -16813,7 +16915,9 @@
           limpos.push(s);
         }
       });
-      localStorage.setItem('eproc_servidores_gestao_extra', JSON.stringify(limpos));
+      const chave = obterChaveStorageGestaoExtraUnidade();
+      localStorage.setItem(chave, JSON.stringify(limpos));
+      try { localStorage.removeItem('eproc_servidores_gestao_extra'); } catch (eL) {}
     } catch (e) {
       console.warn('[Servidores] Erro ao salvar Incluir na Gestão:', e);
     }
@@ -17559,13 +17663,65 @@
       }
 
       if (grpMatch && grpMatch.urlEditar) {
-        addLog(`  📁 Revertendo grupo "${grpMatch.nome}" para "${nomeGrupoPadrao}" e desvinculando membros...`);
+        addLog(`  📁 Revertendo grupo "${grpMatch.nome}" para "${nomeGrupoPadrao}" e desvinculando apenas o membro do slot...`);
         try {
           const detGrupo = await obterDadosCompletosGrupoEproc(grpMatch.urlEditar);
           if (detGrupo) {
-            await renomearGrupoEprocPreservandoTudo(detGrupo, nomeGrupoPadrao, [], true);
+            // Identifica especificamente os IDs do servidor do slot que está sendo restaurado
+            const idsParaRemover = new Set();
+            const slotsSalvos = (typeof carregarServidoresStorage === 'function') ? (carregarServidoresStorage() || []) : [];
+            const slotSalvo = slotsSalvos.find(s => String(s.slot) === String(slotNum));
+            if (slotSalvo && Array.isArray(slotSalvo.perfis)) {
+              slotSalvo.perfis.forEach(p => {
+                if (p && p.id) idsParaRemover.add(String(p.id).trim());
+              });
+            }
+
+            const selUserEl = document.getElementById(`srv-select-user-${slotNum}`);
+            const nomeSel = selUserEl ? (selUserEl.value || (selUserEl.options[selUserEl.selectedIndex] ? selUserEl.options[selUserEl.selectedIndex].text : '')) : '';
+            const nomeLocCurto = locMatch ? (locMatch.nomeCurto || '') : '';
+            const candidatosNome = [
+              nomeSel,
+              slotSalvo ? (slotSalvo.nomeServidor || slotSalvo.sigla) : '',
+              nomeLocCurto,
+              siglaSlotAtual
+            ].filter(Boolean).filter(s => normalizar(s) !== normalizar(nomeCurtoPadrao));
+
+            // Tenta obter IDs via membros da tabela do grupo
+            if (Array.isArray(detGrupo.membros) && detGrupo.membros.length > 0 && candidatosNome.length > 0) {
+              detGrupo.membros.forEach(m => {
+                const txtNorm = normalizar(m.texto || '');
+                const bateu = candidatosNome.some(cand => {
+                  const cNorm = normalizar(cand);
+                  return cNorm.length >= 3 && (txtNorm === cNorm || txtNorm.includes(cNorm));
+                });
+                if (bateu && m.id) idsParaRemover.add(String(m.id).trim());
+              });
+            }
+
+            // Tenta obter IDs via autocomplete do grupo caso ainda não resolvidos
+            if (idsParaRemover.size === 0 && detGrupo.urlAjaxUsuarios && candidatosNome.length > 0) {
+              for (const cand of candidatosNome) {
+                if (idsParaRemover.size > 0) break;
+                try {
+                  const perfisAjax = await resolverIdsUsuariosViaAjaxGrupo(detGrupo.urlAjaxUsuarios, cand);
+                  perfisAjax.forEach(p => { if (p.id) idsParaRemover.add(String(p.id).trim()); });
+                } catch (eA) {}
+              }
+            }
+
+            const arrRemover = Array.from(idsParaRemover);
+            const totalAntes = (detGrupo.idsUsuarios || []).length;
+            // Preserva todos os demais membros do grupo, removendo apenas os IDs do servidor do slot
+            await renomearGrupoEprocPreservandoTudo(detGrupo, nomeGrupoPadrao, [], false, arrRemover);
             grpMatch.nome = nomeGrupoPadrao;
-            addLog(`  ✅ Grupo de trabalho restaurado: "${nomeGrupoPadrao}" (membros limpos).`);
+
+            const totalDepois = Math.max(0, totalAntes - arrRemover.length);
+            if (arrRemover.length > 0) {
+              addLog(`  ✅ Grupo de trabalho restaurado: "${nomeGrupoPadrao}" (removido usuário ${candidatosNome[0] || 'do slot'}, mantido(s) ${totalDepois} outro(s) membro(s)).`);
+            } else {
+              addLog(`  ✅ Grupo de trabalho restaurado: "${nomeGrupoPadrao}" (mantidos todos os ${totalAntes} membros existentes).`);
+            }
           }
         } catch (eGrp) {
           erroGrp = eGrp.message;
@@ -20486,6 +20642,26 @@
 
     if (!ehTelaSuportada()) return; // não exibir em outras telas (ex.: painel principal)
 
+    // Detecção imediata de mudança de Unidade/Órgão no eproc
+    try {
+      const idUnidAtual = typeof obterIdentificadorUnidadeAtualEproc === 'function' ? obterIdentificadorUnidadeAtualEproc() : 'padrao';
+      const idUnidAnterior = sessionStorage.getItem('eproc_ultima_unidade_detectada');
+      if (idUnidAnterior && idUnidAnterior !== idUnidAtual) {
+        // Usuário alternou de unidade no eproc: limpa todos os caches em memória para impedir vazamento entre unidades!
+        window._eprocLocalizadoresUnidade = null;
+        window._eprocGruposUnidade = null;
+        window._eprocUsuariosUnidade = null;
+        window._eprocPrefsRelatorioServidores = null;
+        window._eprocPrefsDocumentosServidores = null;
+        window._eprocAtpsTransitoServidores = null;
+        window._eprocServidoresVerificadosNaoEncontrados = null;
+        if (typeof cacheGruposRelatorio !== 'undefined' && cacheGruposRelatorio.clear) {
+          cacheGruposRelatorio.clear();
+        }
+      }
+      sessionStorage.setItem('eproc_ultima_unidade_detectada', idUnidAtual);
+    } catch (eDet) {}
+
     if (document.getElementById('rito-panel')) return;
 
     instalarHookGravarPreferencias();
@@ -20506,7 +20682,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.3</span></span>
+          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.4</span></span>
 
         </div>
 
@@ -20727,6 +20903,20 @@
           <div class="rito-card-value" id="rito-planilha-nome">-</div>
 
           <div style="font-size:12px; color:#475569; margin-top:3px;" id="rito-planilha-qtd">-</div>
+
+          <!-- Card de Mapeamento de Equipe (Unidade Personalizada) -->
+          <div id="rito-card-mapeamento-equipe" style="display:none; margin-top:8px; padding:7px 9px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; font-size:11px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label style="display:flex; align-items:center; gap:6px; font-weight:700; color:#166534; cursor:pointer; margin:0;" title="Adapta automaticamente preferências genéricas (Servidor 1..9, Estagiário 1..2) para os nomes e grupos reais dos servidores desta unidade">
+                <input type="checkbox" id="chk-rito-mapeamento-equipe" checked style="cursor:pointer;" />
+                <span>👥 Importação com Mapeamento de Equipe</span>
+              </label>
+              <button type="button" id="btn-rito-ler-equipe" class="rito-btn-soft" style="font-size:10px; padding:2px 7px; cursor:pointer; background:#dcfce7; border:1px solid #86efac; border-radius:4px; color:#14532d; font-weight:600;" title="Consulta usuários, localizadores e grupos do eproc para atualizar o mapa de equipe desta unidade">
+                🔄 Ler eproc
+              </button>
+            </div>
+            <div id="rito-mapeamento-equipe-status" style="color:#15803d; font-size:10.5px; margin-top:4px; line-height:1.35;"></div>
+          </div>
 
           
 
@@ -21083,10 +21273,6 @@
       try {
         sessionStorage.removeItem(SESSION_KEY_LOGS);
         sessionStorage.removeItem('eproc_pref_2g_modulo_ativo');
-        localStorage.removeItem('eproc_servidores_personalizados');
-        localStorage.removeItem('eproc_servidores_gestao_extra');
-        localStorage.removeItem('eproc_servidores_renomear_prefs');
-        localStorage.removeItem('eproc_servidores_renomear_lembretes_atp');
       } catch (e) {}
 
       window._eprocPararLote = true;
@@ -21106,13 +21292,9 @@
       window._eprocCacheCatalogosMinutaViewer = null;
 
       execucaoLoteAtiva = false;
-
       gravacaoEmAndamento = false;
-
       clearState();
-
       location.reload();
-
     };
 
 
@@ -21266,6 +21448,12 @@
       btnAltRel.onclick = () => iniciarExecucao('alterar');
     }
     configurarEventosComboboxPreferencias();
+    if (typeof configurarEventosMapeamentoEquipe === 'function') {
+      configurarEventosMapeamentoEquipe();
+    }
+    if (typeof atualizarUiMapeamentoEquipe === 'function') {
+      atualizarUiMapeamentoEquipe();
+    }
 
 
 
@@ -21858,6 +22046,397 @@
 
   }
 
+  // ============================================================
+  //  MÓDULO: IMPORTAÇÃO COM MAPEAMENTO DE EQUIPE (UNIDADES PERSONALIZADAS)
+  //  Permite rodar a planilha modelo completa em unidades já personalizadas:
+  //  - Se a regra já existia no eproc (mesmo com o nome do servidor), é IGNORADA.
+  //  - Se a regra for nova, é criada JÁ PERSONALIZADA com o nome/grupo real do servidor.
+  // ============================================================
+
+  function isMapeamentoEquipeAtivo() {
+    if (moduloAtivo === 'servidores' || moduloAtivo === 'grupos_atp') return false;
+    const chk = document.getElementById('chk-rito-mapeamento-equipe');
+    if (chk) return chk.checked;
+    return true;
+  }
+
+  function obterMapaEquipeUnidade() {
+    const mapa = new Map();
+    let slots = (typeof carregarServidoresStorage === 'function') ? carregarServidoresStorage() : null;
+    if ((!slots || slots.length === 0 || !slots.some(s => s && s.sigla)) && Array.isArray(window._eprocLocalizadoresUnidade) && window._eprocLocalizadoresUnidade.length > 0) {
+      try {
+        if (typeof construirSlotsDinamicosDoEproc === 'function') {
+          slots = construirSlotsDinamicosDoEproc(window._eprocLocalizadoresUnidade, window._eprocGruposUnidade || [], []);
+        }
+      } catch (e) {}
+    }
+
+    if (!Array.isArray(slots)) return mapa;
+
+    // Catálogo da unidade atual no eproc (para validação estrita de segurança)
+    const locsEproc = Array.isArray(window._eprocLocalizadoresUnidade) ? window._eprocLocalizadoresUnidade : [];
+    const grpsEproc = Array.isArray(window._eprocGruposUnidade) ? window._eprocGruposUnidade : [];
+    const usuariosEproc = (window._eprocUsuariosUnidade && typeof window._eprocUsuariosUnidade === 'object') ? window._eprocUsuariosUnidade : {};
+
+    slots.forEach(s => {
+      if (!s) return;
+      let sigla = String(s.sigla || '').replace(/👤/g, '').trim();
+      if (!sigla && s.nomeBase) {
+        const limpo = String(s.nomeBase).replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, '').trim();
+        if (limpo && !/^(?:Servidor|Estagi[aá]ri[oa]?)\s*\d+$/i.test(limpo)) {
+          sigla = limpo;
+        }
+      }
+      if (!sigla) return;
+
+      // VALIDAÇÃO ESTRITA DA UNIDADE ATUAL:
+      // O servidor/sigla SÓ PODE ser mapeado se REALMENTE pertencer ao eproc desta unidade!
+      // Se já temos localizadores, grupos ou usuários lidos da unidade atual, checa se a sigla/servidor existe neles.
+      // Impede sumariamente que servidores de outra vara/gabinete vazem para cá!
+      if (locsEproc.length > 0 || grpsEproc.length > 0 || Object.keys(usuariosEproc).length > 0) {
+        const siglaNorm = normalizar(sigla);
+        const nomeNorm = s.nomeServidor ? normalizar(s.nomeServidor) : '';
+
+        const existeNoLoc = locsEproc.some(l => {
+          const comp = normalizar(l.nomeCompleto || '').replace(/👤/g, '').trim();
+          const curto = normalizar(l.nomeCurto || '');
+          const desc = normalizar(l.descricao || '');
+          return comp === siglaNorm || curto === siglaNorm || (nomeNorm && (curto === nomeNorm || comp === nomeNorm || desc.includes(nomeNorm)));
+        });
+
+        const existeNoGrp = grpsEproc.some(g => {
+          const gn = normalizar(g.nome || '');
+          return gn === `trabalho ${siglaNorm}` || gn === `trabalho - ${siglaNorm}` || (nomeNorm && gn.includes(nomeNorm));
+        });
+
+        const existeNoUsuario = nomeNorm && !!usuariosEproc[nomeNorm];
+
+        if (!existeNoLoc && !existeNoGrp && !existeNoUsuario) {
+          // Servidor NÃO existe no eproc desta unidade! Rejeita para não criar regras indesejadas em unidade errada!
+          return;
+        }
+      }
+
+      const ehEst = s.tipoSlot === 'estagiario' || (Number(s.slot) > 9);
+      const idx = s.indiceTipo || (ehEst ? Number(s.slot) - 9 : Number(s.slot));
+      const chave = ehEst ? `E${idx}` : `S${idx}`;
+
+      const nomeLocOrig = ehEst ? `👤Estagiário ${idx}👤` : `👤Servidor ${idx}👤`;
+      const nomeLocNovo = `👤${sigla}👤`;
+      const nomeGrpOrig = ehEst ? `Trabalho - Estagiário ${idx}` : `Trabalho - Servidor ${idx}`;
+      const nomeGrpNovo = `Trabalho - ${sigla}`;
+
+      const siglasOrigem = [
+        ehEst ? `Estagiário ${idx}` : `Servidor ${idx}`,
+        ehEst ? `Estagiario ${idx}` : `Servidor ${idx}`,
+        ehEst ? `E${idx}` : `S${idx}`,
+        `_${ehEst ? 'E' : 'S'}${idx}`,
+        s.nomeBase ? String(s.nomeBase).replace(/👤/g, '').trim() : null
+      ].filter(Boolean);
+
+      mapa.set(chave, {
+        chaveSlot: chave,
+        slotNum: Number(s.slot),
+        tipoSlot: ehEst ? 'estagiario' : 'servidor',
+        indiceTipo: idx,
+        sigla,
+        nomeServidor: s.nomeServidor || sigla,
+        nomeLocOriginal: nomeLocOrig,
+        novoNomeLoc: nomeLocNovo,
+        nomeGrupoOriginal: nomeGrpOrig,
+        novoNomeGrupo: nomeGrpNovo,
+        siglasOrigem
+      });
+    });
+
+    return mapa;
+  }
+
+  function adaptarItemPreferenciaParaEquipe(item, mapaEquipe) {
+    if (!item || !mapaEquipe || mapaEquipe.size === 0) return item;
+
+    // Detecta se o item pertence a algum slot através de nome, grupo ou localizador
+    const slotNome = extrairSlotSufixo(item.nome);
+    const slotGrupo = extrairSlotSufixo(item.grupo);
+    const slotLoc = extrairSlotSufixo(item.localizador);
+    let slotAlvo = slotNome || slotGrupo || slotLoc;
+
+    if (!slotAlvo && Array.isArray(item.localizadores)) {
+      for (const l of item.localizadores) {
+        const s = extrairSlotSufixo(l);
+        if (s && mapaEquipe.has(s)) {
+          slotAlvo = s;
+          break;
+        }
+      }
+    }
+
+    if (!slotAlvo || !mapaEquipe.has(slotAlvo)) {
+      return item;
+    }
+
+    const info = mapaEquipe.get(slotAlvo);
+    const novo = {
+      ...item,
+      _itemOriginal: item,
+      _slotMapeado: slotAlvo,
+      _nomeServidorMapeado: info.sigla
+    };
+
+    // 1. Substitui no Nome da Preferência
+    if (novo.nome) {
+      if (typeof substituirSiglaEmPreferencia === 'function') {
+        const sub = substituirSiglaEmPreferencia(novo.nome, info.siglasOrigem, info.sigla);
+        if (sub && sub.alterado) {
+          novo.nome = sub.novoNome;
+        } else {
+          let n = novo.nome;
+          info.siglasOrigem.forEach(cand => {
+            const reCand = new RegExp(`\\b${escapeRegExp(cand)}\\b`, 'gi');
+            n = n.replace(reCand, info.sigla);
+          });
+          novo.nome = n;
+        }
+      } else {
+        let n = novo.nome;
+        info.siglasOrigem.forEach(cand => {
+          const reCand = new RegExp(`\\b${escapeRegExp(cand)}\\b`, 'gi');
+          n = n.replace(reCand, info.sigla);
+        });
+        novo.nome = n;
+      }
+    }
+
+    // 2. Substitui no Grupo da Preferência
+    if (novo.grupo) {
+      const sG = extrairSlotSufixo(novo.grupo);
+      if (sG === slotAlvo || normalizar(novo.grupo) === normalizar(info.nomeGrupoOriginal)) {
+        novo.grupo = info.novoNomeGrupo;
+      }
+    }
+
+    // 3. Substitui no Localizador (campo único)
+    if (novo.localizador) {
+      const sL = extrairSlotSufixo(novo.localizador);
+      if (sL === slotAlvo || normalizar(novo.localizador) === normalizar(info.nomeLocOriginal)) {
+        novo.localizador = info.novoNomeLoc;
+      }
+    }
+
+    // 4. Substitui em arrays e campos adicionais de localizador
+    if (Array.isArray(novo.localizadores)) {
+      novo.localizadores = novo.localizadores.map(l => {
+        const sL = extrairSlotSufixo(l);
+        if (sL === slotAlvo || normalizar(l) === normalizar(info.nomeLocOriginal)) {
+          return info.novoNomeLoc;
+        }
+        return l;
+      });
+    }
+    if (novo.localizadorPrincipal) {
+      const sL = extrairSlotSufixo(novo.localizadorPrincipal);
+      if (sL === slotAlvo || normalizar(novo.localizadorPrincipal) === normalizar(info.nomeLocOriginal)) {
+        novo.localizadorPrincipal = info.novoNomeLoc;
+      }
+    }
+    if (Array.isArray(novo.localizadoresSecundarios)) {
+      novo.localizadoresSecundarios = novo.localizadoresSecundarios.map(l => {
+        const sL = extrairSlotSufixo(l);
+        if (sL === slotAlvo || normalizar(l) === normalizar(info.nomeLocOriginal)) {
+          return info.novoNomeLoc;
+        }
+        return l;
+      });
+    }
+    if (Array.isArray(novo.localizadoresRemover)) {
+      novo.localizadoresRemover = novo.localizadoresRemover.map(l => {
+        const sL = extrairSlotSufixo(l);
+        if (sL === slotAlvo || normalizar(l) === normalizar(info.nomeLocOriginal)) {
+          return info.novoNomeLoc;
+        }
+        return l;
+      });
+    }
+
+    // 5. Substitui em campos de texto livre composto (origem / destino com OU)
+    if (novo.origem && typeof novo.origem === 'string') {
+      info.siglasOrigem.forEach(cand => {
+        const reCand = new RegExp(`\\b${escapeRegExp(cand)}\\b`, 'gi');
+        novo.origem = novo.origem.replace(reCand, info.sigla);
+      });
+    }
+    if (novo.destino && typeof novo.destino === 'string') {
+      info.siglasOrigem.forEach(cand => {
+        const reCand = new RegExp(`\\b${escapeRegExp(cand)}\\b`, 'gi');
+        novo.destino = novo.destino.replace(reCand, info.sigla);
+      });
+    }
+
+    // 6. Usuário criador (Área de Minutas)
+    const ehAreaMinutas = (typeof moduloAtivo !== 'undefined' && moduloAtivo === 'area_minutas') ||
+                          (novo.usuarioCriador !== undefined) ||
+                          (novo.nome && /minuta/i.test(novo.nome)) ||
+                          (novo.grupo && /trabalho/i.test(novo.grupo));
+
+    if (ehAreaMinutas && slotAlvo) {
+      const sU = extrairSlotSufixo(novo.usuarioCriador);
+      const ehGen = !novo.usuarioCriador ||
+                    novo.usuarioCriador === '-' ||
+                    normalizar(novo.usuarioCriador).includes('matricula') ||
+                    normalizar(novo.usuarioCriador).includes('servidor') ||
+                    normalizar(novo.usuarioCriador).includes('estagiario') ||
+                    normalizar(novo.usuarioCriador).includes('usuario criador');
+
+      if (sU === slotAlvo || ehGen) {
+        novo.usuarioCriador = info.nomeServidor || info.sigla;
+      }
+
+      // Na Área de Minutas, o filtro de slot do servidor é focado no usuário criador da minuta (deixando localizador limpo)
+      if (typeof moduloAtivo !== 'undefined' && moduloAtivo === 'area_minutas') {
+        novo.localizador = '';
+        if (Array.isArray(novo.localizadores)) novo.localizadores = [];
+      }
+    }
+
+    return novo;
+  }
+
+  function atualizarUiMapeamentoEquipe() {
+    const card = document.getElementById('rito-card-mapeamento-equipe');
+    const statusEl = document.getElementById('rito-mapeamento-equipe-status');
+    const chk = document.getElementById('chk-rito-mapeamento-equipe');
+    if (!card || !statusEl) return;
+
+    if (moduloAtivo === 'servidores' || moduloAtivo === 'grupos_atp') {
+      card.style.display = 'none';
+      return;
+    }
+
+    let mapa = obterMapaEquipeUnidade();
+    card.style.display = 'block';
+
+    if (mapa.size > 0) {
+      if (chk) {
+        chk.disabled = false;
+        chk.checked = true;
+      }
+      const amostra = Array.from(mapa.values())
+        .slice(0, 4)
+        .map(inf => `${inf.chaveSlot} ➔ ${inf.sigla}`)
+        .join(', ') + (mapa.size > 4 ? `, +${mapa.size - 4}` : '');
+      statusEl.innerHTML = `<b>${mapa.size} slot(s) mapeado(s):</b> ${amostra}.<br><span style="color:#166534;">✓ Regras já existentes serão <b>ignoradas</b> e novas regras serão criadas <b>já com os nomes reais</b> da equipe.</span>`;
+    } else {
+      // Se ainda não temos localizadores em memória, dispara leitura automática em background para carregar o mapa
+      if (!window._eprocLocalizadoresUnidade && !window._eprocBuscandoEquipeAuto) {
+        window._eprocBuscandoEquipeAuto = true;
+        Promise.all([
+          typeof obterLocalizadoresOrgaoEproc === 'function' ? obterLocalizadoresOrgaoEproc() : Promise.resolve([]),
+          typeof obterGruposPreferenciaEproc === 'function' ? obterGruposPreferenciaEproc() : Promise.resolve([]),
+          typeof carregarUsuariosAtivosDoOrgao === 'function' ? carregarUsuariosAtivosDoOrgao() : Promise.resolve({})
+        ]).then(([locs, grps]) => {
+          window._eprocLocalizadoresUnidade = locs;
+          window._eprocGruposUnidade = grps;
+          window._eprocBuscandoEquipeAuto = false;
+          if (typeof construirSlotsDinamicosDoEproc === 'function') {
+            const slotsD = construirSlotsDinamicosDoEproc(locs, grps, carregarServidoresStorage() || []);
+            try {
+              localStorage.setItem(obterChaveStorageServidoresUnidade(), JSON.stringify(slotsD));
+            } catch (eLS) {}
+          }
+          atualizarUiMapeamentoEquipe();
+        }).catch(() => {
+          window._eprocBuscandoEquipeAuto = false;
+        });
+      }
+
+      const temLocsEproc = Array.isArray(window._eprocLocalizadoresUnidade) && window._eprocLocalizadoresUnidade.some(l => (l.nomeCompleto || '').includes('👤'));
+      if (temLocsEproc) {
+        // Tenta reconstruir dinamicamente os slots e salvar
+        try {
+          if (typeof construirSlotsDinamicosDoEproc === 'function') {
+            const slotsD = construirSlotsDinamicosDoEproc(window._eprocLocalizadoresUnidade, window._eprocGruposUnidade || [], carregarServidoresStorage() || []);
+            try {
+              localStorage.setItem(obterChaveStorageServidoresUnidade(), JSON.stringify(slotsD));
+            } catch (eLS) {}
+            mapa = obterMapaEquipeUnidade();
+            if (mapa.size > 0) {
+              if (chk) {
+                chk.disabled = false;
+                chk.checked = true;
+              }
+              const amostra = Array.from(mapa.values())
+                .slice(0, 4)
+                .map(inf => `${inf.chaveSlot} ➔ ${inf.sigla}`)
+                .join(', ') + (mapa.size > 4 ? `, +${mapa.size - 4}` : '');
+              statusEl.innerHTML = `<b>${mapa.size} slot(s) mapeado(s):</b> ${amostra}.<br><span style="color:#166534;">✓ Regras já existentes serão <b>ignoradas</b> e novas regras serão criadas <b>já com os nomes reais</b> da equipe.</span>`;
+              return;
+            }
+          }
+        } catch (eC) {}
+      }
+
+      if (chk) chk.disabled = true;
+      if (temLocsEproc) {
+        statusEl.innerHTML = `ℹ️ Localizadores identificados na unidade. Clique em <b>"🔄 Ler eproc"</b> para carregar o mapa da equipe.`;
+      } else {
+        statusEl.innerHTML = `ℹ️ Nenhum servidor personalizado configurado nesta unidade. Novas preferências usarão os nomes da planilha.`;
+      }
+    }
+  }
+
+  function configurarEventosMapeamentoEquipe() {
+    const btnLer = document.getElementById('btn-rito-ler-equipe');
+    if (btnLer && !btnLer._configurado) {
+      btnLer._configurado = true;
+      btnLer.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        btnLer.disabled = true;
+        btnLer.textContent = '⏳ Lendo...';
+        try {
+          addLog('🔄 [Mapeamento de Equipe] Consultando localizadores e grupos no eproc...', 'info');
+          const [locs, grps] = await Promise.all([
+            obterLocalizadoresOrgaoEproc(),
+            obterGruposPreferenciaEproc(),
+            carregarUsuariosAtivosDoOrgao()
+          ]);
+          window._eprocLocalizadoresUnidade = locs;
+          window._eprocGruposUnidade = grps;
+          const slotsBase = (typeof carregarServidoresStorage === 'function') ? (carregarServidoresStorage() || []) : [];
+          if (typeof construirSlotsDinamicosDoEproc === 'function') {
+            const slotsDinamicos = construirSlotsDinamicosDoEproc(locs, grps, slotsBase);
+            if (typeof renderizarTabelaServidores === 'function') {
+              renderizarTabelaServidores(slotsDinamicos);
+            }
+            try {
+              localStorage.setItem(obterChaveStorageServidoresUnidade(), JSON.stringify(slotsDinamicos));
+            } catch (eLS) {}
+          }
+          atualizarUiMapeamentoEquipe();
+          const mapa = obterMapaEquipeUnidade();
+          if (mapa.size > 0) {
+            addLog(`✅ [Mapeamento de Equipe] ${mapa.size} slot(s) mapeado(s) com sucesso!`, 'info');
+          } else {
+            addLog('ℹ️ [Mapeamento de Equipe] Nenhum localizador 👤 personalizado encontrado na unidade.', 'info');
+          }
+        } catch (err) {
+          addLog(`⚠️ [Mapeamento de Equipe] Erro ao consultar eproc: ${err.message}`, 'warn');
+        } finally {
+          btnLer.disabled = false;
+          btnLer.textContent = '🔄 Ler eproc';
+        }
+      });
+    }
+
+    const chk = document.getElementById('chk-rito-mapeamento-equipe');
+    if (chk && !chk._configurado) {
+      chk._configurado = true;
+      chk.addEventListener('change', () => {
+        atualizarUiMapeamentoEquipe();
+      });
+    }
+  }
+
 
 
   let itensCarregados = [];
@@ -22296,6 +22875,17 @@
 
       document.getElementById('rito-card-info').style.display = 'block';
       atualizarEstadoDropzonePlanilha();
+      if (typeof configurarEventosMapeamentoEquipe === 'function') {
+        configurarEventosMapeamentoEquipe();
+      }
+      if (typeof atualizarUiMapeamentoEquipe === 'function') {
+        atualizarUiMapeamentoEquipe();
+      }
+      if (typeof sincronizarServidoresBasicoDoEproc === 'function') {
+        sincronizarServidoresBasicoDoEproc(false).then(() => {
+          if (typeof atualizarUiMapeamentoEquipe === 'function') atualizarUiMapeamentoEquipe();
+        }).catch(() => {});
+      }
       document.getElementById('btn-rito-diagnostico').style.display = 'flex';
       const containerBotoesDrop = document.getElementById('rito-container-botoes-executar');
       if (containerBotoesDrop) containerBotoesDrop.style.display = 'flex';
@@ -22370,6 +22960,13 @@
     const listaParaExecutar = exigirItensSelecionadosParaAcao('Nenhuma preferência carregada da planilha.');
     if (!listaParaExecutar) return;
 
+    const mapaEquipe = isMapeamentoEquipeAtivo() ? obterMapaEquipeUnidade() : new Map();
+    let listaEfetiva = listaParaExecutar;
+    if (mapaEquipe.size > 0) {
+      listaEfetiva = listaParaExecutar.map(it => adaptarItemPreferenciaParaEquipe(it, mapaEquipe));
+      addLog(`👥 Modo "Importação com Mapeamento de Equipe" ATIVO: ${mapaEquipe.size} slot(s) mapeado(s) aplicados ao lote.`, 'info');
+    }
+
     definirAberturaDropdownCombobox(false);
 
     window._eprocPararLote = false;
@@ -22430,7 +23027,7 @@
 
     const progBarEl = document.getElementById('rito-prog-bar');
 
-    if (progTextEl) progTextEl.textContent = '0 / ' + listaParaExecutar.length;
+    if (progTextEl) progTextEl.textContent = '0 / ' + listaEfetiva.length;
 
     if (progBarEl) {
 
@@ -22448,9 +23045,9 @@
 
       idx: 0,
 
-      total: listaParaExecutar.length,
+      total: listaEfetiva.length,
 
-      itens: listaParaExecutar,
+      itens: listaEfetiva,
 
       modoRelatorio: modoRelatorio,
 
@@ -22650,12 +23247,18 @@
       const ehModoAlterarRelatorio = (moduloAtivo === 'relatorios' && st.modoRelatorio === 'alterar');
       if (!ehModoAlterarRelatorio) {
         let jaExiste = preferenciaJaExiste(item.nome, existentes);
+        if (!jaExiste && item._itemOriginal && item._itemOriginal.nome) {
+          jaExiste = preferenciaJaExiste(item._itemOriginal.nome, existentes);
+        }
         if (!jaExiste && moduloAtivo === 'relatorios' && typeof encontrarPreferenciaRelatorioExistente === 'function') {
-          jaExiste = Boolean(encontrarPreferenciaRelatorioExistente(item));
+          jaExiste = Boolean(encontrarPreferenciaRelatorioExistente(item)) || Boolean(encontrarPreferenciaRelatorioExistente(item._itemOriginal || item));
         }
         if (jaExiste) {
           totalPuladas++;
-          renderizarLogCardSkipped(item, 'Essa preferência já existe na unidade');
+          const motivoPulo = item._nomeServidorMapeado
+            ? `Essa preferência já existe na unidade (personalizada para ${item._nomeServidorMapeado})`
+            : 'Essa preferência já existe na unidade';
+          renderizarLogCardSkipped(item, motivoPulo);
           st.idx++;
           saveState(st);
           await sleep(150);
@@ -22718,8 +23321,11 @@
           totalPuladas++;
 
           existentes.add(item.nome);
+          const motivoPulo = item._nomeServidorMapeado
+            ? `Essa preferência já existe na unidade (personalizada para ${item._nomeServidorMapeado})`
+            : 'Essa preferência já existe na unidade';
 
-          renderizarLogCardSkipped(item, 'Essa preferência já existe na unidade');
+          renderizarLogCardSkipped(item, motivoPulo);
 
         } else {
 
@@ -22932,6 +23538,45 @@
             }
 
           });
+
+          // Suporte à paginação em formulario_personalizacao_listar
+          const selPag = doc.querySelector('#selInfraPaginacaoSuperior, select[id*="selInfraPaginacao"]');
+          const frmPag = doc.getElementById('frmFormularioPersonalizacaoLista') || doc.querySelector('form[action*="formulario_personalizacao_listar"]');
+          if (selPag && selPag.options && selPag.options.length > 1 && frmPag) {
+            const actionPag = new URL((frmPag.getAttribute('action') || urlGerenciador).replace(/&amp;/g, '&'), window.location.href).href;
+            for (let p = 1; p < selPag.options.length; p++) {
+              const pairsPag = [];
+              frmPag.querySelectorAll('input[type="hidden"]').forEach(inp => {
+                if (inp.name) pairsPag.push([inp.name, inp.name === 'hdnInfraPaginaAtual' ? selPag.options[p].value : inp.value]);
+              });
+              try {
+                const respP = await fetch(actionPag, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                  body: typeof encodeWindows1252Body === 'function' ? encodeWindows1252Body(pairsPag) : new URLSearchParams(pairsPag).toString(),
+                  credentials: 'same-origin'
+                });
+                if (respP.ok) {
+                  const htmlP = await respP.text();
+                  const docP = new DOMParser().parseFromString(htmlP, 'text/html');
+                  docP.querySelectorAll('input[name="chkInfraItem[]"]').forEach(chk => {
+                    const idP = (chk.value || '').trim();
+                    const trP = chk.closest('tr');
+                    if (idP && trP) {
+                      let rawNomeP = '';
+                      if (trP.cells && trP.cells.length > 2) rawNomeP = trP.cells[2].textContent.trim();
+                      if (!rawNomeP) {
+                        const tdDescP = trP.querySelector('td:nth-child(3)') || trP.querySelector('td:nth-child(2)');
+                        rawNomeP = tdDescP ? tdDescP.textContent.trim() : '';
+                      }
+                      const nomeP = decodificarEntidadesHtml(decodeEntities(rawNomeP)).trim();
+                      if (idP && nomeP) mapItens.set(idP, { id: idP, nome: nomeP });
+                    }
+                  });
+                }
+              } catch (eP) {}
+            }
+          }
 
         }
 
@@ -23310,6 +23955,7 @@
   async function obterPreferenciaAreaMinutasExistentes() {
     const existentes = new Set();
     const mapaIds = new Map();
+    const listaObjetos = [];
 
     const registrarPref = (descBruta, id) => {
       if (!descBruta) return;
@@ -23322,9 +23968,32 @@
         mapaIds.set(norm, String(id));
         mapaIds.set(descLimpa, String(id));
       }
+      if (!listaObjetos.some(o => o.nome === descLimpa || (id && o.id === String(id)))) {
+        listaObjetos.push({
+          id: id ? String(id) : '',
+          nome: descLimpa,
+          slot: extrairSlotSufixo(descLimpa),
+          radical: extrairRadicalPreferencia(descLimpa)
+        });
+      }
     };
 
-    // 0. Usa a rotina unificada (gerenciador #listaPreferencias + XML do autocomplete com hash da ação)
+    // 0. Fonte Completa: Tenta primeiro obter a lista completa via rotina do visualizador (DataTables + paginação + autocomplete)
+    try {
+      if (typeof obterContextoAreaMinutasVisualizador === 'function' && typeof obterListaCompletaPreferenciasMinutas === 'function') {
+        const ctx = await obterContextoAreaMinutasVisualizador();
+        if (ctx && ctx.disponivel !== false) {
+          const listaComp = await obterListaCompletaPreferenciasMinutas(ctx);
+          if (Array.isArray(listaComp) && listaComp.length > 0) {
+            listaComp.forEach(item => {
+              if (item && item.nome) registrarPref(item.nome, item.id);
+            });
+          }
+        }
+      }
+    } catch (eComp) {}
+
+    // 1. Usa a rotina unificada (gerenciador #listaPreferencias com paginação + XML do autocomplete)
     try {
       const listaUnidade = await obterTodasPreferenciasUnidade();
       if (Array.isArray(listaUnidade)) {
@@ -23334,7 +24003,7 @@
       }
     } catch (eUnid) {}
 
-    // 1. Verifica se o autocomplete já tem itens na memória (objAjaxAutoCompPreferencia.arrItens)
+    // 2. Verifica se o autocomplete já tem itens na memória (objAjaxAutoCompPreferencia.arrItens)
     try {
       if (window.objAjaxAutoCompPreferencia && Array.isArray(window.objAjaxAutoCompPreferencia.arrItens)) {
         window.objAjaxAutoCompPreferencia.arrItens.forEach(it => {
@@ -23343,7 +24012,7 @@
       }
     } catch (eObj) {}
 
-    // 2. Consulta o autocomplete endpoint extraindo a URL exata (com hash próprio da ação) dos scripts da página
+    // 3. Consulta o autocomplete endpoint extraindo a URL exata (com hash próprio da ação) dos scripts da página
     try {
       let urlAuto = (window.objAjaxAutoCompPreferencia && (window.objAjaxAutoCompPreferencia.ajaxTarget || window.objAjaxAutoCompPreferencia.urlServico)) || '';
       if (!urlAuto) {
@@ -23380,12 +24049,123 @@
     } catch (eAuto) {}
 
     window._eprocMapaPreferenciasAreaMinutas = mapaIds;
+    window._eprocListaPreferenciasAreaMinutas = listaObjetos;
     return existentes;
   }
 
+  function encontrarPreferenciaAreaMinutasExistente(item, existentes) {
+    if (!item || !item.nome) return null;
+
+    const lista = window._eprocListaPreferenciasAreaMinutas || [];
+    const mapa = window._eprocMapaPreferenciasAreaMinutas;
+
+    // 0. Match direto por nome exato ou normalizado (com item.nome ou item._itemOriginal.nome)
+    if (existentes) {
+      if (existentes.has(item.nome) || existentes.has(normalizar(item.nome))) {
+        return { matchType: 'exato', nome: item.nome };
+      }
+      if (item._itemOriginal && (existentes.has(item._itemOriginal.nome) || existentes.has(normalizar(item._itemOriginal.nome)))) {
+        return { matchType: 'exato_original', nome: item._itemOriginal.nome };
+      }
+      if (preferenciaJaExiste(item.nome, existentes)) {
+        return { matchType: 'similar', nome: item.nome };
+      }
+      if (item._itemOriginal && preferenciaJaExiste(item._itemOriginal.nome, existentes)) {
+        return { matchType: 'similar_original', nome: item._itemOriginal.nome };
+      }
+    }
+
+    if (mapa) {
+      const id1 = mapa.get(normalizar(item.nome)) || mapa.get(item.nome.trim());
+      if (id1) return { matchType: 'mapa', id: id1, nome: item.nome };
+      if (item._itemOriginal) {
+        const id2 = mapa.get(normalizar(item._itemOriginal.nome)) || mapa.get(item._itemOriginal.nome.trim());
+        if (id2) return { matchType: 'mapa_original', id: id2, nome: item._itemOriginal.nome };
+      }
+    }
+
+    const slotItem = extrairSlotSufixo(item.nome) || (item._itemOriginal && extrairSlotSufixo(item._itemOriginal.nome)) || item._slotMapeado;
+    const radicalItem = extrairRadicalPreferencia(item.nome) || (item._itemOriginal && extrairRadicalPreferencia(item._itemOriginal.nome));
+
+    // 1. Busca por Slot + Radical (para preferências ligadas a servidores/estagiários)
+    if (slotItem && (lista.length > 0 || (existentes && existentes.size > 0))) {
+      // 1.1 Na lista estruturada
+      if (lista.length > 0) {
+        const matchSlot = lista.find(p => {
+          const slotP = p.slot || extrairSlotSufixo(p.nome);
+          const radP = p.radical || extrairRadicalPreferencia(p.nome);
+          return slotP === slotItem && radP === radicalItem;
+        });
+        if (matchSlot) return { matchType: 'slot_' + slotItem, id: matchSlot.id, nome: matchSlot.nome };
+
+        // 1.2 Por servidor mapeado da equipe para esse slot
+        const mapaEquipe = (typeof obterMapaEquipeUnidade === 'function') ? obterMapaEquipeUnidade() : null;
+        if (mapaEquipe && mapaEquipe.has(slotItem)) {
+          const info = mapaEquipe.get(slotItem);
+          const siglaNorm = normalizar(info.sigla);
+          const matchServ = lista.find(p => {
+            const radP = p.radical || extrairRadicalPreferencia(p.nome);
+            if (radP !== radicalItem) return false;
+            const pNorm = normalizar(p.nome);
+            return pNorm.includes(siglaNorm);
+          });
+          if (matchServ) return { matchType: 'servidor_' + info.sigla, id: matchServ.id, nome: matchServ.nome };
+        }
+      }
+
+      // 1.3 No conjunto existentes (caso só tenhamos strings)
+      if (existentes && existentes.size > 0) {
+        for (const ex of existentes) {
+          const radEx = extrairRadicalPreferencia(ex);
+          if (radEx === radicalItem) {
+            const slotEx = extrairSlotSufixo(ex);
+            if (slotEx === slotItem) {
+              return { matchType: 'slot_existente_' + slotItem, nome: ex };
+            }
+            const mapaEquipe = (typeof obterMapaEquipeUnidade === 'function') ? obterMapaEquipeUnidade() : null;
+            if (mapaEquipe && mapaEquipe.has(slotItem)) {
+              const info = mapaEquipe.get(slotItem);
+              if (normalizar(ex).includes(normalizar(info.sigla))) {
+                return { matchType: 'servidor_existente_' + info.sigla, nome: ex };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Busca por Radical para preferências genéricas (sem slot, ex: Despacho Rascunho, Total de Votos genérico)
+    if (!slotItem && radicalItem) {
+      if (lista.length > 0) {
+        const matchRad = lista.find(p => {
+          const slotP = p.slot || extrairSlotSufixo(p.nome);
+          if (slotP) return false;
+          const radP = p.radical || extrairRadicalPreferencia(p.nome);
+          return radP === radicalItem;
+        });
+        if (matchRad) return { matchType: 'radical_generico', id: matchRad.id, nome: matchRad.nome };
+      }
+      if (existentes && existentes.size > 0) {
+        for (const ex of existentes) {
+          const slotEx = extrairSlotSufixo(ex);
+          if (!slotEx && extrairRadicalPreferencia(ex) === radicalItem) {
+            return { matchType: 'radical_existente', nome: ex };
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
   async function executarDiagnosticoPreVooAreaMinutas() {
-    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
-    if (!itensSel) return;
+    const itensSelBrutos = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itensSelBrutos) return;
+
+    const mapaEquipe = (typeof isMapeamentoEquipeAtivo === 'function' && isMapeamentoEquipeAtivo()) ? obterMapaEquipeUnidade() : new Map();
+    const itensSel = (mapaEquipe && mapaEquipe.size > 0)
+      ? itensSelBrutos.map(it => adaptarItemPreferenciaParaEquipe(it, mapaEquipe))
+      : itensSelBrutos;
 
     const btnDiag = document.getElementById('btn-rito-diagnostico');
     const btnIni = document.getElementById('btn-rito-iniciar');
@@ -23399,6 +24179,9 @@
     try {
       adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • ÁREA DE MINUTAS');
       addLog('🔍 Iniciando Verificação prévia: Módulo Documentos / Área de Minutas...', 'info');
+      if (mapaEquipe && mapaEquipe.size > 0) {
+        addLog(`👥 Auditoria com Mapeamento de Equipe ATIVO: ${mapaEquipe.size} slots mapeados aplicados.`);
+      }
       atualizarProgressoDiagnostico(15, 'Etapa 1/3', '1. Verificando Localizadores da Unidade...', true);
       await sleep(80);
 
@@ -23459,7 +24242,10 @@
       const duplicadas = [];
       const novas = [];
       itensSel.forEach(it => {
-        if (preferenciaJaExiste(it.nome, prefsExistentes)) {
+        const achou = encontrarPreferenciaAreaMinutasExistente(it, prefsExistentes) ||
+                      preferenciaJaExiste(it.nome, prefsExistentes) ||
+                      (it._itemOriginal && (encontrarPreferenciaAreaMinutasExistente(it._itemOriginal, prefsExistentes) || preferenciaJaExiste(it._itemOriginal.nome, prefsExistentes)));
+        if (achou) {
           duplicadas.push(it.nome);
         } else {
           novas.push(it.nome);
@@ -23826,9 +24612,16 @@
 
     // 2. Identifica se a preferência já existe no eproc: se existir, pula como DUPLICADA
     let idExistente = null;
-    if (window._eprocMapaPreferenciasAreaMinutas) {
+    const achouExistente = (typeof encontrarPreferenciaAreaMinutasExistente === 'function')
+      ? encontrarPreferenciaAreaMinutasExistente(item, null)
+      : null;
+    if (achouExistente) {
+      idExistente = achouExistente.id || true;
+    } else if (window._eprocMapaPreferenciasAreaMinutas) {
       idExistente = window._eprocMapaPreferenciasAreaMinutas.get(normalizar(item.nome)) ||
-                    window._eprocMapaPreferenciasAreaMinutas.get(item.nome.trim()) || null;
+                    window._eprocMapaPreferenciasAreaMinutas.get(item.nome.trim()) ||
+                    (item._itemOriginal && (window._eprocMapaPreferenciasAreaMinutas.get(normalizar(item._itemOriginal.nome)) || window._eprocMapaPreferenciasAreaMinutas.get(item._itemOriginal.nome.trim()))) ||
+                    null;
     }
     if (idExistente) {
       throw new Error('DUPLICADA: Essa preferência já existe na unidade');
@@ -23955,18 +24748,81 @@
     }
     const locsSelecionados = sincronizarMultipleSelectAreaMinutas(selLoc, valoresLoc);
 
-    // 3.4 Usuário Criador (#txtUsuarioCriador / #hdnIdUsuarioCriador)
+    // 3.4 Usuário Criador (#txtUsuarioCriador / #hdnIdUsuarioCriador / #selUsuarioCriador / #hdnSelUsuarioCriador)
     const txtUser = document.getElementById('txtUsuarioCriador');
     const hdnUser = document.getElementById('hdnIdUsuarioCriador');
     const selUser = document.getElementById('selUsuarioCriador');
     const hdnSelUser = document.getElementById('hdnSelUsuarioCriador');
-    const rawUsuario = (item.usuarioCriador && item.usuarioCriador !== '-') ? item.usuarioCriador.trim() : '';
-    const ehPlaceholderUsuario = normalizar(rawUsuario).includes('matricula do servidor');
+    let rawUsuario = (item.usuarioCriador && item.usuarioCriador !== '-') ? item.usuarioCriador.trim() : '';
+    let ehPlaceholderUsuario = normalizar(rawUsuario).includes('matricula do servidor') ||
+                               normalizar(rawUsuario).includes('usuario criador') ||
+                               /^servidor\s*[1-9]$/i.test(rawUsuario) ||
+                               /^estagi[aá]ri[oa]?\s*[1-9]$/i.test(rawUsuario);
+
+    // Se o campo estiver vazio ou com placeholder, resolve automaticamente a partir do slot do item ou da equipe
+    if (!rawUsuario || ehPlaceholderUsuario) {
+      const slotItem = extrairSlotSufixo(item.nome) || extrairSlotSufixo(item.grupo) || extrairSlotSufixo(item.localizador) || extrairSlotSufixo(rawUsuario);
+      if (slotItem && typeof obterMapaEquipeUnidade === 'function') {
+        const mapaEq = obterMapaEquipeUnidade();
+        if (mapaEq && mapaEq.has(slotItem)) {
+          const inf = mapaEq.get(slotItem);
+          rawUsuario = inf.nomeServidor || inf.sigla || '';
+          ehPlaceholderUsuario = false;
+        }
+      }
+      if (!rawUsuario && slotItem && typeof carregarServidoresStorage === 'function') {
+        const slotsS = carregarServidoresStorage() || [];
+        const sMatch = slotsS.find(s => {
+          const t = s.tipoSlot === 'estagiario' ? `E${s.indiceTipo || (s.slot - 9)}` : `S${s.slot}`;
+          return t === slotItem;
+        });
+        if (sMatch) {
+          rawUsuario = sMatch.nomeServidor || sMatch.sigla || '';
+          ehPlaceholderUsuario = false;
+        }
+      }
+    }
+
     const valUsuarioReal = ehPlaceholderUsuario ? '' : rawUsuario;
     if (txtUser) txtUser.value = valUsuarioReal;
     if (hdnUser) hdnUser.value = valUsuarioReal;
-    if (selUser && !valUsuarioReal) selUser.innerHTML = '';
-    if (hdnSelUser && !valUsuarioReal) hdnSelUser.value = '';
+
+    if (selUser) {
+      if (!valUsuarioReal) {
+        selUser.innerHTML = '';
+        if (hdnSelUser) hdnSelUser.value = '';
+      } else {
+        // Localiza ou adiciona opção no select de usuários criadores
+        let optEncontrada = null;
+        const normVal = normalizar(valUsuarioReal);
+        Array.from(selUser.options || []).forEach(opt => {
+          const tNorm = normalizar(opt.text || '');
+          if (tNorm === normVal || tNorm.includes(normVal) || normVal.includes(tNorm)) {
+            optEncontrada = opt;
+          }
+        });
+
+        if (optEncontrada) {
+          optEncontrada.selected = true;
+          if (hdnSelUser) hdnSelUser.value = optEncontrada.value;
+          if (hdnUser) hdnUser.value = optEncontrada.value;
+        } else {
+          const novaOpt = new Option(valUsuarioReal, valUsuarioReal, true, true);
+          selUser.appendChild(novaOpt);
+          if (hdnSelUser) hdnSelUser.value = valUsuarioReal;
+        }
+
+        try {
+          if (typeof jQuery !== 'undefined' && jQuery(selUser).data('multipleSelect')) {
+            jQuery(selUser).multipleSelect('refresh');
+          }
+        } catch (eMs) {}
+      }
+    }
+
+    if (valUsuarioReal) {
+      addLog(`  👤 Usuário criador da minuta: "${valUsuarioReal}"`);
+    }
 
     // 3.45 Opções de salvamento lidas da coluna "Tipo de Preferência" (ex: "Unidade; Exibir no Painel Inicial")
     const normTipoPrefItem = normalizar(item.tipoPref || 'Unidade; Exibir no Painel Inicial');
@@ -24007,6 +24863,13 @@
         }
         if (orgaoLotacao.idOrgao) {
           searchParams.set('hdnIdOrgaoProprietario', orgaoLotacao.idOrgao);
+        }
+        if (valUsuarioReal) {
+          searchParams.set('txtUsuarioCriador', valUsuarioReal);
+          const idU = (hdnUser && hdnUser.value) ? hdnUser.value : valUsuarioReal;
+          searchParams.set('hdnIdUsuarioCriador', idU);
+          searchParams.set('hdnSelUsuarioCriador', (hdnSelUser && hdnSelUser.value) ? hdnSelUser.value : idU);
+          searchParams.append('selUsuarioCriador[]', idU);
         }
         searchParams.set('hdnPreferencia', '');
         searchParams.set('txtPreferencia', '');
@@ -24153,8 +25016,13 @@
     arrDados.push('selTipoDocumento|' + tiposSelecionados.filter(v => v && v !== 'null').join(';'));
     arrDados.push('selStatusMinuta|' + statusSelecionados.filter(v => v && v !== 'null').join(';'));
     arrDados.push('selLocalizador|' + locsSelecionados.filter(v => v && v !== 'null').join(';'));
-    arrDados.push('txtUsuarioCriador|' + valUsuarioReal);
-    arrDados.push('hdnIdUsuarioCriador|' + valUsuarioReal);
+    if (valUsuarioReal) {
+      const idU = (hdnUser && hdnUser.value) ? hdnUser.value : valUsuarioReal;
+      arrDados.push('txtUsuarioCriador|' + valUsuarioReal);
+      arrDados.push('hdnIdUsuarioCriador|' + idU);
+      arrDados.push('selUsuarioCriador|' + idU);
+      arrDados.push('hdnSelUsuarioCriador|' + idU);
+    }
 
     const listaDados = listaDadosExtraida || arrDados.join(',');
 
@@ -24862,11 +25730,19 @@
   }
 
   async function executarDiagnosticoPreVooIntimacoes() {
-    const itens = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
-    if (!itens) return false;
+    const itensBrutos = exigirItensSelecionadosParaAcao('Carregue primeiro a planilha unificada antes de executar a Verificação prévia.');
+    if (!itensBrutos) return false;
+
+    const mapaEquipe = (typeof isMapeamentoEquipeAtivo === 'function' && isMapeamentoEquipeAtivo()) ? obterMapaEquipeUnidade() : new Map();
+    const itens = (mapaEquipe && mapaEquipe.size > 0)
+      ? itensBrutos.map(it => adaptarItemPreferenciaParaEquipe(it, mapaEquipe))
+      : itensBrutos;
 
     adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • INTIMAÇÕES');
     addLog(`🧪 Iniciando Verificação Prévia de Auditoria do Módulo de Intimações (${itens.length}${itens.length !== itensCarregados.length ? ' de ' + itensCarregados.length : ''} preferência(s))...`, 'info');
+    if (mapaEquipe && mapaEquipe.size > 0) {
+      addLog(`👥 Auditoria com Mapeamento de Equipe ATIVO: ${mapaEquipe.size} slots mapeados aplicados.`);
+    }
 
     if (!ehTelaDeIntimacao()) {
       addLog('❌ Tela atual não é de Intimação Eletrônica (processo_intimacao).', 'error');
@@ -25446,10 +26322,13 @@
 
   async function executarDiagnosticoPreVooMinutas() {
 
-    const itensSel = exigirItensSelecionadosParaAcao('Carregue primeiro uma planilha Excel (.xlsx) antes de executar a verificação prévia.');
-    if (!itensSel) return;
+    const itensSelBrutos = exigirItensSelecionadosParaAcao('Carregue primeiro uma planilha Excel (.xlsx) antes de executar a verificação prévia.');
+    if (!itensSelBrutos) return;
 
-
+    const mapaEquipe = (typeof isMapeamentoEquipeAtivo === 'function' && isMapeamentoEquipeAtivo()) ? obterMapaEquipeUnidade() : new Map();
+    const itensSel = (mapaEquipe && mapaEquipe.size > 0)
+      ? itensSelBrutos.map(it => adaptarItemPreferenciaParaEquipe(it, mapaEquipe))
+      : itensSelBrutos;
 
     window._eprocInicioAuditoriaPreviaMs = Date.now();
 
@@ -25472,6 +26351,9 @@
     adicionarSeparadorExecucaoNoLog('VERIFICAÇÃO PRÉVIA • MINUTAS');
 
     addLog(`🔍 Iniciando Verificação prévia (${itensSel.length}${itensSel.length !== itensCarregados.length ? ' de ' + itensCarregados.length : ''} preferência(s) selecionadas)...`);
+    if (mapaEquipe && mapaEquipe.size > 0) {
+      addLog(`👥 Auditoria com Mapeamento de Equipe ATIVO: ${mapaEquipe.size} slots mapeados aplicados.`);
+    }
 
     atualizarProgressoDiagnostico(5, 'Etapa 1/4', '1. Varrendo Localizadores da Unidade...', true);
 
@@ -26168,7 +27050,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.10.3</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.10.4</span>
 
           </h3>
 
@@ -31776,7 +32658,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #00665c 0%, #00766c 100%); border-bottom: 2px solid #00564e; padding: 12px 18px;">
           <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
             <span>📊</span> ${escapeHtmlViewer(config.titulo)}
-            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.10.3</span>
+            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.10.4</span>
           </h3>
           <button type="button" class="eproc-pref-modal-close" id="btn-viewer-fechar-topo" title="Fechar visualização">✕</button>
         </div>
