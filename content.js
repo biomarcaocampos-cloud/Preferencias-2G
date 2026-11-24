@@ -1,7 +1,7 @@
 // ============================================================
 //  CRIAÇÃO DE PREFERÊNCIAS EM LOTE — eproc TJSP
 //  Arquivo: content.js
-//  Versão: 3.9.1 (atualizada em 12/11/2026)
+//  Versão: 3.10.2 (atualizada em 23/11/2026)
 //  Notas desta versão:
 //  - Módulo Minutas: Não está incluindo evento complementar na preferência de minuta.
 //  - Módulo Servidores / ATPs: Não está editando lembretes nas ATPs.
@@ -15715,6 +15715,10 @@
         if (['submit', 'button', 'reset', 'file', 'image'].includes(type)) continue;
         if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
         const val = el.value !== undefined ? String(el.value) : (el.getAttribute ? (el.getAttribute('value') || '') : '');
+        // Evita enviar inputs arrays numéricos vazios (ex: hdnNumConsiderarUltimosEventosDias[]="") que quebram o validador numérico do PHP eproc
+        if (name.includes('[]') && (name.startsWith('hdnNum') || name.startsWith('num') || name.toLowerCase().includes('dias') || name.toLowerCase().includes('valor')) && val.trim() === '') {
+          continue;
+        }
         pairs.push([name, val]);
       } else if (tag === 'TEXTAREA') {
         const raw = (el.value !== undefined && el.value !== '') ? String(el.value) : String(el.textContent || '');
@@ -16006,34 +16010,119 @@
 
     // [Fix ATP TJ] Eproc exige strValorControle (IDs de eventos/dias/data do gatilho), hdnEventosRelacionados e sbmAlterarControleLocalizador
     const selTipoControle = form.querySelector('#selTipoControle');
-    const tipoCtrl = (selTipoControle && selTipoControle.value) ? String(selTipoControle.value).trim() : 'E';
-    let strValorControle = '';
-    if (tipoCtrl === 'E') {
-      const chksEv = form.querySelectorAll('#divEventosRelacionados input[type="checkbox"][name="chkEventos"], input[type="checkbox"][name="chkEventos"]');
-      const arrEv = Array.from(chksEv).map(c => String(c.value || '').trim()).filter(Boolean);
-      strValorControle = arrEv.join(',');
-    } else if (tipoCtrl === 'D') {
-      const inpD = form.querySelector('#txtDataControle');
-      strValorControle = inpD ? String(inpD.value || '').trim() : '';
-    } else if (tipoCtrl === 'P') {
-      const inpHdnP = form.querySelector('#hdnIdTipoPeticao');
-      strValorControle = inpHdnP ? String(inpHdnP.value || '').trim() : '';
-    } else {
-      const inpDias = form.querySelector('#txtDiasControle');
-      strValorControle = inpDias ? String(inpDias.value || '').trim() : '';
-    }
-    if (strValorControle) {
-      const idxVc = pairsSubmit.findIndex(([k]) => k === 'strValorControle');
-      if (idxVc !== -1) pairsSubmit[idxVc][1] = strValorControle;
-      else pairsSubmit.push(['strValorControle', strValorControle]);
-      if (tipoCtrl === 'E') {
-        const idxEr = pairsSubmit.findIndex(([k]) => k === 'hdnEventosRelacionados');
-        if (idxEr !== -1) pairsSubmit[idxEr][1] = strValorControle + ',';
-        else pairsSubmit.push(['hdnEventosRelacionados', strValorControle + ',']);
+    let tipoCtrl = 'E';
+    if (selTipoControle) {
+      if (selTipoControle.options && selTipoControle.options.length > 0) {
+        const optSel = Array.from(selTipoControle.options).find(o => o.selected || (o.getAttribute && o.getAttribute('selected') !== null));
+        tipoCtrl = optSel ? String(optSel.value || '').trim() : String(selTipoControle.value || '').trim();
+      } else {
+        tipoCtrl = String(selTipoControle.value || '').trim();
       }
     }
-    if (!pairsSubmit.some(([k]) => k === 'sbmAlterarControleLocalizador' || k === 'sbmCadastrarControleLocalizador')) {
-      pairsSubmit.push(['sbmAlterarControleLocalizador', 'Salvar']);
+    if (!tipoCtrl) tipoCtrl = 'E';
+
+    let strValorControle = '';
+    if (tipoCtrl === 'E') {
+      // 1. Tenta opções selecionadas no select nativo #selControleEventoMultiplo
+      const selEv = form.querySelector('#selControleEventoMultiplo');
+      const arrEv = [];
+      if (selEv) {
+        const optsEv = Array.from(selEv.options || selEv.querySelectorAll('option') || []);
+        optsEv.forEach(o => {
+          if (o.selected || (o.getAttribute && o.getAttribute('selected') !== null)) {
+            const v = String(o.value || '').trim();
+            if (v && !arrEv.includes(v)) arrEv.push(v);
+          }
+        });
+      }
+      // 2. Tenta classes divCheck_(\d+) no container #divEventosRelacionados
+      if (arrEv.length === 0) {
+        const divEv = form.querySelector('#divEventosRelacionados');
+        if (divEv) {
+          const mChecks = divEv.innerHTML.match(/divCheck_(\d+)/g);
+          if (mChecks) {
+            mChecks.forEach(cls => {
+              const idEv = cls.replace('divCheck_', '').trim();
+              if (idEv && !arrEv.includes(idEv)) arrEv.push(idEv);
+            });
+          }
+        }
+      }
+      // 3. Tenta checkboxes (caso existam em DOM dinâmico)
+      if (arrEv.length === 0) {
+        const chksEv = form.querySelectorAll('#divEventosRelacionados input[type="checkbox"][name="chkEventos"], input[type="checkbox"][name="chkEventos"]');
+        chksEv.forEach(c => {
+          const v = String(c.value || '').trim();
+          if (v && !arrEv.includes(v)) arrEv.push(v);
+        });
+      }
+      // 4. Tenta hdnEventosRelacionados
+      if (arrEv.length === 0) {
+        const hdnEv = form.querySelector('#hdnEventosRelacionados, input[name="hdnEventosRelacionados"]');
+        if (hdnEv && hdnEv.value) {
+          hdnEv.value.split(',').forEach(x => {
+            const v = x.trim();
+            if (v && !arrEv.includes(v)) arrEv.push(v);
+          });
+        }
+      }
+      strValorControle = arrEv.join(',');
+    } else if (tipoCtrl === 'D') {
+      const inpD = form.querySelector('#txtDataControle, input[name="txtDataControle"]');
+      strValorControle = inpD ? String(inpD.value || '').trim() : '';
+    } else if (tipoCtrl === 'P') {
+      const arrPet = [];
+      const selPet = form.querySelector('#selControlePeticaoMultiplo');
+      if (selPet) {
+        const optsPet = Array.from(selPet.options || selPet.querySelectorAll('option') || []);
+        optsPet.forEach(o => {
+          if (o.selected || (o.getAttribute && o.getAttribute('selected') !== null)) {
+            const v = String(o.value || '').trim();
+            if (v && !arrPet.includes(v)) arrPet.push(v);
+          }
+        });
+      }
+      if (arrPet.length === 0) {
+        const divPet = form.querySelector('#divTipoPeticao');
+        if (divPet) {
+          const mChecks = divPet.innerHTML.match(/divCheck_(\d+)/g);
+          if (mChecks) {
+            mChecks.forEach(cls => {
+              const idPet = cls.replace('divCheck_', '').trim();
+              if (idPet && !arrPet.includes(idPet)) arrPet.push(idPet);
+            });
+          }
+        }
+      }
+      const inpHdnP = form.querySelector('#hdnIdTipoPeticao, input[name="hdnIdTipoPeticao"]');
+      strValorControle = arrPet.length > 0 ? arrPet.join(',') : (inpHdnP ? String(inpHdnP.value || '').trim() : '');
+    } else {
+      const inpDias = form.querySelector('#txtDiasControle, input[name="txtDiasControle"]');
+      strValorControle = inpDias ? String(inpDias.value || '').trim() : '';
+    }
+
+    // Sempre garante strValorControle em pairsSubmit
+    const idxVc = pairsSubmit.findIndex(([k]) => k === 'strValorControle');
+    if (idxVc !== -1) pairsSubmit[idxVc][1] = strValorControle;
+    else pairsSubmit.push(['strValorControle', strValorControle]);
+
+    if (tipoCtrl === 'E' && strValorControle) {
+      const idxEr = pairsSubmit.findIndex(([k]) => k === 'hdnEventosRelacionados');
+      const valEr = strValorControle.endsWith(',') ? strValorControle : `${strValorControle},`;
+      if (idxEr !== -1) pairsSubmit[idxEr][1] = valEr;
+      else pairsSubmit.push(['hdnEventosRelacionados', valEr]);
+    }
+
+    // Lê o botão nativo da tela se presente para enviar nome e valor exatos
+    const btnSbm = form.querySelector('#sbmAlterarControleLocalizador, #sbmCadastrarControleLocalizador, button[name*="sbm"], input[name*="sbm"]');
+    const sbmName = btnSbm ? (btnSbm.getAttribute('name') || btnSbm.name || 'sbmAlterarControleLocalizador') : 'sbmAlterarControleLocalizador';
+    const sbmVal = btnSbm ? (btnSbm.getAttribute('value') || btnSbm.value || 'Nova') : 'Nova';
+    const idxSbm = pairsSubmit.findIndex(([k]) => k === sbmName || k === 'sbmAlterarControleLocalizador' || k === 'sbmCadastrarControleLocalizador');
+    if (idxSbm !== -1) {
+      pairsSubmit[idxSbm][0] = sbmName;
+      pairsSubmit[idxSbm][1] = sbmVal;
+    } else {
+      pairsSubmit.push([sbmName, sbmVal]);
     }
 
     const actionAttr = decodeEntities(form.getAttribute ? (form.getAttribute('action') || '') : (form.action || ''));
@@ -20416,7 +20505,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.1</span></span>
+          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.2</span></span>
 
         </div>
 
@@ -26078,7 +26167,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.9.1</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.10.2</span>
 
           </h3>
 
@@ -31659,7 +31748,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #00665c 0%, #00766c 100%); border-bottom: 2px solid #00564e; padding: 12px 18px;">
           <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
             <span>📊</span> ${escapeHtmlViewer(config.titulo)}
-            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.9.1</span>
+            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.10.2</span>
           </h3>
           <button type="button" class="eproc-pref-modal-close" id="btn-viewer-fechar-topo" title="Fechar visualização">✕</button>
         </div>
