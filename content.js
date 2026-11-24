@@ -1,8 +1,9 @@
 // ============================================================
 //  CRIAÇÃO DE PREFERÊNCIAS EM LOTE — eproc TJSP
 //  Arquivo: content.js
-//  Versão: 3.10.2 (atualizada em 23/11/2026)
+//  Versão: 3.10.3 (atualizada em 23/11/2026)
 //  Notas desta versão:
+//  - Visualizador de Tabelas: Desmembramento de múltiplos localizadores/classes no dropdown da coluna e busca de correspondência por item individual.
 //  - Módulo Minutas: Não está incluindo evento complementar na preferência de minuta.
 //  - Módulo Servidores / ATPs: Não está editando lembretes nas ATPs.
 // ============================================================
@@ -20505,7 +20506,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.2</span></span>
+          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.3</span></span>
 
         </div>
 
@@ -26167,7 +26168,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.10.2</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.10.3</span>
 
           </h3>
 
@@ -31515,6 +31516,42 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     };
   }
 
+  function extrairItensValoresCelulaViewer(bruto, txt, col) {
+    if (Array.isArray(bruto)) {
+      const unicos = [];
+      bruto.forEach(v => {
+        const s = String(v || '').trim();
+        if (s && s !== '—' && s !== '-' && !unicos.includes(s)) {
+          unicos.push(s);
+        }
+      });
+      return unicos;
+    }
+    const s = String(txt || '').trim();
+    if (!s || s === '—' || s === '-') return [];
+    const colKey = col ? (col.key || '') : '';
+    const pillType = col ? (col.pillType || '') : '';
+    const ehListaMultipla = pillType === 'locList' || [
+      'origem', 'destino', 'classesFiltro', 'outrosFiltros',
+      'localizadoresFiltro', 'localizadoresSecundarios', 'localizadoresRemover',
+      'eventosComplementares', 'eventosFiltro', 'classesJudiciais', 'assuntos',
+      'dadosComplementares', 'entidades', 'tiposDocumento'
+    ].includes(colKey);
+
+    if (ehListaMultipla) {
+      const partes = s.split(/\s+(?:OU|ou)\s+|\r?\n+|;\s*/);
+      const unicos = [];
+      partes.forEach(p => {
+        const limpo = p.trim();
+        if (limpo && limpo !== '—' && limpo !== '-' && !unicos.includes(limpo)) {
+          unicos.push(limpo);
+        }
+      });
+      return unicos.length > 0 ? unicos : [s];
+    }
+    return [s];
+  }
+
   function obterValoresDistintosColunaViewer(linhas, col) {
     const qtdPorValor = new Map();
     let qtdVazios = 0;
@@ -31524,20 +31561,12 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
     (linhas || []).forEach(r => {
       if (!r.detalhado && !basica) return;
       const bruto = r[colKey];
-      if (Array.isArray(bruto)) {
-        const unicosLinha = Array.from(new Set(bruto.map(v => String(v || '').trim()).filter(Boolean)));
-        if (unicosLinha.length === 0) {
-          qtdVazios++;
-        } else {
-          unicosLinha.forEach(v => qtdPorValor.set(v, (qtdPorValor.get(v) || 0) + 1));
-        }
-        return;
-      }
       const txt = resolverTextoCelulaViewer(r, col).trim();
-      if (!txt) {
+      const itens = extrairItensValoresCelulaViewer(bruto, txt, col);
+      if (itens.length === 0) {
         qtdVazios++;
       } else {
-        qtdPorValor.set(txt, (qtdPorValor.get(txt) || 0) + 1);
+        itens.forEach(v => qtdPorValor.set(v, (qtdPorValor.get(v) || 0) + 1));
       }
     });
 
@@ -31584,13 +31613,12 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         const txt = resolverTextoCelulaViewer(r, col).trim();
         if (filtro.modo === 'vazio') {
           if (!r.detalhado && !ehColunaBasicaViewer(colKey)) return false;
-          const ehVazio = Array.isArray(bruto) ? bruto.length === 0 : txt === '';
-          if (!ehVazio) return false;
+          const itens = extrairItensValoresCelulaViewer(bruto, txt, col);
+          if (itens.length !== 0) return false;
         } else if (filtro.modo === 'exato') {
           const alvoNorm = normalizar(filtro.valor || '');
-          const bate = Array.isArray(bruto)
-            ? bruto.some(v => normalizar(String(v || '').trim()) === alvoNorm)
-            : normalizar(txt) === alvoNorm;
+          const itens = extrairItensValoresCelulaViewer(bruto, txt, col);
+          const bate = itens.some(v => normalizar(v) === alvoNorm);
           if (!bate) return false;
         } else {
           const termoCol = normalizar(filtro.valor || '');
@@ -31748,7 +31776,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #00665c 0%, #00766c 100%); border-bottom: 2px solid #00564e; padding: 12px 18px;">
           <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
             <span>📊</span> ${escapeHtmlViewer(config.titulo)}
-            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.10.2</span>
+            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.10.3</span>
           </h3>
           <button type="button" class="eproc-pref-modal-close" id="btn-viewer-fechar-topo" title="Fechar visualização">✕</button>
         </div>
