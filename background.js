@@ -1,4 +1,11 @@
-// background.js - Service worker para a extensão de criação de preferências
+// ============================================================
+//  CRIAÇÃO DE PREFERÊNCIAS EM LOTE — eproc TJSP
+//  DESENVOLVIDO POR: MARCOS ALMEIDA DE CAMPOS
+//  LOW CODE REVISADO MANUALMENTE COM INTERVENÇÕES E AJUSTES
+//  Arquivo: background.js
+//  Desenvolvedor: Marcos Almeida de Campos - SGS - TJSP
+// ============================================================
+
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     chrome.tabs.create({ url: chrome.runtime.getURL('instrucoes.html') });

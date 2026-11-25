@@ -1,15 +1,15 @@
 // ============================================================
 //  CRIAÇÃO DE PREFERÊNCIAS EM LOTE — eproc TJSP
+//  DESENVOLVIDO POR: MARCOS ALMEIDA DE CAMPOS
+//  LOW CODE REVISADO MANUALMENTE COM INTERVENÇÕES E AJUSTES
 //  Arquivo: content.js
-//  Versão: 3.10.4 (atualizada em 24/11/2026)
+//  Versão: 3.9.1 (atualizada em 12/11/2026)
+//  Desenvolvedor: Marcos Almeida de Campos - SGS - TJSP
 //  Notas desta versão:
-//  - Mapeamento de Equipe por Unidade: particionamento de cache por órgão/unidade (eproc_servidores_personalizados_{idUnidade}), eliminando vazamento de servidores entre varas/gabinetes ao alternar unidades.
-//  - Módulo Documentos / Área de Minutas: verificação prévia e gravação com equivalência inteligente (encontrarPreferenciaAreaMinutasExistente) por slot/radical e leitura multi-páginas/DataTables no eproc.
-//  - Área de Minutas: inclusão automática do usuário criador da minuta na personalização da equipe.
-//  - Restauração de Fábrica: remoção cirúrgica apenas do membro restaurado, preservando os demais integrantes do grupo.
+//  - Módulo Minutas: Não está incluindo evento complementar na preferência de minuta.
+//  - Módulo Servidores / ATPs: Não está editando lembretes nas ATPs.
+//  - Módulo Documentos: Não está inserindo o usuário criador da minuta nas preferncias de produtividade/minutas.
 // ============================================================
-
-
 
 (function () {
 
@@ -14991,7 +14991,7 @@
             const comp = decodeEntities(it.getAttribute('complemento') || '').trim();
             if (id && bateNome(desc) && !idsVistos.has(id)) {
               idsVistos.add(id);
-              encontrados.push({ id, tipo: comp || 'PERFIL' });
+              encontrados.push({ id, tipo: comp || 'PERFIL', descricao: desc });
             }
           });
         } else if (txt.trim().startsWith('[') || txt.trim().startsWith('{')) {
@@ -15004,7 +15004,7 @@
               const comp = (u.complemento || u.DesTipoUsuario || '').trim();
               if (id && bateNome(desc) && !idsVistos.has(id)) {
                 idsVistos.add(id);
-                encontrados.push({ id, tipo: comp || 'PERFIL' });
+                encontrados.push({ id, tipo: comp || 'PERFIL', descricao: desc });
               }
             });
           } catch (eJson) {}
@@ -15656,6 +15656,10 @@
       } else if (selGrupoEl.value) {
         selGrupo = selGrupoEl.value;
       }
+      if (selGrupo === 'null' && prefItem.grupo && selGrupoEl.options) {
+        const optMatch = Array.from(selGrupoEl.options).find(o => normalizar(o.text) === normalizar(prefItem.grupo));
+        if (optMatch && optMatch.value) selGrupo = optMatch.value;
+      }
     }
 
     const nomeSeguro = String(novoNome || '').replace(/["']/g, '').trim();
@@ -15707,15 +15711,29 @@
     try { objSave = JSON.parse(txtSave); } catch (eJ) {}
 
     if (objSave) {
-      if (objSave.sucesso !== 'true' && objSave.sucesso !== true) {
-        throw new Error(objSave.msg || 'Erro ao atualizar preferência de documento.');
+      if (objSave.sucesso !== 'true' && objSave.sucesso !== true && objSave.sucesso !== 1 && objSave.status !== 'ok') {
+        throw new Error(objSave.msg || objSave.mensagem || 'Erro ao atualizar preferência de documento.');
       }
-    } else if (!/sucesso["']?\s*:\s*["']?true/i.test(txtSave)) {
-      throw new Error('Resposta inesperada do eproc ao atualizar documento.');
+    } else if (txtSave && txtSave.trim()) {
+      if (!/sucesso["']?\s*[:=]\s*["']?(true|1)/i.test(txtSave) && !/<sucesso>true<\/sucesso>/i.test(txtSave) && !/gravad[oa]/i.test(txtSave)) {
+        if (/infraExcecao|erro/i.test(txtSave)) {
+          throw new Error('Resposta inesperada do eproc ao atualizar documento.');
+        }
+      }
     }
 
     prefItem.nome = nomeSeguro;
     return true;
+  }
+
+  function substituirLembreteEmStringSerializadaAtp(strSerializada, novoTexto) {
+    if (!strSerializada || typeof strSerializada !== 'string') return strSerializada;
+    const reLemb = /s:13:"LembreteTexto";s:\d+:"([^"]*)";/g;
+    if (reLemb.test(strSerializada)) {
+      const len = novoTexto.length;
+      return strSerializada.replace(reLemb, `s:13:"LembreteTexto";s:${len}:"${novoTexto}";`);
+    }
+    return strSerializada;
   }
 
   function toHtmlEntitiesEprocAtp(str) {
@@ -15753,8 +15771,12 @@
         if (['submit', 'button', 'reset', 'file', 'image'].includes(type)) continue;
         if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
         const val = el.value !== undefined ? String(el.value) : (el.getAttribute ? (el.getAttribute('value') || '') : '');
-        // Evita enviar inputs arrays numéricos vazios (ex: hdnNumConsiderarUltimosEventosDias[]="") que quebram o validador numérico do PHP eproc
-        if (name.includes('[]') && (name.startsWith('hdnNum') || name.startsWith('num') || name.toLowerCase().includes('dias') || name.toLowerCase().includes('valor')) && val.trim() === '') {
+        const valTrim = val.trim();
+        // Evita enviar inputs vazios ou arrays numéricos inválidos que quebram o validador numérico do PHP eproc (ex: "Valor numérico inválido [[]]")
+        if ((name.includes('[]') || /^hdnNum/i.test(name) || /^num[A-Z]/i.test(name)) && (valTrim === '' || valTrim === '[]' || valTrim === 'undefined' || valTrim === 'null')) {
+          continue;
+        }
+        if ((/^hdnNum/i.test(name) || /^num[A-Z]/i.test(name)) && !name.includes('[]') && !/^-?\d+$/.test(valTrim)) {
           continue;
         }
         pairs.push([name, val]);
@@ -15767,24 +15789,25 @@
         const isMult = !!el.multiple || (el.getAttribute && el.getAttribute('multiple') !== null);
         const selecionadas = opts.filter(o => !!o.selected || (o.getAttribute && o.getAttribute('selected') !== null));
 
-        if (compactarCompSel && name.startsWith('compSel')) {
-          if (selecionadas.length > 0) {
-            const vals = selecionadas.map(o => o.value !== undefined ? String(o.value) : (o.getAttribute ? (o.getAttribute('value') || '') : ''));
-            pairs.push([`compSelPacked_${name}`, JSON.stringify(vals)]);
-          }
-          continue;
-        }
-
         if (isMult) {
           selecionadas.forEach(o => {
             const v = o.value !== undefined ? String(o.value) : (o.getAttribute ? (o.getAttribute('value') || '') : '');
+            const vTrim = v.trim();
+            if ((name.includes('[]') || /^hdnNum/i.test(name) || /^num[A-Z]/i.test(name)) && (vTrim === '' || vTrim === '[]' || vTrim === 'null' || vTrim === 'undefined')) {
+              return;
+            }
             pairs.push([name, v]);
           });
         } else {
           const optUnica = selecionadas[0] || opts[0];
           if (optUnica) {
             const v = optUnica.value !== undefined ? String(optUnica.value) : (optUnica.getAttribute ? (optUnica.getAttribute('value') || '') : '');
-            pairs.push([name, v]);
+            const vTrim = v.trim();
+            if ((name.includes('[]') || /^hdnNum/i.test(name) || /^num[A-Z]/i.test(name)) && (vTrim === '' || vTrim === '[]' || vTrim === 'null' || vTrim === 'undefined')) {
+              // ignora valor numérico vazio
+            } else {
+              pairs.push([name, v]);
+            }
           }
         }
       }
@@ -16003,42 +16026,53 @@
       const hdnATP = form.querySelector(`#hdnATP_${indiceOrigem}, input[name="hdnATP_${indiceOrigem}"]`);
 
       if (hdnATP || (form.querySelector('#chkMultiplasAcoes') && form.querySelector('#chkMultiplasAcoes').checked)) {
-        const paresDados = coletarCamposFormularioAtp(form, { compactarCompSel: false, lembreteEmHtmlEntities: true });
-        const formDataObj = {};
-        for (const [kRaw, vRaw] of paresDados) {
-          const key = kRaw.replace('[]', '');
-          formDataObj[key] = (kRaw.includes('[]') && formDataObj[key] !== undefined)
-            ? `${formDataObj[key]},${vRaw}`
-            : vRaw;
+        try {
+          const paresDados = coletarCamposFormularioAtp(form, { compactarCompSel: false, lembreteEmHtmlEntities: true });
+          const formDataObj = {};
+          for (const [kRaw, vRaw] of paresDados) {
+            const key = kRaw.replace('[]', '').trim();
+            if (!key) continue;
+            const strVal = String(vRaw).trim();
+            if (strVal === '' || strVal === '[]') continue;
+            formDataObj[key] = (kRaw.includes('[]') && formDataObj[key] !== undefined)
+              ? `${formDataObj[key]},${strVal}`
+              : strVal;
+          }
+          const respDados = await fetch(urlSalvarDados, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: serializarObjetoAjaxEproc({ formData: formDataObj }).toString()
+          });
+          if (respDados.ok) {
+            const txtDados = await lerRespostaTexto(respDados);
+            let jsonDados = null;
+            try { jsonDados = JSON.parse(txtDados); } catch (eJson) {}
+            if (jsonDados && !jsonDados.erro && jsonDados.dados_serializados) {
+              const inpDesc = form.querySelector('#txtDescricaoAcaoProgramada');
+              const descNova = inpDesc && inpDesc.value ? inpDesc.value.trim().toUpperCase() : '';
+              const descAnterior = (hdnATP && hdnATP.value && hdnATP.value.includes('|')) ? hdnATP.value.split('|')[0] : '';
+              const valorATP = `${descNova || descAnterior}|${jsonDados.dados_serializados}`;
+              if (hdnATP) hdnATP.value = valorATP;
+              else extraHdnAtp = [`hdnATP_${indiceOrigem}`, valorATP];
+            } else if (hdnATP && hdnATP.value) {
+              // Se salvarDados retornou aviso/erro de validação, atualiza o lembrete direto na string serializada de hdnATP
+              hdnATP.value = substituirLembreteEmStringSerializadaAtp(hdnATP.value, sub.novoTexto);
+            }
+          }
+        } catch (eSalvar) {
+          console.warn(`[ATP #${atpItem.numRegra}] Aviso ao serializar ação programada:`, eSalvar);
+          if (hdnATP && hdnATP.value) {
+            hdnATP.value = substituirLembreteEmStringSerializadaAtp(hdnATP.value, sub.novoTexto);
+          }
         }
-        const respDados = await fetch(urlSalvarDados, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          body: serializarObjetoAjaxEproc({ formData: formDataObj }).toString()
-        });
-        if (!respDados.ok) {
-          throw new Error(`Erro ao serializar ação programada da ATP #${atpItem.numRegra} (HTTP ${respDados.status})`);
-        }
-        const txtDados = await lerRespostaTexto(respDados);
-        let jsonDados = null;
-        try { jsonDados = JSON.parse(txtDados); } catch (eJson) {}
-        if (!jsonDados || jsonDados.erro || !jsonDados.dados_serializados) {
-          throw new Error((jsonDados && jsonDados.erro) || `Falha em automatizacao/salvarDados na ATP #${atpItem.numRegra}.`);
-        }
-        const inpDesc = form.querySelector('#txtDescricaoAcaoProgramada');
-        const descNova = inpDesc && inpDesc.value ? inpDesc.value.trim().toUpperCase() : '';
-        const descAnterior = (hdnATP && hdnATP.value && hdnATP.value.includes('|')) ? hdnATP.value.split('|')[0] : '';
-        const valorATP = `${descNova || descAnterior}|${jsonDados.dados_serializados}`;
-        if (hdnATP) hdnATP.value = valorATP;
-        else extraHdnAtp = [`hdnATP_${indiceOrigem}`, valorATP];
       }
     }
 
-    const pairsSubmit = coletarCamposFormularioAtp(form, { compactarCompSel: true, lembreteEmHtmlEntities: false });
+    let pairsSubmit = coletarCamposFormularioAtp(form, { compactarCompSel: true, lembreteEmHtmlEntities: false });
     if (extraHdnAtp && !pairsSubmit.some(([k]) => k === extraHdnAtp[0])) {
       pairsSubmit.push(extraHdnAtp);
     }
@@ -16144,11 +16178,16 @@
     if (idxVc !== -1) pairsSubmit[idxVc][1] = strValorControle;
     else pairsSubmit.push(['strValorControle', strValorControle]);
 
-    if (tipoCtrl === 'E' && strValorControle) {
-      const idxEr = pairsSubmit.findIndex(([k]) => k === 'hdnEventosRelacionados');
-      const valEr = strValorControle.endsWith(',') ? strValorControle : `${strValorControle},`;
-      if (idxEr !== -1) pairsSubmit[idxEr][1] = valEr;
-      else pairsSubmit.push(['hdnEventosRelacionados', valEr]);
+    if (tipoCtrl === 'E') {
+      pairsSubmit = pairsSubmit.filter(([k]) => k !== 'selControleEventoMultiplo[]');
+      if (strValorControle) {
+        const evIds = strValorControle.split(',').map(x => x.trim()).filter(x => /^\d+$/.test(x));
+        evIds.forEach(idEv => pairsSubmit.push(['selControleEventoMultiplo[]', idEv]));
+        const idxEr = pairsSubmit.findIndex(([k]) => k === 'hdnEventosRelacionados');
+        const valEr = strValorControle.endsWith(',') ? strValorControle : `${strValorControle},`;
+        if (idxEr !== -1) pairsSubmit[idxEr][1] = valEr;
+        else pairsSubmit.push(['hdnEventosRelacionados', valEr]);
+      }
     }
 
     // Lê o botão nativo da tela se presente para enviar nome e valor exatos
@@ -16162,6 +16201,26 @@
     } else {
       pairsSubmit.push([sbmName, sbmVal]);
     }
+
+    // Sanitização rigorosa para impedir o erro "Valor numérico inválido [[]]" no PHP eproc (InfraBD)
+    pairsSubmit = pairsSubmit.filter(([k, v]) => {
+      const valStr = String(v !== undefined && v !== null ? v : '').trim();
+      if (valStr === '' || valStr === '[]' || valStr === 'null' || valStr === 'undefined') {
+        if (k.includes('[]') || /^hdnNum/i.test(k) || /^num[A-Z]/i.test(k) || k.startsWith('compSel') || k.startsWith('hdnSelect') || k.startsWith('hdnStr')) {
+          return false;
+        }
+      }
+      if (k.startsWith('compSelPacked_') && (valStr === '[]' || valStr === '""' || valStr === '')) {
+        return false;
+      }
+      if ((/^hdnNum/i.test(k) || /^num[A-Z]/i.test(k)) && !/^-?\d+$/.test(valStr)) {
+        return false;
+      }
+      if (k === 'selControleEventoMultiplo[]' && !/^\d+$/.test(valStr)) {
+        return false;
+      }
+      return true;
+    });
 
     const actionAttr = decodeEntities(form.getAttribute ? (form.getAttribute('action') || '') : (form.action || ''));
     const urlPost = new URL(actionAttr || atpItem.urlEditar, atpItem.urlEditar).href;
@@ -17314,10 +17373,14 @@
   }
 
   // Função compartilhada para renomear preferências de relatório ou documento vinculadas a um slot
-  async function executarRenomeacaoListaPrefsParaSlot(listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, idsDedup = new Set(), errArray = [], ignArray = []) {
+  async function executarRenomeacaoListaPrefsParaSlot(listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, idsDedup = new Set(), errArray = [], ignArray = [], dadosContexto = null) {
     let renomeadas = 0;
     const errosLocais = [];
     const ignoradasLocais = [];
+    idsDedup = (idsDedup instanceof Set) ? idsDedup : new Set();
+    errArray = Array.isArray(errArray) ? errArray : [];
+    ignArray = Array.isArray(ignArray) ? ignArray : [];
+
     if (!Array.isArray(listaPrefs) || listaPrefs.length === 0 || !siglasOrigemSlot.length) {
       return {
         total: 0,
@@ -17346,10 +17409,14 @@
       }
 
       try {
-        await fnRenomear(pref, sub.novoNome);
+        await fnRenomear(pref, sub.novoNome, dadosContexto);
         idsDedup.add(chaveDedup);
         renomeadas++;
-        addLog(`  ✅ [${tipoLabel}] Renomeado: "${sub.novoNome}"`);
+        if (pref._detalheAtualizacao) {
+          addLog(`  ✅ [${tipoLabel}] "${sub.novoNome}" (${pref._detalheAtualizacao})`);
+        } else {
+          addLog(`  ✅ [${tipoLabel}] Renomeado: "${sub.novoNome}"`);
+        }
         await sleep(80);
       } catch (ePref) {
         addLog(`  ⚠️ [${tipoLabel}] Erro ao renomear "${pref.nome}": ${ePref.message}`, 'warn');
@@ -17619,7 +17686,18 @@
           renomearPreferenciaDocumentoEproc,
           slotNum,
           siglasOrigemSlot,
-          nomeCurtoPadrao
+          nomeCurtoPadrao,
+          undefined,
+          undefined,
+          undefined,
+          {
+            restaurar: true,
+            nomeCurtoPadrao,
+            tagSlot,
+            tipoSlot,
+            indiceTipo,
+            locMatch
+          }
         );
         if (resDoc.renomeadas > 0) {
           addLog(`  ✅ ${resDoc.renomeadas} preferência(s) de documento restaurada(s) para "${nomeCurtoPadrao}".`);
@@ -18433,8 +18511,8 @@
 
       const idsPrefsRenomeadasNoLote = new Set();
 
-      const renomearListaPrefsParaSlot = (listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla) =>
-        executarRenomeacaoListaPrefsParaSlot(listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, idsPrefsRenomeadasNoLote, preferenciasComErro, preferenciasIgnoradasDuplicadas);
+      const renomearListaPrefsParaSlot = (listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, dadosContexto = null) =>
+        executarRenomeacaoListaPrefsParaSlot(listaPrefs, tipoLabel, fnRenomear, slotNum, siglasOrigemSlot, novaSigla, idsPrefsRenomeadasNoLote, preferenciasComErro, preferenciasIgnoradasDuplicadas, dadosContexto);
 
       // Recalcula colisões considerando os localizadores reais da unidade
       const slotsFinais = resolverColisoesSiglas(slots, localizadores);
@@ -18716,7 +18794,8 @@
             renomearPreferenciaDocumentoEproc,
             slotNum,
             siglasOrigemSlot,
-            item.sigla
+            item.sigla,
+            Object.assign({}, item, { locMatch, perfisParaVincular })
           );
           documentosSucesso += qtdDocSlot;
 
@@ -20682,7 +20761,7 @@
 
           <span class="rito-badge-p" style="width: 19px; height: 19px; font-size: 12.5px;">P</span>
 
-          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.4</span></span>
+          <span id="rito-panel-title">MÓDULO DE IMPLANTAÇÃO AVANÇADO - 2G <span style="font-size:10.5px; font-weight:600; margin-left:4px; opacity:0.95; background:rgba(255,255,255,0.2); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;">v3.10.9</span></span>
 
         </div>
 
@@ -27050,7 +27129,7 @@
 
             <span style="font-size: 18px;">🔍</span> Verificação prévia: Auditoria de Integridade eproc
 
-            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.10.4</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.22); padding: 1px 6px; border-radius: 4px; font-weight: 600;">v3.10.9</span>
 
           </h3>
 
@@ -32658,7 +32737,7 @@ ${res.eventosInvalidos === 0 && res.todasMatrizesOk ? '✅ PRONTO PARA CRIAÇÃO
         <div class="eproc-pref-modal-header" style="background: linear-gradient(135deg, #00665c 0%, #00766c 100%); border-bottom: 2px solid #00564e; padding: 12px 18px;">
           <h3 style="margin:0; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px;">
             <span>📊</span> ${escapeHtmlViewer(config.titulo)}
-            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.10.4</span>
+            <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:4px;">v3.10.9</span>
           </h3>
           <button type="button" class="eproc-pref-modal-close" id="btn-viewer-fechar-topo" title="Fechar visualização">✕</button>
         </div>

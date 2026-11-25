@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "eproc TJSP 2G - Criar Preferências em Lote",
-  "version": "3.10.4",
+  "version": "3.10.9",
   "description": "Cria preferências em lote exclusivamente no eproc 2G TJSP a partir da planilha oficial unificada.",
   "permissions": [
     "storage"
@@ -64,5 +64,6 @@
       "128": "icons/icon128.png"
     },
     "default_title": "eproc TJSP 2G - Criar Preferências em Lote (Segundo Grau)"
-  }
+  },
+  "author": "Marcos Almeida de Campos - SGS - TJSP"
 }

@@ -1,4 +1,11 @@
-// bridge.js - Ponte no contexto isolado para APIs da extensão
+// ============================================================
+//  CRIAÇÃO DE PREFERÊNCIAS EM LOTE — eproc TJSP
+//  DESENVOLVIDO POR: MARCOS ALMEIDA DE CAMPOS
+//  LOW CODE REVISADO MANUALMENTE COM INTERVENÇÕES E AJUSTES
+//  Arquivo: bridge.js
+//  Desenvolvedor: Marcos Almeida de Campos - SGS - TJSP
+// ============================================================
+
 window.addEventListener('message', (event) => {
   if (!event || !event.data || typeof event.data !== 'object') return;
   const msg = event.data;
